@@ -1690,6 +1690,220 @@
 				)
 			)
 		)
+		(symbol "LM66200_1"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U7"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "LM66200"
+				(at 0 2.54 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" "Package_SON:Texas_R-PUSON-N8_USON-8-1EP_1.6x2.1mm_P0.5mm_EP0.4x1.7mm"
+				(at 0 7.62 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" "https://www.ti.com/lit/ds/symlink/lm66200.pdf"
+				(at 0 7.62 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" ""
+				(at 0 1.27 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "LCSC" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "LM66200_1_1_1"
+				(rectangle
+					(start -6.35 0)
+					(end 6.35 -12.7)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type background)
+					)
+				)
+				(pin input line
+					(at 0 -15.24 90)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 8.89 -2.54 180)
+					(length 2.54)
+					(name "VOUT"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at -8.89 -7.62 0)
+					(length 2.54)
+					(name "VIN1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at -8.89 -2.54 0)
+					(length 2.54)
+					(name "~{ON}"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "4"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 0 -15.24 90)
+					(length 2.54) hide
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "5"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at -8.89 -10.16 0)
+					(length 2.54)
+					(name "VIN2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "6"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 8.89 -2.54 180)
+					(length 2.54) hide
+					(name "VOUT"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "7"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 8.89 -10.16 180)
+					(length 2.54)
+					(name "ST"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "8"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+		)
 		(symbol "Power_Management:TPS2116DRL"
 			(exclude_from_sim no)
 			(in_bom yes)
@@ -2965,12 +3179,12 @@
 				)
 			)
 		)
-		(symbol "Regulator_Switching:TPS563202S"
+		(symbol "Regulator_Switching:TPS63000"
 			(exclude_from_sim no)
 			(in_bom yes)
 			(on_board yes)
 			(property "Reference" "U"
-				(at -7.62 6.35 0)
+				(at -7.62 13.97 0)
 				(effects
 					(font
 						(size 1.27 1.27)
@@ -2978,26 +3192,33 @@
 					(justify left)
 				)
 			)
-			(property "Value" "TPS563202S"
-				(at -2.54 6.35 0)
+			(property "Value" "TPS63000"
+				(at 5.08 13.97 0)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify left)
 				)
 			)
-			(property "Footprint" "Package_TO_SOT_SMD:SOT-563"
-				(at 1.27 -6.35 0)
+			(property "Footprint" "Package_SON:Texas_DRC0010J_ThermalVias"
+				(at 21.59 -13.97 0)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify left)
 					(hide yes)
 				)
 			)
-			(property "Datasheet" "https://www.ti.com/lit/ds/symlink/tps563202s.pdf"
+			(property "Datasheet" "http://www.ti.com/lit/ds/symlink/tps63000.pdf"
+				(at -7.62 13.97 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "Buck-Boost Converter, 1.8-5.5V Input Voltage, 1.8A Switch Current, Adjustable 1.2-5.5V Output Voltage, VSON-10"
 				(at 0 0 0)
 				(effects
 					(font
@@ -3006,7 +3227,7 @@
 					(hide yes)
 				)
 			)
-			(property "Description" "3A Synchronous Step-Down Voltage Regulator, Adjustable Output Voltage, 4.3-17V Input Voltage, 0.806-7V Output Voltage, SOT-563"
+			(property "ki_keywords" "Buck-Boost adjustable converter"
 				(at 0 0 0)
 				(effects
 					(font
@@ -3015,7 +3236,7 @@
 					(hide yes)
 				)
 			)
-			(property "ki_keywords" "step-down dcdc voltage regulator"
+			(property "ki_fp_filters" "Texas*DRC0010J*"
 				(at 0 0 0)
 				(effects
 					(font
@@ -3024,19 +3245,10 @@
 					(hide yes)
 				)
 			)
-			(property "ki_fp_filters" "SOT?563*"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(symbol "TPS563202S_0_1"
+			(symbol "TPS63000_0_1"
 				(rectangle
-					(start -7.62 5.08)
-					(end 7.62 -5.08)
+					(start -7.62 12.7)
+					(end 7.62 -12.7)
 					(stroke
 						(width 0.254)
 						(type default)
@@ -3046,11 +3258,11 @@
 					)
 				)
 			)
-			(symbol "TPS563202S_1_1"
-				(pin power_in line
-					(at -10.16 2.54 0)
+			(symbol "TPS63000_1_1"
+				(pin power_out line
+					(at 10.16 10.16 180)
 					(length 2.54)
-					(name "VIN"
+					(name "VOUT"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -3065,10 +3277,46 @@
 						)
 					)
 				)
-				(pin output line
+				(pin input line
 					(at 10.16 2.54 180)
 					(length 2.54)
-					(name "SW"
+					(name "FB"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "10"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 0 -15.24 90)
+					(length 2.54) hide
+					(name "PGND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "11"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at -10.16 -10.16 0)
+					(length 2.54)
+					(name "L2"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -3084,9 +3332,9 @@
 					)
 				)
 				(pin power_in line
-					(at 0 -7.62 90)
+					(at 0 -15.24 90)
 					(length 2.54)
-					(name "GND"
+					(name "PGND"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -3101,10 +3349,10 @@
 						)
 					)
 				)
-				(pin passive line
-					(at 10.16 0 180)
+				(pin input line
+					(at -10.16 0 0)
 					(length 2.54)
-					(name "BST"
+					(name "L1"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -3119,10 +3367,10 @@
 						)
 					)
 				)
-				(pin input line
-					(at -10.16 -2.54 0)
+				(pin power_in line
+					(at -10.16 10.16 0)
 					(length 2.54)
-					(name "EN"
+					(name "VIN"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -3138,9 +3386,9 @@
 					)
 				)
 				(pin input line
-					(at 10.16 -2.54 180)
+					(at -10.16 5.08 0)
 					(length 2.54)
-					(name "FB"
+					(name "EN"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -3148,6 +3396,60 @@
 						)
 					)
 					(number "6"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at -10.16 2.54 0)
+					(length 2.54)
+					(name "PS/SYNC"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "7"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -10.16 7.62 0)
+					(length 2.54)
+					(name "VINA"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "8"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -2.54 -15.24 90)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "9"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -4177,16 +4479,6 @@
 	)
 	(wire
 		(pts
-			(xy 227.33 160.02) (xy 228.6 160.02)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "0b9751d7-534e-4817-814f-8879747318c6")
-	)
-	(wire
-		(pts
 			(xy 52.07 167.64) (xy 72.39 167.64)
 		)
 		(stroke
@@ -4194,6 +4486,16 @@
 			(type default)
 		)
 		(uuid "0bdd4ba5-c8f8-4992-b7f4-d09c00c06be0")
+	)
+	(wire
+		(pts
+			(xy 24.13 243.84) (xy 25.4 243.84)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "0da66894-60de-41d4-a591-4af16923372e")
 	)
 	(wire
 		(pts
@@ -4337,13 +4639,13 @@
 	)
 	(wire
 		(pts
-			(xy 227.33 167.64) (xy 228.6 167.64)
+			(xy 24.13 242.57) (xy 24.13 243.84)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "5afb793e-0e6e-4249-97fb-d7e8c7308852")
+		(uuid "48651f98-933f-44a7-a8dc-98efbc7fabba")
 	)
 	(polyline
 		(pts
@@ -4417,16 +4719,6 @@
 	)
 	(wire
 		(pts
-			(xy 227.33 171.45) (xy 228.6 171.45)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "6e265441-ed84-4ab2-a48e-551121eab231")
-	)
-	(wire
-		(pts
 			(xy 193.04 180.34) (xy 153.67 180.34)
 		)
 		(stroke
@@ -4434,16 +4726,6 @@
 			(type default)
 		)
 		(uuid "741e5ecf-34b9-4914-91b7-d51f2e195ca1")
-	)
-	(wire
-		(pts
-			(xy 227.33 163.83) (xy 228.6 163.83)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "76f02eba-0c52-4532-bf34-6af4c9170268")
 	)
 	(wire
 		(pts
@@ -4487,6 +4769,16 @@
 	)
 	(wire
 		(pts
+			(xy 24.13 233.68) (xy 25.4 233.68)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8b2168f6-d72c-4549-9a3e-6c0d8e07844d")
+	)
+	(wire
+		(pts
 			(xy 52.07 191.77) (xy 52.07 182.88)
 		)
 		(stroke
@@ -4504,6 +4796,16 @@
 			(type default)
 		)
 		(uuid "a14acdce-84f3-40b7-bb41-ccdd8a4326e4")
+	)
+	(wire
+		(pts
+			(xy 24.13 234.95) (xy 24.13 233.68)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a6332904-0ee5-49b0-8f36-cbcbeb21e8a2")
 	)
 	(polyline
 		(pts
@@ -4647,7 +4949,7 @@
 	)
 	(text "VIN -> 5V\n"
 		(exclude_from_sim no)
-		(at 153.162 148.59 0)
+		(at 129.032 147.828 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -4688,6 +4990,16 @@
 		)
 		(uuid "68b1b208-da19-4b06-b246-c27d70d707ed")
 	)
+	(text "MCU powered from batt 2V7-4V2 OR 5V"
+		(exclude_from_sim no)
+		(at 36.322 211.074 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "6b3e9990-3225-4690-ad40-4f3bdb970cdc")
+	)
 	(text "7-28v input"
 		(exclude_from_sim no)
 		(at 23.368 147.828 0)
@@ -4722,28 +5034,6 @@
 		(uuid "21b1681c-88b7-4083-908c-0ef7f558777c")
 	)
 	(label "5V_{USB,PROG}"
-		(at 227.33 163.83 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "57278f53-8d69-429c-a6cf-f8d2372f8af3")
-	)
-	(label "5V_{USB,MSC}"
-		(at 227.33 167.64 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "5d68d469-dff5-4ce5-b597-5e2e5e920e88")
-	)
-	(label "5V_{USB,PROG}"
 		(at 187.96 200.66 0)
 		(fields_autoplaced yes)
 		(effects
@@ -4764,28 +5054,6 @@
 			(justify left bottom)
 		)
 		(uuid "7d5892d4-a0de-4b08-98e6-5d0c9cfe5645")
-	)
-	(label "5V_{IN}"
-		(at 227.33 160.02 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "8024afc2-bfa7-47ee-9988-b13730d7d4b6")
-	)
-	(label "5V_{BATT}"
-		(at 227.33 171.45 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "8d3abab1-b3d3-4180-afff-bc4b944d5d5d")
 	)
 	(hierarchical_label "pgood"
 		(shape input)
@@ -4942,90 +5210,9 @@
 			(uuid "6f78522e-6dfe-4f05-b4c3-5880bcc2de9b")
 		)
 		(instances
-			(project ""
+			(project "OAS-core"
 				(path "/f7d13605-8f23-4146-b126-39b6825b1393"
 					(reference "C3")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Regulator_Switching:TPS563202S")
-		(at 435.61 173.99 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "122f5b8c-1f97-4aea-a5b4-edc5e3f11221")
-		(property "Reference" "U5"
-			(at 435.61 163.83 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "TPS563202DRLR"
-			(at 435.61 166.37 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Package_TO_SOT_SMD:SOT-563"
-			(at 436.88 180.34 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "https://www.ti.com/lit/ds/symlink/tps563202s.pdf"
-			(at 435.61 173.99 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "3A Synchronous Step-Down Voltage Regulator, Adjustable Output Voltage, 4.3-17V Input Voltage, 0.806-7V Output Voltage, SOT-563"
-			(at 435.61 173.99 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "6"
-			(uuid "d88c2c74-d2a4-48f7-9f29-9440d88dad9e")
-		)
-		(pin "1"
-			(uuid "a0229fce-16ae-4c5f-a4eb-0736efb94490")
-		)
-		(pin "3"
-			(uuid "cc3254bd-0ad6-4dd8-8324-fccae65d090f")
-		)
-		(pin "5"
-			(uuid "17ee2622-226f-4f98-bdcd-9399f7e67073")
-		)
-		(pin "4"
-			(uuid "318ec0b6-a040-41c4-9f0e-a60df1fde251")
-		)
-		(pin "2"
-			(uuid "3f95c160-864a-4cce-8b06-cee26967b2f8")
-		)
-		(instances
-			(project ""
-				(path "/f7d13605-8f23-4146-b126-39b6825b1393"
-					(reference "U5")
 					(unit 1)
 				)
 			)
@@ -5176,7 +5363,7 @@
 			(uuid "c9c3e302-01a0-44b1-830d-51a5617c61b0")
 		)
 		(instances
-			(project ""
+			(project "OAS-core"
 				(path "/f7d13605-8f23-4146-b126-39b6825b1393"
 					(reference "J2")
 					(unit 1)
@@ -5322,7 +5509,7 @@
 			(uuid "bc68e3d7-d16b-4798-a217-e94f3644c937")
 		)
 		(instances
-			(project ""
+			(project "OAS-core"
 				(path "/f7d13605-8f23-4146-b126-39b6825b1393"
 					(reference "J4")
 					(unit 1)
@@ -5548,7 +5735,7 @@
 			(uuid "3b71e0ec-11b3-43d5-b765-a5daf1784af0")
 		)
 		(instances
-			(project ""
+			(project "OAS-core"
 				(path "/f7d13605-8f23-4146-b126-39b6825b1393"
 					(reference "#PWR02")
 					(unit 1)
@@ -5648,7 +5835,7 @@
 			(uuid "97c4d58a-3cde-403e-8a15-bb66b6691bdf")
 		)
 		(instances
-			(project ""
+			(project "OAS-core"
 				(path "/f7d13605-8f23-4146-b126-39b6825b1393"
 					(reference "U6")
 					(unit 1)
@@ -5713,7 +5900,7 @@
 			(uuid "d1b7e941-960f-4a7e-9713-2e11f350df02")
 		)
 		(instances
-			(project ""
+			(project "OAS-core"
 				(path "/f7d13605-8f23-4146-b126-39b6825b1393"
 					(reference "#PWR011")
 					(unit 1)
@@ -5858,9 +6045,114 @@
 			(uuid "66601aed-44f2-4f3a-b6ef-368497fe50a4")
 		)
 		(instances
-			(project ""
+			(project "OAS-core"
 				(path "/f7d13605-8f23-4146-b126-39b6825b1393"
 					(reference "D1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_name "LM66200_1")
+		(lib_id "oas:LM66200")
+		(at 242.57 205.74 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "5d1ee360-153d-406e-a102-51a97b03c0e8")
+		(property "Reference" "U2"
+			(at 242.57 200.66 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "LM66200"
+			(at 242.57 203.2 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Package_SON:Texas_R-PUSON-N8_USON-8-1EP_1.6x2.1mm_P0.5mm_EP0.4x1.7mm"
+			(at 242.57 198.12 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.ti.com/lit/ds/symlink/lm66200.pdf"
+			(at 242.57 198.12 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 242.57 204.47 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" ""
+			(at 242.57 205.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Field-1" ""
+			(at 242.57 205.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "01e53879-0855-4ef8-9636-2fdd64f2d703")
+		)
+		(pin "4"
+			(uuid "09d0b081-69e8-4f73-86c2-3b4dcb1d899c")
+		)
+		(pin "6"
+			(uuid "9789b7a3-e248-4114-adf0-cbc87e1f71b3")
+		)
+		(pin "7"
+			(uuid "75037382-1662-4bf5-b52d-d8408f7f5fc3")
+		)
+		(pin "8"
+			(uuid "5b92e40a-3418-48dc-82c7-1321f8debbaa")
+		)
+		(pin "5"
+			(uuid "1d188e27-cfdb-4da2-9d42-2e0aefc984dd")
+		)
+		(pin "1"
+			(uuid "bcc57a0b-478d-4835-a0ae-0401cb54792b")
+		)
+		(pin "3"
+			(uuid "ae90724c-d98b-4151-b8a9-9c00fd9243ef")
+		)
+		(instances
+			(project "OAS-core"
+				(path "/f7d13605-8f23-4146-b126-39b6825b1393"
+					(reference "U2")
 					(unit 1)
 				)
 			)
@@ -6198,7 +6490,7 @@
 			(uuid "3af8a806-bca7-482e-8254-7676b815624f")
 		)
 		(instances
-			(project ""
+			(project "OAS-core"
 				(path "/f7d13605-8f23-4146-b126-39b6825b1393"
 					(reference "J1")
 					(unit 1)
@@ -6415,9 +6707,104 @@
 			(uuid "e34ca865-a43e-4ea0-a3f1-dd919c34799c")
 		)
 		(instances
-			(project ""
+			(project "OAS-core"
 				(path "/f7d13605-8f23-4146-b126-39b6825b1393"
 					(reference "R5")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Regulator_Switching:TPS63000")
+		(at 35.56 233.68 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "939fe3f1-aeb9-410c-b0e1-4f4690797aa7")
+		(property "Reference" "U7"
+			(at 35.56 215.9 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "TPS63000"
+			(at 35.56 218.44 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Package_SON:Texas_DRC0010J_ThermalVias"
+			(at 57.15 247.65 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "http://www.ti.com/lit/ds/symlink/tps63000.pdf"
+			(at 27.94 219.71 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Buck-Boost Converter, 1.8-5.5V Input Voltage, 1.8A Switch Current, Adjustable 1.2-5.5V Output Voltage, VSON-10"
+			(at 35.56 233.68 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "6b48ae69-058d-4159-85da-70f0d6546934")
+		)
+		(pin "6"
+			(uuid "6c8df658-a8b4-472c-ae23-05bd07ca2825")
+		)
+		(pin "8"
+			(uuid "48e247fc-2f2e-42cd-affc-3a0354f913c4")
+		)
+		(pin "1"
+			(uuid "38a72db4-e881-45ea-a3b6-fb5690690252")
+		)
+		(pin "11"
+			(uuid "6e73abac-a7d0-4eb6-8027-fc3ea7fccdff")
+		)
+		(pin "7"
+			(uuid "2b0a4094-3387-44a7-8493-c54cf06f076e")
+		)
+		(pin "9"
+			(uuid "97c605a6-5eac-4c87-9c90-595f2d4bc81f")
+		)
+		(pin "10"
+			(uuid "9962e9e0-611b-403a-9f6d-a4041b985319")
+		)
+		(pin "5"
+			(uuid "3ebacb45-27b8-4a63-8aeb-757fb29a2b2c")
+		)
+		(pin "4"
+			(uuid "1cae58fd-9003-47ab-86d8-70cdf1dc0796")
+		)
+		(pin "3"
+			(uuid "905dec0c-1267-4a28-aceb-189b2f31c1c8")
+		)
+		(instances
+			(project "OAS-core"
+				(path "/f7d13605-8f23-4146-b126-39b6825b1393"
+					(reference "U7")
 					(unit 1)
 				)
 			)
@@ -6662,7 +7049,7 @@
 			(uuid "d2f96c33-e397-4607-b95b-6f332c014e23")
 		)
 		(instances
-			(project ""
+			(project "OAS-core"
 				(path "/f7d13605-8f23-4146-b126-39b6825b1393"
 					(reference "U1")
 					(unit 1)
@@ -6760,7 +7147,7 @@
 			(uuid "c53a95c3-2c73-4265-a4b2-3590b67396f4")
 		)
 		(instances
-			(project ""
+			(project "OAS-core"
 				(path "/f7d13605-8f23-4146-b126-39b6825b1393"
 					(reference "Q1")
 					(unit 1)
@@ -6934,6 +7321,77 @@
 	)
 	(symbol
 		(lib_id "Device:L")
+		(at 24.13 238.76 0)
+		(mirror y)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "ac5fa345-1316-4ad7-9db5-c9e8aed0cc90")
+		(property "Reference" "L2"
+			(at 25.4 237.4899 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Value" "L"
+			(at 25.4 240.0299 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Footprint" ""
+			(at 24.13 238.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 24.13 238.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Inductor"
+			(at 24.13 238.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "9a9809f6-489e-4c19-bc73-72cb192d1094")
+		)
+		(pin "2"
+			(uuid "b8d1d95e-1163-4941-bf22-8db751b02d48")
+		)
+		(instances
+			(project "OAS-core"
+				(path "/f7d13605-8f23-4146-b126-39b6825b1393"
+					(reference "L2")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:L")
 		(at 184.15 160.02 90)
 		(unit 1)
 		(exclude_from_sim no)
@@ -7000,7 +7458,7 @@
 			(uuid "07e3b98a-bcaa-4b54-88f9-3fd0f67c6a4e")
 		)
 		(instances
-			(project ""
+			(project "OAS-core"
 				(path "/f7d13605-8f23-4146-b126-39b6825b1393"
 					(reference "L1")
 					(unit 1)
@@ -7291,7 +7749,7 @@
 			(uuid "484ba46b-4dac-49ed-a90d-0a33deea502a")
 		)
 		(instances
-			(project ""
+			(project "OAS-core"
 				(path "/f7d13605-8f23-4146-b126-39b6825b1393"
 					(reference "R7")
 					(unit 1)
@@ -7501,108 +7959,10 @@
 			(uuid "347ac5dc-2ee3-4f79-ba54-10a7cae28402")
 		)
 		(instances
-			(project ""
+			(project "OAS-core"
 				(path "/f7d13605-8f23-4146-b126-39b6825b1393"
 					(reference "C2")
 					(unit 1)
-				)
-			)
-		)
-	)
-	(sheet
-		(at 228.6 158.75)
-		(size 17.78 13.97)
-		(fields_autoplaced yes)
-		(stroke
-			(width 0.1524)
-			(type solid)
-		)
-		(fill
-			(color 0 0 0 0.0000)
-		)
-		(uuid "3ad737dd-d5b0-46e4-a729-0426ced476c0")
-		(property "Sheetname" "Power Mux"
-			(at 228.6 158.0384 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left bottom)
-			)
-		)
-		(property "Sheetfile" "power_mux.kicad_sch"
-			(at 228.6 173.3046 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-			)
-		)
-		(pin "V_{prio3}" input
-			(at 228.6 167.64 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-			(uuid "454146f2-4e6c-4a38-a0a9-9dc57be1b1ec")
-		)
-		(pin "V_{prio4}" input
-			(at 228.6 171.45 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-			(uuid "7a0398f1-d2c2-4375-9c03-61608220028d")
-		)
-		(pin "SEL_{12}" output
-			(at 246.38 163.83 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-			)
-			(uuid "3ac83f40-0888-4057-b6dd-e64fe72e92e6")
-		)
-		(pin "V_{prio1}" input
-			(at 228.6 160.02 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-			(uuid "3d00ea1a-57db-49f4-b443-bbdf49b0f342")
-		)
-		(pin "V_{prio2}" input
-			(at 228.6 163.83 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-			(uuid "179fff8d-bf7b-4834-bce2-363b34ef876f")
-		)
-		(pin "V_{out}" output
-			(at 246.38 160.02 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-			)
-			(uuid "bc3454e0-8dcf-4ef2-b4a7-48a867ebf84a")
-		)
-		(instances
-			(project "OAS-core"
-				(path "/f7d13605-8f23-4146-b126-39b6825b1393"
-					(page "2")
 				)
 			)
 		)

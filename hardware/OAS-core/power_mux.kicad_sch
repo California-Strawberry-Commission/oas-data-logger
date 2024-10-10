@@ -1426,7 +1426,7 @@
 			(uuid "1b23f9a0-f1e8-4fb5-8e14-997f60ca12a6")
 		)
 		(instances
-			(project ""
+			(project "OAS-core"
 				(path "/f7d13605-8f23-4146-b126-39b6825b1393/3ad737dd-d5b0-46e4-a729-0426ced476c0"
 					(reference "C6")
 					(unit 1)
