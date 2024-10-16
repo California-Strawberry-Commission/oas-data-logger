@@ -1,0 +1,3 @@
+[submodule ".\\firmware\\lib\\daq_common"]
+	path = .\\firmware\\lib\\daq_common
+	url = https://github.com/CPBaja/DAQ_COMMON.git
