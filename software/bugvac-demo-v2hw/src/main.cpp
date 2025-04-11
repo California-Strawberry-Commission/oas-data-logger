@@ -1,228 +1,293 @@
-/*
-Usage instructions:
-Module will automatically power up and begin logging whenever power is applied through USB.
-It will automatically save data and shut down safely when power is removed.
-
-To override the shutdown (IE to offload data when tractor is unpowered) press the reset button
-To sleep the ESP at any time, press the BOOT button.
-*/
+/**
+ * Usage instructions:
+ *
+ * The device will automatically power up and begin logging a new run whenever
+ * power is applied through USB. It will automatically and safely end the
+ * current run and enter sleep mode when power is removed.
+ *
+ * To enter sleep mode (and thus end logging for the current run) at any time,
+ * press the SLEEP button. To turn the device on again, press the RESET button.
+ *
+ * To enter offload mode (which connects to Wi-Fi and uploads available run
+ * data, when there is no USB power), press the RESET button.
+ */
 
 #include <Arduino.h>
 #include <ESP32Time.h>
 #include <FS.h>
 #include <FastLED.h>
 #include <SD.h>
+#include <SPI.h>
 #include <TinyGPS++.h>
+#include <Wire.h>
 #include <dlf_logger.h>
 
-#define PIN_VUSB_SENSE GPIO_NUM_13
-#define PIN_GOTO_SLEEP GPIO_NUM_35
-#define PIN_STRING_POT GPIO_NUM_38
-#define PIN_NEOPIXEL GPIO_NUM_0
-#define PINS_SD_SPI 8, 32, 33
-#define PIN_SD_CS 14
+// Serial
+#define SERIAL_BAUD_RATE 115200
 
-CRGB leds[1];
+// Input pins
+// Note: GPIO13 is also shared with the built-in LED (not the NeoPixel LED). The
+// built-in LED is used as a USB power indicator.
+#define PIN_USB_POWER GPIO_NUM_13
+#define PIN_SLEEP_BUTTON GPIO_NUM_35
+
+// SD (SPI)
+#define PIN_SD_SCK GPIO_NUM_19
+#define PIN_SD_MOSI GPIO_NUM_21
+#define PIN_SD_MISO GPIO_NUM_22
+#define PIN_SD_CS GPIO_NUM_14
+
+// NeoPixel LED
+#define LED_PIN PIN_NEOPIXEL
+#define NUM_LEDS 1
+#define LED_BRIGHTNESS 10
+#define LED_TYPE WS2812
+#define LED_COLOR_ORDER GRB
+
+// GPS
+#define I2C_ADDR_GPS 0x10
+#define PIN_GPS_WAKE GPIO_NUM_32
+
+void waitForValidTime();
+void waitForSd();
+void initializeLogger();
+void enableGps();
+void disableGps();
+bool hasUsbPower();
+void gpsTask(void* args);
+void sleepMonitorTask(void* args);
+
+CRGB leds[NUM_LEDS];
 TinyGPSPlus gps;
 ESP32Time rtc;
+CSCLogger logger{SD};
+run_handle_t runHandle{0};
+bool offloadMode{false};
+bool gpsEnabled{false};
 
-uint32_t data_time = 0;
-uint16_t string_pot = 0xAAAA;
+// Logger data
+uint32_t data_time{0};
 struct {
-    double lat;
-    double lng;
-    double alt;
-    uint32_t satellites;
-} pos;
+  double lat;
+  double lng;
+  double alt;
+  uint32_t satellites;
+} pos{0.0, 0.0, 0.0, 0};
 
-CSCLogger logger(SD);
-run_handle_t r = 0;
+void setup() {
+  FastLED.addLeds<LED_TYPE, LED_PIN, LED_COLOR_ORDER>(leds, NUM_LEDS);
+  FastLED.setBrightness(LED_BRIGHTNESS);
+  FastLED.showColor(CRGB::White);
 
-bool offload_mode = false;
+  Serial.begin(SERIAL_BAUD_RATE);
 
-void setup_logger() {
-    WATCH(logger, data_time);
+  // Configure pins
+  // Read to indicate whether USB power is present
+  pinMode(PIN_USB_POWER, INPUT_PULLDOWN);
+  // Read to indicate whether sleep button is pressed
+  pinMode(PIN_SLEEP_BUTTON, INPUT_PULLUP);
+  // Write to wake GPS from standby mode
+  pinMode(PIN_GPS_WAKE, OUTPUT);
 
-    auto sat_log_interval = std::chrono::seconds(5);
-    POLL(logger, pos.satellites, sat_log_interval);
+  // Add delay to give time for serial to initialize
+  delay(1000);
 
-    auto pos_log_interval = std::chrono::seconds(1);
-    POLL(logger, pos.lat, pos_log_interval);
-    POLL(logger, pos.lng, pos_log_interval);
-    POLL(logger, pos.alt, pos_log_interval);
+  // Start sleep monitor task to trigger sleep mode when USB power is
+  // disconnected, or sleep button is pressed
+  xTaskCreate(sleepMonitorTask, "sleep_monitor", 4096, NULL, 5, NULL);
 
-    auto string_pot_interval = std::chrono::milliseconds(100);
-    POLL(logger, string_pot, string_pot_interval);
+  // If the device was turned on with USB power, enter standard mode.
+  // Otherwise, enter offload mode.
+  if (hasUsbPower()) {
+    // Standard mode (create a new run on the logger and poll messages from GPS)
+    offloadMode = false;
 
-    logger.begin();
+    // Enable GPS and start GPS update task
+    enableGps();
+    xTaskCreate(gpsTask, "gps", 4096, NULL, 5, NULL);
+
+    waitForSd();
+    waitForValidTime();
+    initializeLogger();
+
+    // Start logger run
+    double m = 0;
+    runHandle = logger.start_run(Encodable(m, "double"));
+
+    FastLED.showColor(CRGB::Green);
+  } else {
+    // Offload mode (upload any available run data)
+    offloadMode = true;
+
+    waitForSd();
+    initializeLogger();
+
+    FastLED.showColor(CRGB::Blue);
+
+    // TODO: add indication when upload is complete (and maybe go back to sleep)
+  }
 }
 
-void update_gps_vals() {
+void loop() {
+  // No-op
+  delay(1000);
+}
+
+void waitForValidTime() {
+  while (!(data_time = rtc.getEpoch())) {
+    FastLED.showColor(CRGB::Yellow);
+    delay(500);
+    FastLED.showColor(CRGB::Black);
+    delay(500);
+  }
+  Serial.println("Valid time received");
+}
+
+void waitForSd() {
+  SPI.setFrequency(1000000);
+  SPI.setDataMode(SPI_MODE0);
+  SPI.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
+  while (!SD.begin(PIN_SD_CS)) {
+    FastLED.showColor(CRGB::Orange);
+    delay(500);
+    FastLED.showColor(CRGB::Black);
+    delay(500);
+  }
+  Serial.println("SD card connected");
+}
+
+void initializeLogger() {
+  WATCH(logger, data_time);
+
+  auto satellitesLogInterval{std::chrono::seconds(5)};
+  POLL(logger, pos.satellites, satellitesLogInterval);
+
+  auto gpsDataLogInterval{std::chrono::seconds(1)};
+  POLL(logger, pos.lat, gpsDataLogInterval);
+  POLL(logger, pos.lng, gpsDataLogInterval);
+  POLL(logger, pos.alt, gpsDataLogInterval);
+
+  logger.begin();
+}
+
+void enableGps() {
+  if (gpsEnabled) {
+    return;
+  }
+
+  // Initialize I2C
+  Wire.begin();
+  // Activate wake pin to get the GPS module back to full power mode
+  digitalWrite(PIN_GPS_WAKE, HIGH);
+  delay(1000);
+  digitalWrite(PIN_GPS_WAKE, LOW);
+  gpsEnabled = true;
+  Serial.println("GPS enabled");
+}
+
+void disableGps() {
+  if (!gpsEnabled) {
+    return;
+  }
+
+  // Put GPS in Backup Mode
+  Wire.beginTransmission(I2C_ADDR_GPS);
+  Wire.write("$PMTK225,4*2F\r\n");
+  Wire.endTransmission();
+  // Close I2C
+  Wire.end();
+  gpsEnabled = false;
+  Serial.println("GPS disabled");
+}
+
+bool hasUsbPower() { return digitalRead(PIN_USB_POWER); }
+
+/**
+ * Polls GPS data from I2C.
+ */
+void gpsTask(void* args) {
+  while (true) {
+    // Request up to 32 bytes of data (enough for a NMEA sentence) from GPS and
+    // feed into TinyGPS++
+    Wire.requestFrom(I2C_ADDR_GPS, 32);
+    while (Wire.available()) {
+      char c = Wire.read();
+      gps.encode(c);
+    }
+
+    // Once new GPS data is available, update the data
     if (gps.date.isUpdated() && gps.time.isUpdated()) {
-        // Set RTC epoch time so files get created w/ correct timestamp.
-        rtc.setTime(gps.time.second(), gps.time.minute(), gps.time.hour(), gps.date.day(), gps.date.month(), gps.date.year());
+      // Set RTC epoch time so files get created w/ correct timestamp.
+      rtc.setTime(gps.time.second(), gps.time.minute(), gps.time.hour(),
+                  gps.date.day(), gps.date.month(), gps.date.year());
     }
 
     if (gps.satellites.isUpdated()) {
-        pos.satellites = gps.satellites.value();
+      pos.satellites = gps.satellites.value();
     }
 
     if (gps.location.isUpdated()) {
-        pos.lat = gps.location.lat();
-        pos.lng = gps.location.lng();
-        pos.alt = gps.altitude.meters();
-    }
-}
-
-void wait_sd() {
-    SPI.begin(PINS_SD_SPI);
-    while (!SD.begin(PIN_SD_CS)) {
-        FastLED.showColor(CRGB::Red);
-        delay(500);
-        FastLED.showColor(CRGB::Black);
-        delay(500);
-    }
-    Serial.println("Card connected!");
-}
-
-void wait_valid_time() {
-    while (!(data_time = rtc.getEpoch())) {
-        FastLED.showColor(CRGB::Orange);
-        delay(500);
-        FastLED.showColor(CRGB::Black);
-        delay(500);
-    }
-    Serial.println("Valid time received!");
-}
-
-// Reads GPS data and updates local state.
-void task_gps(void* args) {
-    // TODO: REIMPLEMENT W/ I2C GPS
-    // Serial1.begin(9600, SERIAL_8N1, 22, 21);
-    while (true) {
-        // // Read GPS
-        // while (Serial1.available())
-        //     if (gps.encode(Serial1.read()))
-        //         update_gps_vals();
-
-        delay(100);
-    }
-}
-
-//
-bool has_usb_power() {
-    return digitalRead(PIN_VUSB_SENSE);
-}
-
-// Monitors for shutdown conditions
-// Puts ESP into deep sleep when conditions are met.
-void task_shutdown_monitor(void* args) {
-    static bool vusb_sleep_armed = false;
-
-    delay(5000);
-
-    while (true) {
-        bool io0_sleep = !digitalRead(PIN_GOTO_SLEEP);
-
-        bool usb_sleep = !offload_mode && !has_usb_power();
-
-        // make sure USB power is gone for 2 cycles before triggering sleep.
-        if (io0_sleep || (usb_sleep && vusb_sleep_armed))
-            break;
-
-        vusb_sleep_armed = usb_sleep;
-
-        delay(1000);
+      pos.lat = gps.location.lat();
+      pos.lng = gps.location.lng();
+      pos.alt = gps.altitude.meters();
     }
 
-    Serial.println("GOING TO SLEEP!");
-    // Finish up run
-    if (r)
-        logger.stop_run(r);
-
-    SD.end();
-
-    // turn off GPS by turning off qwiic power
-    pinMode(0, OUTPUT);
-    digitalWrite(0, LOW);
-
-    // Turn off LED
-    FastLED.showColor(CRGB::Black);
-
-    // Wake when USB is plugged in.
-    if (!has_usb_power())
-        esp_sleep_enable_ext0_wakeup(PIN_VUSB_SENSE, 1);
-
-    // go to deep sleep.
-    esp_deep_sleep_start();
-
-    vTaskDelete(NULL);
-    return;
-}
-
-void offload_init() {
-    FastLED.showColor(CRGB::YellowGreen);  // overriden wake (battery + reset)
-    offload_mode = true;
-
-    init();
-
-    wait_sd();
-    setup_logger();
-
-    FastLED.showColor(CRGB::HotPink);  // overriden wake (battery + reset)
-
-    FastLED.showColor(CRGB::Blue);  // standard wake
-
-    // TODO: setup logger w/ offload capabilities.
-}
-
-void standard_init() {
-    init();
-
-    xTaskCreate(task_gps, "gps", 4096, NULL, 5, NULL);
-    pinMode(PIN_STRING_POT, INPUT);
-
-    wait_sd();
-    wait_valid_time();
-    setup_logger();
-
-    double m = 0;
-    r = logger.start_run(Encodable(m, "double"));  //, std::chrono::seconds(1)
-
-    FastLED.showColor(CRGB::Green);
-}
-
-void init() {
-    logger
-        .wifi("test_net", "12345678")
-        .syncTo("812.us.to", 9235);
-
-    xTaskCreate(task_shutdown_monitor, "shutdown_mon", 4096, NULL, 5, NULL);
-}
-
-void setup() {
-    FastLED.addLeds<WS2812, 0, GRB>(leds, 1);
-    FastLED.setBrightness(10);
-
-    Serial.begin(115200);
-    FastLED.showColor(CRGB::White);  // standard wake
-
-    Serial.println("Starting in 2s...");
-    delay(2000);
-
-    // check startup mode. If not woken b/c of USB connection,
-    // go into sleep overriden mode.
-    pinMode(PIN_VUSB_SENSE, INPUT_PULLDOWN);
-    pinMode(PIN_GOTO_SLEEP, INPUT_PULLUP);
-    if (!has_usb_power()) {
-        offload_init();
-    } else {
-        standard_init();
-    }
-}
-
-void loop()  // Writes GPS data to the Serial port with a baud rate of 115200
-{
-    string_pot = analogRead(PIN_STRING_POT);
     delay(100);
+  }
+}
+
+/**
+ * Monitors for deep sleep conditions. When conditions are met, puts ESP32 into
+ * deep sleep. The device will be woken up when USB power is available again.
+ */
+void sleepMonitorTask(void* args) {
+  delay(5000);
+
+  bool usbSleepTriggered{false};
+  while (true) {
+    bool sleepButtonPressed{!digitalRead(PIN_SLEEP_BUTTON)};
+    if (sleepButtonPressed) {
+      Serial.println("[Sleep Monitor] Sleep button pressed. Going to sleep");
+      break;
+    }
+
+    // Make sure USB power is gone for 2 cycles before triggering sleep.
+    bool usbSleep{!offloadMode && !hasUsbPower()};
+    if (usbSleep && usbSleepTriggered) {
+      Serial.println(
+          "[Sleep Monitor] USB power still disconnected. Going to sleep");
+      break;
+    }
+    usbSleepTriggered = usbSleep;
+    if (usbSleep) {
+      Serial.println("[Sleep Monitor] USB power disconnected");
+    }
+
+    delay(1000);
+  }
+
+  if (runHandle) {
+    logger.stop_run(runHandle);
+    Serial.println("[Sleep Monitor] Stopped active run");
+  }
+
+  // Turn off peripherals
+  SD.end();
+  Serial.println("[Sleep Monitor] Stopped SD");
+  if (gpsEnabled) {
+    disableGps();
+    Serial.println("[Sleep Monitor] Stopped GPS");
+  }
+
+  // Turn off LED
+  FastLED.showColor(CRGB::Black);
+
+  if (!hasUsbPower()) {
+    // Plugging in USB power will wake
+    esp_sleep_enable_ext1_wakeup((1ULL << PIN_USB_POWER),
+                                 ESP_EXT1_WAKEUP_ANY_HIGH);
+  }
+
+  Serial.println("[Sleep Monitor] Goodnight");
+  esp_deep_sleep_start();
 }
