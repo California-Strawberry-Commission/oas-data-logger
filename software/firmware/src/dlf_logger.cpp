@@ -31,7 +31,7 @@ run_handle_t CSCLogger::start_run(Encodable meta, std::chrono::microseconds tick
     if (!h)
         return h;
 
-    Serial.printf("Starting logging with a cycle time-base of %dms\n", tick_rate);
+    Serial.printf("Starting logging with a cycle time-base of %dus\n", tick_rate);
 
     // Initialize new run
     dlf::Run *run = new dlf::Run(_fs, data_streams, tick_rate, meta);
