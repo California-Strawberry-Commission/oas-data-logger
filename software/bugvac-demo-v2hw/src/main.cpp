@@ -179,7 +179,25 @@ void enableGps() {
   Wire.begin();
   // Activate wake pin to get the GPS module back to full power mode
   digitalWrite(PIN_GPS_WAKE, HIGH);
-  delay(1000);
+  // Wait until GPS starts sending NMEA data
+  bool gpsResponding{false};
+  while (!gpsResponding) {
+    FastLED.showColor(CRGB::Red);
+    Wire.requestFrom(I2C_ADDR_GPS, 32);
+    while (Wire.available()) {
+      char c = Wire.read();
+      gps.encode(c);
+      gpsResponding = true;
+    }
+
+    if (gpsResponding) {
+      break;
+    }
+
+    delay(500);
+    FastLED.showColor(CRGB::Black);
+    delay(500);
+  }
   digitalWrite(PIN_GPS_WAKE, LOW);
   gpsEnabled = true;
   Serial.println("GPS enabled");
