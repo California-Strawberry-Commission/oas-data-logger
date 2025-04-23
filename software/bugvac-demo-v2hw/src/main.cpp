@@ -307,5 +307,7 @@ void sleepMonitorTask(void* args) {
   }
 
   Serial.println("[Sleep Monitor] Goodnight");
+  Serial.flush();
+  Serial.end();
   esp_deep_sleep_start();
 }
