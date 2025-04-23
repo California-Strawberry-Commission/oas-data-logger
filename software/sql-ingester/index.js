@@ -138,6 +138,58 @@ async function ingestRun(runUUID) {
   console.log("Ingested polled data");
 }
 
+// Get a run by uuid
+app.get("/api/runs/:uuid", async (req, res) => {
+  try {
+    const run = await Run.findOne({
+      where: { uuid: req.params.uuid },
+      include: [
+        {
+          model: RunData,
+          attributes: ["type", "stream_id", "tick", "data"],
+        },
+      ],
+    });
+
+    if (!run) {
+      return res.status(404).send("Run not found");
+    }
+
+    res.json(run);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error retrieving run");
+  }
+});
+
+// Get run data by stream_id
+app.get("/api/runs/:uuid/streams/:stream_id", async (req, res) => {
+  try {
+    const run = await Run.findOne({
+      where: { uuid: req.params.uuid },
+      attributes: ["id"],
+    });
+
+    if (!run) {
+      return res.status(404).send("Run not found");
+    }
+
+    const runData = await RunData.findAll({
+      where: {
+        runId: run.id,
+        stream_id: req.params.stream_id,
+      },
+      attributes: ["tick", "data"],
+      order: [["tick", "ASC"]],
+    });
+
+    res.json(runData);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error retrieving run data");
+  }
+});
+
 app.listen(PORT, () => {
   console.log("Upload server listening");
 });
