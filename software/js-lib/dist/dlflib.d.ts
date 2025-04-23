@@ -78,18 +78,4 @@ export declare abstract class Adapter {
         data: never;
     }[]>;
 }
-/**
- * Todo.
- * Takes a DLF run archive, unzips it, and holds it in memory for reading.
- */
-/**
- * interacts with an unarchived run at a URL
- */
-export declare class HTTPAdapter extends Adapter {
-    _baseUrl: string;
-    constructor(type_parsers: any, url: string);
-    get polled_dlf(): Promise<ArrayBuffer>;
-    get events_dlf(): Promise<ArrayBuffer>;
-    get meta_dlf(): Promise<ArrayBuffer>;
-}
 export {};
