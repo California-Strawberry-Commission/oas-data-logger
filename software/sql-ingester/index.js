@@ -82,7 +82,7 @@ app.post("/upload/:id", upload.array("files", 3), async (req, res) => {
   } finally {
     // Clean upload directory after processing
     try {
-      rmSync(runDir, { recursive: true, force: true });
+      rmSync(resolve(UPLOAD_DIR, runUUID), { recursive: true, force: true });
     } catch {}
   }
 });
