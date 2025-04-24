@@ -22,6 +22,9 @@
 #include <Wire.h>
 #include <dlf_logger.h>
 
+// For testing purposes
+#define USB_POWER_OVERRIDE false
+
 // Serial
 #define SERIAL_BAUD_RATE 115200
 
@@ -240,7 +243,7 @@ void disableGps() {
   Serial.println("GPS disabled");
 }
 
-bool hasUsbPower() { return digitalRead(PIN_USB_POWER); }
+bool hasUsbPower() { return USB_POWER_OVERRIDE || digitalRead(PIN_USB_POWER); }
 
 /**
  * Polls GPS data from I2C.
