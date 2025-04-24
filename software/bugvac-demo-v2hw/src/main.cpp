@@ -66,7 +66,6 @@ bool offloadMode{false};
 bool gpsEnabled{false};
 
 // Logger data
-uint32_t data_time{0};
 struct {
   double lat;
   double lng;
@@ -102,12 +101,13 @@ void setup() {
     // Standard mode (create a new run on the logger and poll messages from GPS)
     offloadMode = false;
 
-    // Enable GPS and start GPS update task
+    // Enable GPS, wait for valid time, and start GPS update task in that order.
+    // Note that the order is important as the time comes from the GPS module.
     enableGps();
+    waitForValidTime();
     xTaskCreate(gpsTask, "gps", 4096, NULL, 5, NULL);
 
     waitForSd();
-    waitForValidTime();
     initializeLogger();
 
     // Start logger run
@@ -134,13 +134,34 @@ void loop() {
 }
 
 void waitForValidTime() {
-  while (!(data_time = rtc.getEpoch())) {
+  // GPS module is the source of epoch time. Ensure that the received time is
+  // valid. The PA1010D returns a default/bogus time when there is no valid fix.
+  while (true) {
     FastLED.showColor(CRGB::Yellow);
-    delay(500);
+
+    // Request up to 32 bytes of data (enough for a NMEA sentence) from GPS and
+    // feed into TinyGPS++
+    Wire.requestFrom(I2C_ADDR_GPS, 32);
+    while (Wire.available()) {
+      char c = Wire.read();
+      gps.encode(c);
+    }
+
+    // When we receive a time update, only trust it if we also have a location
+    // fix and an additional sanity check on the year
+    if (gps.date.isUpdated() && gps.date.isValid() && gps.time.isUpdated() &&
+        gps.time.isValid() && gps.location.age() < 2000 &&
+        gps.date.year() >= 2025) {
+      rtc.setTime(gps.time.second(), gps.time.minute(), gps.time.hour(),
+                  gps.date.day(), gps.date.month(), gps.date.year());
+      Serial.println("Valid time received");
+      break;
+    }
+
+    delay(250);
     FastLED.showColor(CRGB::Black);
-    delay(500);
+    delay(250);
   }
-  Serial.println("Valid time received");
 }
 
 void waitForSd() {
@@ -148,7 +169,7 @@ void waitForSd() {
   SPI.setDataMode(SPI_MODE0);
   SPI.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
   while (!SD.begin(PIN_SD_CS)) {
-    FastLED.showColor(CRGB::Orange);
+    FastLED.showColor(CRGB::Red);
     delay(500);
     FastLED.showColor(CRGB::Black);
     delay(500);
@@ -157,8 +178,6 @@ void waitForSd() {
 }
 
 void initializeLogger() {
-  WATCH(logger, data_time);
-
   auto satellitesLogInterval{std::chrono::seconds(5)};
   POLL(logger, pos.satellites, satellitesLogInterval);
 
@@ -177,12 +196,14 @@ void enableGps() {
 
   // Initialize I2C
   Wire.begin();
+
   // Activate wake pin to get the GPS module back to full power mode
   digitalWrite(PIN_GPS_WAKE, HIGH);
+
   // Wait until GPS starts sending NMEA data
   bool gpsResponding{false};
   while (!gpsResponding) {
-    FastLED.showColor(CRGB::Red);
+    FastLED.showColor(CRGB::Yellow);
     Wire.requestFrom(I2C_ADDR_GPS, 32);
     while (Wire.available()) {
       char c = Wire.read();
@@ -198,6 +219,7 @@ void enableGps() {
     FastLED.showColor(CRGB::Black);
     delay(500);
   }
+
   digitalWrite(PIN_GPS_WAKE, LOW);
   gpsEnabled = true;
   Serial.println("GPS enabled");
@@ -233,18 +255,11 @@ void gpsTask(void* args) {
       gps.encode(c);
     }
 
-    // Once new GPS data is available, update the data
-    if (gps.date.isUpdated() && gps.time.isUpdated()) {
-      // Set RTC epoch time so files get created w/ correct timestamp.
-      rtc.setTime(gps.time.second(), gps.time.minute(), gps.time.hour(),
-                  gps.date.day(), gps.date.month(), gps.date.year());
-    }
-
-    if (gps.satellites.isUpdated()) {
+    if (gps.satellites.isUpdated() && gps.satellites.isValid()) {
       pos.satellites = gps.satellites.value();
     }
 
-    if (gps.location.isUpdated()) {
+    if (gps.location.isUpdated() && gps.location.isValid()) {
       pos.lat = gps.location.lat();
       pos.lng = gps.location.lng();
       pos.alt = gps.altitude.meters();
