@@ -24,6 +24,7 @@ let binary_parsers_primitives = {
 const meta_header_t = new Parser()
   .endianness("little")
   .uint16("magic")
+  .uint32("epoch_time_s")
   .uint32("tick_base_us")
   .string("meta_structure", { zeroTerminated: true })
   .uint32("meta_size")

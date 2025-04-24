@@ -20,36 +20,36 @@ using namespace std;
 // Todo: Performance timings
 
 class Run {
-    String _uuid;
-    FS &_fs;
-    dlf_file_state_e _status;
-    SemaphoreHandle_t _sync;
-    chrono::microseconds _tick_interval;
-    streams_t _streams;
-    vector<unique_ptr<LogFile>> _log_files;
+  String _uuid;
+  FS &_fs;
+  dlf_file_state_e _status;
+  SemaphoreHandle_t _sync;
+  chrono::microseconds _tick_interval;
+  streams_t _streams;
+  vector<unique_ptr<LogFile>> _log_files;
 
-    String _lockfile_path;
+  String _lockfile_path;
 
+ public:
+  Run(FS &fs, streams_t all_streams, chrono::microseconds tick_interval,
+      Encodable &meta);
 
-   public:
-    Run(FS &fs, streams_t all_streams, chrono::microseconds tick_interval, Encodable &meta);
-    
-    void create_lockfile();
+  void create_lockfile();
 
-    void create_metafile(Encodable &meta);
+  void create_metafile(Encodable &meta);
 
-    void create_logfile(dlf_stream_type_e t);
+  void create_logfile(dlf_stream_type_e t);
 
-    /**
-     * NOTE: Has caused canary issues if stack too small (1024 is problematic).
-     * @brief
-     * @param arg
-     */
-    static void task_sampler(void *arg);
+  /**
+   * NOTE: Has caused canary issues if stack too small (1024 is problematic).
+   * @brief
+   * @param arg
+   */
+  static void task_sampler(void *arg);
 
-    void close();
+  void close();
 
-    const char* uuid();
+  const char *uuid();
 };
 
 }  // namespace dlf

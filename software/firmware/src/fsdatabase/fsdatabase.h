@@ -1,6 +1,0 @@
-class FSDatabase {
-    FSDatabase() {
-        
-    }
-
-};

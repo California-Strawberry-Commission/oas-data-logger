@@ -1,5 +1,7 @@
 #include "dlf_run.h"
 
+#include <time.h>
+
 namespace dlf {
 Run::Run(FS &fs, streams_t all_streams, chrono::microseconds tick_interval, Encodable &meta)
     : _fs(fs), _streams(all_streams), _tick_interval(tick_interval) {
@@ -35,6 +37,8 @@ Run::Run(FS &fs, streams_t all_streams, chrono::microseconds tick_interval, Enco
 
 void Run::create_metafile(Encodable &meta) {
     dlf_meta_header_t h;
+    time_t now = time(NULL);
+    h.epoch_time_s = now;
     h.tick_base_us = _tick_interval.count();
     h.meta_structure = meta.type_structure;
     h.meta_size = meta.data_size;
@@ -42,9 +46,10 @@ void Run::create_metafile(Encodable &meta) {
 #ifdef DEBUG
     DEBUG.printf(
         "Creating metafile\n"
+        "\tepoch_time_s: %lu\n"
         "\ttick_base_us: %lu\n"
         "\tmeta_structure: %s (hash: %x)\n",
-        h.tick_base_us, h.meta_structure, meta.type_hash);
+        h.epoch_time_s, h.tick_base_us, h.meta_structure, meta.type_hash);
 #endif
     File f = _fs.open(_uuid + "/meta.dlf", "w", true);
 
@@ -52,6 +57,7 @@ void Run::create_metafile(Encodable &meta) {
     // use a streambuffer like in Logfile metadata writes
     // TODO: clean this up
     f.write(reinterpret_cast<uint8_t *>(&h.magic), sizeof(h.magic));
+    f.write(reinterpret_cast<uint8_t *>(&h.epoch_time_s), sizeof(h.epoch_time_s));
     f.write(reinterpret_cast<uint8_t *>(&h.tick_base_us), sizeof(h.tick_base_us));
     f.write((uint8_t *)h.meta_structure, strlen(h.meta_structure) + 1);
     f.write(reinterpret_cast<uint8_t *>(&h.meta_size), sizeof(h.meta_size));
