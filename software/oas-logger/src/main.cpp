@@ -23,7 +23,7 @@
 #include <dlf_logger.h>
 
 // For testing purposes
-#define USB_POWER_OVERRIDE true
+#define USB_POWER_OVERRIDE false
 
 // Serial
 #define SERIAL_BAUD_RATE 115200
