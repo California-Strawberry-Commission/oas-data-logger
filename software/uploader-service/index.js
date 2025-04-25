@@ -3,23 +3,27 @@ import express from "express";
 import { mkdirSync, rmSync } from "fs";
 import multer from "multer";
 import { resolve } from "path";
-import { DataTypes, Op, Sequelize } from "sequelize";
+import { DataTypes, Sequelize } from "sequelize";
 
 const PORT = 8080;
 const UPLOAD_DIR = "uploads";
+
+function getRunUploadDir(runUUID) {
+  return resolve(UPLOAD_DIR, runUUID);
+}
 
 const app = express();
 
 // Multer
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const p = resolve(UPLOAD_DIR, req.params.id);
-    mkdirSync(p, { recursive: true });
+  destination: (req, file, callback) => {
+    const runUploadDir = getRunUploadDir(req.params.id);
+    mkdirSync(runUploadDir, { recursive: true });
 
-    cb(null, p);
+    callback(null, runUploadDir);
   },
-  filename: (req, file, cb) => {
-    cb(null, file.originalname);
+  filename: (req, file, callback) => {
+    callback(null, file.originalname);
   },
 });
 const upload = multer({ storage });
@@ -47,7 +51,8 @@ Run.hasMany(RunData);
 
 // Each run is associated with 3 files (meta.dlf, event.dlf, polled.dlf)
 app.post("/upload/:id", upload.array("files", 3), async (req, res) => {
-  console.log(`Received files for run ${req.params.id}:`);
+  const runUUID = req.params.id;
+  console.log(`Received files for run ${runUUID}:`);
   console.log(req.files);
 
   // Check that expected files are present
@@ -61,7 +66,7 @@ app.post("/upload/:id", upload.array("files", 3), async (req, res) => {
   }
 
   try {
-    await ingestRun(req.params.id);
+    await ingestRun(runUUID);
     res.status(200).json({ message: "Upload successful" });
   } catch (err) {
     console.error(err);
@@ -69,7 +74,10 @@ app.post("/upload/:id", upload.array("files", 3), async (req, res) => {
   } finally {
     // Clean upload directory after processing
     try {
-      rmSync(resolve(UPLOAD_DIR, runUUID), { recursive: true, force: true });
+      rmSync(getRunUploadDir(runUUID), {
+        recursive: true,
+        force: true,
+      });
     } catch {}
   }
 });
@@ -87,7 +95,7 @@ async function ingestRun(runUUID) {
   }
 
   console.log("Ingesting run " + runUUID);
-  const run = new FSAdapter(resolve(UPLOAD_DIR, runUUID));
+  const run = new FSAdapter(getRunUploadDir(runUUID));
 
   const metaHeader = await run.meta_header();
   const runInstance = await Run.create({
