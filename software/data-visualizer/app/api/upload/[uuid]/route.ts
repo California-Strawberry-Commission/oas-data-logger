@@ -8,17 +8,17 @@ export const dynamic = "force-dynamic";
 
 const UPLOAD_DIR = "uploads";
 
-function getRunUploadDir(runId: string) {
-  return resolve(UPLOAD_DIR, runId);
+function getRunUploadDir(runUuid: string) {
+  return resolve(UPLOAD_DIR, runUuid);
 }
 
 // Each run is associated with 3 files (meta.dlf, event.dlf, polled.dlf)
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ uuid: string }> }
 ) {
-  const { id } = await params;
-  const uploadDir = getRunUploadDir(id);
+  const { uuid } = await params;
+  const uploadDir = getRunUploadDir(uuid);
 
   try {
     mkdirSync(uploadDir, { recursive: true });
@@ -51,7 +51,7 @@ export async function POST(
       }
     }
 
-    await ingestRun(id);
+    await ingestRun(uuid);
     return NextResponse.json({ message: "Upload successful" });
   } catch (err) {
     console.error(err);
@@ -64,20 +64,20 @@ export async function POST(
   }
 }
 
-async function ingestRun(runId: string) {
-  const alreadyIngested = await prisma.run.count({ where: { runId } });
+async function ingestRun(runUuid: string) {
+  const alreadyIngested = await prisma.run.count({ where: { uuid: runUuid } });
   if (alreadyIngested > 0) {
-    console.log("Run " + runId + " already ingested. Ignoring");
+    console.log("Run " + runUuid + " already ingested. Ignoring");
     return;
   }
 
-  console.log("Ingesting run " + runId);
-  const run = new FSAdapter(getRunUploadDir(runId));
+  console.log("Ingesting run " + runUuid);
+  const run = new FSAdapter(getRunUploadDir(runUuid));
   const metaHeader = await run.meta_header();
 
   const runInstance = await prisma.run.create({
     data: {
-      runId,
+      uuid: runUuid,
       epochTimeS: metaHeader.epoch_time_s,
       tickBaseUs: metaHeader.tick_base_us,
       metadata: {},
@@ -116,5 +116,5 @@ async function ingestRun(runId: string) {
     }),
   });
 
-  console.log("Ingested data for run " + runId);
+  console.log("Ingested data for run " + runUuid);
 }

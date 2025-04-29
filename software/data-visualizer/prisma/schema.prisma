@@ -10,7 +10,7 @@ datasource db {
 
 model Run {
   id         Int       @id @default(autoincrement())
-  runId      String    @unique
+  uuid       String    @unique
   epochTimeS Int
   tickBaseUs Int
   metadata   Json
