@@ -1,0 +1,33 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma/client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./db.sqlite"
+}
+
+model Run {
+  id         Int       @id @default(autoincrement())
+  runId      String    @unique
+  epochTimeS Int
+  tickBaseUs Int
+  metadata   Json
+  runData    RunData[]
+}
+
+model RunData {
+  id         Int        @id @default(autoincrement())
+  run        Run        @relation(fields: [runId], references: [id])
+  runId      Int // relation scalar field
+  streamType StreamType
+  streamId   String
+  tick       BigInt
+  data       String
+}
+
+enum StreamType {
+  POLLED
+  EVENT
+}
