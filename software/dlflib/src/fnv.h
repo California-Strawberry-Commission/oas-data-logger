@@ -61,8 +61,7 @@
 
 #include <sys/types.h>
 
-#define FNV_VERSION "5.0.2"	/* @(#) FNV Version */
-
+#define FNV_VERSION "5.0.2" /* @(#) FNV Version */
 
 typedef u_int32_t Fnv32_t;
 
@@ -78,7 +77,6 @@ extern Fnv32_t fnv_32_str(char *buf, Fnv32_t hashval);
 
 extern Fnv32_t fnv_32a_buf(void *buf, size_t len, Fnv32_t hashval);
 extern Fnv32_t fnv_32a_str(char *buf, Fnv32_t hashval);
-
 
 typedef u_int64_t Fnv64_t;
 
@@ -96,4 +94,3 @@ extern Fnv64_t fnv_64a_buf(void *buf, size_t len, Fnv64_t hashval);
 extern Fnv64_t fnv_64a_str(char *buf, Fnv64_t hashval);
 
 #endif /* __FNV_H__ */
-

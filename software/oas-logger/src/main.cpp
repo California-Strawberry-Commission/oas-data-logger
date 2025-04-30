@@ -181,6 +181,8 @@ void waitForSd() {
 }
 
 void initializeLogger() {
+  // logger.wifi("my_ssid", "12345678").syncTo("someurl.com", 3000);
+
   auto satellitesLogInterval{std::chrono::seconds(5)};
   POLL(logger, pos.satellites, satellitesLogInterval);
 

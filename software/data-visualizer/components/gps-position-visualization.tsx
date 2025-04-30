@@ -8,6 +8,10 @@ const MapComponent = dynamic(() => import("./map"), {
   ssr: false,
 });
 
+const STREAM_ID_LATITUDE = "pos.lat";
+const STREAM_ID_LONGITUDE = "pos.lng";
+const STREAM_ID_ALTITUDE = "pos.alt";
+
 type DataPoint = {
   streamId: string;
   tick: number;
@@ -27,13 +31,13 @@ export function toGpsPoints(dataPoints: DataPoint[]): GpsPoints {
   const altMap = new Map<number, number>();
   for (const dp of dataPoints) {
     switch (dp.streamId) {
-      case "pos.lat":
+      case STREAM_ID_LATITUDE:
         latMap.set(dp.tick, dp.data);
         break;
-      case "pos.lng":
+      case STREAM_ID_LONGITUDE:
         lngMap.set(dp.tick, dp.data);
         break;
-      case "pos.alt":
+      case STREAM_ID_ALTITUDE:
         altMap.set(dp.tick, dp.data);
         break;
     }
@@ -77,7 +81,9 @@ export default function GpsPositionVisualization({
     if (!runUuid) {
       return;
     }
-    fetch(`/api/runs/${runUuid}/streams?stream_ids=pos.lat,pos.lng,pos.alt`)
+    fetch(
+      `/api/runs/${runUuid}/streams?stream_ids=${STREAM_ID_LATITUDE},${STREAM_ID_LONGITUDE},${STREAM_ID_ALTITUDE}`
+    )
       .then((res) => res.json())
       .then((data) => {
         const dataPoints: DataPoint[] = data.map((p: any) => {
