@@ -6,7 +6,8 @@ import { resolve } from "path";
 
 export const dynamic = "force-dynamic";
 
-const UPLOAD_DIR = "uploads";
+// Vercel Serverless Functions only allow writes to /tmp
+const UPLOAD_DIR = "/tmp/oas/uploads";
 
 function getRunUploadDir(runUuid: string) {
   return resolve(UPLOAD_DIR, runUuid);
