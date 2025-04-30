@@ -19,7 +19,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
-    "dlflib-js": "file:../dlflib-js",
+    "dlflib-js": "*",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.503.0",
     "next": "15.3.1",

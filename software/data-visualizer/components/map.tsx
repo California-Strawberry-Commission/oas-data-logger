@@ -20,12 +20,12 @@ const ColorIcon = Icon.extend({
   },
 });
 
-// @ts-ignore
+// @ts-expect-error Leaflet typings don't support extending Icon like this, but it works at runtime
 const greenIcon = new ColorIcon({
   iconUrl: "/marker-icon-green.png",
 });
 
-// @ts-ignore
+// @ts-expect-error Leaflet typings don't support extending Icon like this, but it works at runtime
 const redIcon = new ColorIcon({
   iconUrl: "/marker-icon-red.png",
 });

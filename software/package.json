@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "workspaces": ["dlflib-js", "data-visualizer"],
+  "scripts": {
+    "postinstall": "npm --workspace=dlflib-js run build"
+  }
+}

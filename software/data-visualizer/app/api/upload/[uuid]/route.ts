@@ -87,6 +87,7 @@ async function ingestRun(runUuid: string) {
   const eventsData = await run.events_data();
   await prisma.runData.createMany({
     data: eventsData.map((d) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const data = d.data as any;
       const dataStr =
         typeof data === "object" ? JSON.stringify(data) : data.toString();
@@ -103,6 +104,7 @@ async function ingestRun(runUuid: string) {
   const polledData = await run.polled_data();
   await prisma.runData.createMany({
     data: polledData.map((d) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const data = d.data as any;
       const dataStr =
         typeof data === "object" ? JSON.stringify(data) : data.toString();

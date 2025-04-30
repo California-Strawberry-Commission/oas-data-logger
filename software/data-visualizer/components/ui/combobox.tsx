@@ -66,7 +66,9 @@ export default function Combobox({
                     const newValue = currentValue === value ? "" : currentValue;
                     setValue(newValue);
                     setOpen(false);
-                    onSelect && onSelect(newValue);
+                    if (onSelect) {
+                      onSelect(newValue);
+                    }
                   }}
                 >
                   <Check
