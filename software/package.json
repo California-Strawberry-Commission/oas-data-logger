@@ -2,6 +2,6 @@
   "private": true,
   "workspaces": ["dlflib-js", "data-visualizer"],
   "scripts": {
-    "postinstall": "npm --workspace=dlflib-js run build"
+    "postinstall": "npm --workspace=dlflib-js run build && npm --workspace=data-visualizer run db:generate"
   }
 }

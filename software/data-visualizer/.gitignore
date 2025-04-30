@@ -49,3 +49,4 @@ next-env.d.ts
 # app specific
 uploads
 *.sqlite
+.env*.local

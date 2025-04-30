@@ -35,10 +35,4 @@ The GPS module provides support for GPS, GLONASS, GALILEO, and QZSS, providing u
 
 `data-visualizer` is a Next.js app deployed on Vercel for uploading and visualizing OAS data. It depends on `dlflib-js`, which is used for parsing `.dlf` files, and so we use an npm workspace.
 
-#### Environment Setup
-
-```
-npm install -g dotenv-cli
-cd software
-npm install
-```
+See [README.md](data-visualizer/README.md).

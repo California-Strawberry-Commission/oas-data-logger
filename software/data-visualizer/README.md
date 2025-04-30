@@ -4,9 +4,11 @@ A Next.js app deployed on Vercel for visualizing OAS data.
 
 ## Environment setup
 
+As this project depends on `dlflib-js`, which is used for parsing `.dlf` files, we need to use an npm workspace in order to deploy on Vercel. For local development, follow these steps:
+
 ```
-npm install -g dotenv-cli
-cd data-visualizer
+npm install -g dotenv-cli vercel
+cd <repo root>/software
 npm install
 ```
 
@@ -26,8 +28,7 @@ npm run dev
 
 ## To make a DB schema change
 
-The recommended workflow with using Prisma alongside PlanetScale is to use
-`prisma db push` instead of `prisma migrate`.
+Whenever the Prisma schema is modified, run:
 
 ```
 npm run db:push
