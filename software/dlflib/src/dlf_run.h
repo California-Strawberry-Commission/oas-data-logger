@@ -20,8 +20,10 @@ using namespace std;
 // Todo: Performance timings
 
 class Run {
+ private:
   String _uuid;
   FS &_fs;
+  String _run_dir;
   dlf_file_state_e _status;
   SemaphoreHandle_t _sync;
   chrono::microseconds _tick_interval;
@@ -31,8 +33,8 @@ class Run {
   String _lockfile_path;
 
  public:
-  Run(FS &fs, streams_t all_streams, chrono::microseconds tick_interval,
-      Encodable &meta);
+  Run(FS &fs, String fs_dir, streams_t all_streams,
+      chrono::microseconds tick_interval, Encodable &meta);
 
   void create_lockfile();
 

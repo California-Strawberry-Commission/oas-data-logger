@@ -19,11 +19,13 @@
 #include <SD.h>
 #include <SPI.h>
 #include <TinyGPS++.h>
+#include <WiFiManager.h>
 #include <Wire.h>
 #include <dlf_logger.h>
 
 // For testing purposes
 #define USB_POWER_OVERRIDE false
+#define WAIT_FOR_VALID_TIME true
 
 // Serial
 #define SERIAL_BAUD_RATE 115200
@@ -53,6 +55,8 @@
 
 void waitForValidTime();
 void waitForSd();
+void initializeWifi();
+bool wifiCredentialsExist();
 void initializeLogger();
 void enableGps();
 void disableGps();
@@ -63,6 +67,8 @@ void sleepMonitorTask(void* args);
 CRGB leds[NUM_LEDS];
 TinyGPSPlus gps;
 ESP32Time rtc;
+WiFiManager wifiManager;
+unsigned long lastWifiReconnectAttemptMillis{0};
 CSCLogger logger{SD};
 run_handle_t runHandle{0};
 bool offloadMode{false};
@@ -111,6 +117,7 @@ void setup() {
     xTaskCreate(gpsTask, "gps", 4096, NULL, 5, NULL);
 
     waitForSd();
+    initializeWifi();
     initializeLogger();
 
     // Start logger run
@@ -123,6 +130,7 @@ void setup() {
     offloadMode = true;
 
     waitForSd();
+    initializeWifi();
     initializeLogger();
 
     FastLED.showColor(CRGB::Blue);
@@ -132,14 +140,22 @@ void setup() {
 }
 
 void loop() {
-  // No-op
-  delay(1000);
+  // Required when using WiFiManager in non-blocking mode
+  wifiManager.process();
+
+  // If disconnected, try reconnecting periodically
+  if (WiFi.status() != WL_CONNECTED && !wifiManager.getConfigPortalActive() &&
+      millis() - lastWifiReconnectAttemptMillis > 5000) {
+    Serial.println("WiFi not connected, retrying...");
+    WiFi.begin();  // reattempt connection with stored credentials (if any)
+    lastWifiReconnectAttemptMillis = millis();
+  }
 }
 
 void waitForValidTime() {
   // GPS module is the source of epoch time. Ensure that the received time is
   // valid. The PA1010D returns a default/bogus time when there is no valid fix.
-  while (true) {
+  while (WAIT_FOR_VALID_TIME) {
     FastLED.showColor(CRGB::Yellow);
 
     // Request up to 32 bytes of data (enough for a NMEA sentence) from GPS and
@@ -180,9 +196,31 @@ void waitForSd() {
   Serial.println("SD card connected");
 }
 
-void initializeLogger() {
-  // logger.wifi("my_ssid", "12345678").syncTo("someurl.com", 3000);
+void initializeWifi() {
+  WiFi.mode(WIFI_STA);
+  wifiManager.setConfigPortalBlocking(false);
+  wifiManager.setConfigPortalTimeout(120);
+  if (!wifiManager.autoConnect("OASDataLogger")) {
+    Serial.println(
+        "Wi-Fi credentials missing or failed to connect. Starting "
+        "ConfigPortal");
+  }
+}
 
+bool wifiCredentialsExist() {
+  wifi_config_t conf;
+  esp_err_t result = esp_wifi_get_config(WIFI_IF_STA, &conf);
+
+  if (result != ESP_OK) {
+    Serial.printf("esp_wifi_get_config failed: %d\n", result);
+    return false;
+  }
+
+  // Check if SSID is non-empty
+  return strlen((const char*)conf.sta.ssid) > 0;
+}
+
+void initializeLogger() {
   auto satellitesLogInterval{std::chrono::seconds(5)};
   POLL(logger, pos.satellites, satellitesLogInterval);
 
@@ -191,7 +229,8 @@ void initializeLogger() {
   POLL(logger, pos.lng, gpsDataLogInterval);
   POLL(logger, pos.alt, gpsDataLogInterval);
 
-  logger.begin();
+  // TODO: be able to configure upload endpoint in Access Point mode
+  logger.syncTo("someurl.com", 3000).begin();
 }
 
 void enableGps() {

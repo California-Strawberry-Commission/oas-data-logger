@@ -6,7 +6,6 @@
 #include <vector>
 
 #include "components/uploader_component.h"
-#include "components/wifi_component.h"
 #include "datastream/EventStream.hpp"
 #include "datastream/PolledStream.hpp"
 #include "dlf_logfile.hpp"
@@ -100,8 +99,6 @@ class CSCLogger : public DlfComponent {
   POLL(float)
 
   CSCLogger &syncTo(String server_ip, uint16_t port);
-
-  CSCLogger &wifi(String ssid, String password);
 
   void prune();
 };

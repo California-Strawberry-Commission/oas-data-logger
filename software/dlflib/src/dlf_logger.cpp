@@ -1,7 +1,6 @@
 #include "dlf_logger.h"
 
 #include "components/uploader_component.h"
-#include "components/wifi_component.h"
 
 CSCLogger::CSCLogger(FS &fs, String fs_dir) : _fs(fs), fs_dir(fs_dir) {
   ev = xEventGroupCreate();
@@ -18,8 +17,11 @@ run_handle_t CSCLogger::get_available_handle() {
 }
 
 bool CSCLogger::run_is_active(const char *uuid) {
-  for (size_t i = 0; i < MAX_RUNS; i++)
-    if (runs[i] && !strcmp(runs[i]->uuid(), uuid)) return true;
+  for (size_t i = 0; i < MAX_RUNS; i++) {
+    if (runs[i] && !strcmp(runs[i]->uuid(), uuid)) {
+      return true;
+    }
+  }
   return false;
 }
 
@@ -33,7 +35,7 @@ run_handle_t CSCLogger::start_run(Encodable meta,
   Serial.printf("Starting logging with a cycle time-base of %dus\n", tick_rate);
 
   // Initialize new run
-  dlf::Run *run = new dlf::Run(_fs, data_streams, tick_rate, meta);
+  dlf::Run *run = new dlf::Run(_fs, fs_dir, data_streams, tick_rate, meta);
 
   if (run == NULL) return 0;
 
@@ -79,14 +81,6 @@ CSCLogger &CSCLogger::syncTo(String host, uint16_t port) {
   return *this;
 }
 
-CSCLogger &CSCLogger::wifi(String ssid, String password) {
-  if (!hasComponent<UploaderComponent>()) {
-    addComponent(new WifiComponent(ssid, password));
-  }
-
-  return *this;
-}
-
 bool CSCLogger::begin() {
   Serial.println("CSC Logger init");
   prune();
@@ -99,7 +93,9 @@ bool CSCLogger::begin() {
   // begin subcomponents
   for (DlfComponent *&comp : components) {
     // Break recursion
-    if (comp == this) continue;
+    if (comp == this) {
+      continue;
+    }
 
     comp->begin();
   }
@@ -112,23 +108,25 @@ void CSCLogger::prune() {
 
   File run_dir;
   while (run_dir = root.openNextFile()) {
-    // Skip sys vol information file
-    if (!strcmp(run_dir.name(), "System Volume Information")) continue;
-
-    if (!run_dir.isDirectory()) continue;
+    // Skip files and sys vol information dir
+    if (!run_dir.isDirectory() ||
+        !strcmp(run_dir.name(), "System Volume Information")) {
+      continue;
+    }
 
     // Search for lockfiles. Delete run if found (was dirty when closed).
+    String run_dir_path = resolvePath({fs_dir, run_dir.name()});
     File run_file;
     while (run_file = run_dir.openNextFile()) {
       if (!strcmp(run_file.name(), LOCKFILE_NAME)) {
-        Serial.printf("Pruning %s\n", (fs_dir + run_dir.name()).c_str());
+        Serial.printf("Pruning %s\n", run_dir_path.c_str());
 
         run_dir.rewindDirectory();
         while (run_file = run_dir.openNextFile()) {
-          _fs.remove(fs_dir + run_dir.name() + "/" + run_file.name());
+          _fs.remove(resolvePath({run_dir_path, run_file.name()}));
         }
 
-        _fs.rmdir(fs_dir + run_dir.name());
+        _fs.rmdir(run_dir_path);
         break;
       }
     }
