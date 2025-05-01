@@ -152,6 +152,7 @@ void loop() {
   wifiManager.process();
 
   // If disconnected, try reconnecting periodically
+  // TODO: Add a way to enter Access Point mode on demand
   if (WiFi.status() != WL_CONNECTED && !wifiManager.getConfigPortalActive() &&
       millis() - lastWifiReconnectAttemptMillis > 5000) {
     Serial.println("WiFi not connected, retrying...");
@@ -353,6 +354,7 @@ void sleepMonitorTask(void* args) {
   if (runHandle) {
     logger.stop_run(runHandle);
     Serial.println("[Sleep Monitor] Stopped active run");
+    // TODO: Wait for upload of new run
   }
 
   // Turn off peripherals
