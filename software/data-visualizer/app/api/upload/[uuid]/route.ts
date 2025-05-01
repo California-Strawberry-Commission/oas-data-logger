@@ -52,8 +52,10 @@ export async function POST(
       }
     }
 
-    await ingestRun(uuid);
-    return NextResponse.json({ message: "Upload successful" });
+    const res = await ingestRun(uuid);
+    return NextResponse.json({
+      message: res ? "Upload successful" : "Run already exists. Ignored",
+    });
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });
@@ -65,11 +67,11 @@ export async function POST(
   }
 }
 
-async function ingestRun(runUuid: string) {
+async function ingestRun(runUuid: string): Promise<boolean> {
   const alreadyIngested = await prisma.run.count({ where: { uuid: runUuid } });
   if (alreadyIngested > 0) {
     console.log("Run " + runUuid + " already ingested. Ignoring");
-    return;
+    return false;
   }
 
   console.log("Ingesting run " + runUuid);
@@ -120,4 +122,5 @@ async function ingestRun(runUuid: string) {
   });
 
   console.log("Ingested data for run " + runUuid);
+  return true;
 }

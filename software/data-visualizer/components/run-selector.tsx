@@ -8,6 +8,10 @@ type Run = {
   epochTimeS: number;
 };
 
+function truncate(str: string, maxLength: number) {
+  return str.length > maxLength ? str.slice(0, maxLength - 3) + "..." : str;
+}
+
 export default function RunSelector({
   onSelect,
 }: {
@@ -27,7 +31,7 @@ export default function RunSelector({
   }, []);
 
   const runItems = runs.map((run: Run) => {
-    const label = `${run.uuid} (${new Date(
+    const label = `${truncate(run.uuid, 16)} (${new Date(
       run.epochTimeS * 1000
     ).toLocaleString()})`;
     return { value: run.uuid, label };

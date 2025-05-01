@@ -1,5 +1,7 @@
 #include "uploader_component.h"
 
+#include <WiFiClientSecure.h>
+
 #include "dlf_cfg.h"
 #include "dlf_logger.h"
 
@@ -43,9 +45,9 @@ void UploaderComponent::onWifiConnected(arduino_event_id_t event,
   xEventGroupSetBits(wifiEvent_, WLAN_READY);
 }
 
-// https://arduino.stackexchange.com/questions/93818/arduinohttpclient-post-multipart-form-data-from-sd-card-returning-400-bad-reques
 bool UploaderComponent::uploadRun(File runDir, String path) {
-  WiFiClient client;
+  WiFiClientSecure client;
+  client.setInsecure();
 
   if (!runDir) {
     Serial.println("[UploaderComponent] No file to upload");
@@ -65,63 +67,76 @@ bool UploaderComponent::uploadRun(File runDir, String path) {
     return false;
   }
 
-  // multipart boundary. Sent before each file.
+  // Create request
+  // Note that we need to manually construct the multipart/form-data body, and
+  // each file must be streamed (avoid fully loading into memory)
+  const char *boundary = "dlfboundary";
   const char *boundaryTemplate =
-      "\r\n--boundary1\r\n"
+      "--dlfboundary\r\n"
       "Content-Disposition: form-data; name=\"files\"; filename=\"%s\"\r\n"
       "Content-Type: application/octet-stream\r\n\r\n";
+  const char *endBoundary = "--dlfboundary--\r\n";
 
-  // after this, post the file data.
-  const char *closingContent = "\r\n--boundary1--\r\n";
-
-  // Calculate overall message length
-  // -2 to account for leading \r\n for initial boundary template actually being
-  // part of header
-  size_t msgLength = strlen(closingContent) - 2;
-
-  for (File f; f = runDir.openNextFile();) {
-    msgLength += snprintf(NULL, 0, boundaryTemplate, f.name()) + f.size();
-    f.close();
-  }
+  // First, calculate the content length (which needs to go into the request
+  // header)
+  size_t contentLength = 0;
   runDir.rewindDirectory();
+  File file = runDir.openNextFile();
+  while (file) {
+    contentLength += snprintf(NULL, 0, boundaryTemplate, file.name());
+    contentLength += file.size();
+    contentLength += 2;  // for trailing \r\n after file content
+    file.close();
+    file = runDir.openNextFile();
+  }
+  contentLength += strlen(endBoundary);
 
-  // Send HTTP header
-  client.printf(
-      "POST %s HTTP/1.1\r\n"
-      "Host: %s\r\n"
-      "Content-Length: %ld\r\n"
-      "Content-Type: multipart/form-data; boundary=boundary1\r\n",
-      path.c_str(), host_, msgLength);
+  // Send POST request header
+  Serial.println("[UploaderComponent] Sending upload request...");
 
-  // Send files
+  client.printf("POST %s HTTP/1.1\r\n", path.c_str());
+  client.printf("Host: %s\r\n", host_.c_str());
+  client.printf("Content-Type: multipart/form-data; boundary=%s\r\n", boundary);
+  client.printf("Content-Length: %d\r\n", contentLength);
+  client.println("Connection: close");
+  client.println();  // end of headers
+
+  // Send boundaries and file data
+  runDir.rewindDirectory();
   const size_t chunkSize = 128;
   uint8_t buf[chunkSize];
-
-  for (File f; f = runDir.openNextFile();) {
+  file = runDir.openNextFile();
+  while (file) {
     // Send boundary
-    client.printf(boundaryTemplate, f.name());
+    client.printf(boundaryTemplate, file.name());
 
     // Send file data
-    while (f.available()) {
-      size_t num_read = f.read(buf, chunkSize);
-      client.write(buf, num_read);
+    while (file.available()) {
+      size_t len = file.read(buf, chunkSize);
+      client.write(buf, len);
     }
-    f.close();
+    client.print("\r\n");
+    file.close();
+    file = runDir.openNextFile();
   }
-  client.print(closingContent);
+  client.print(endBoundary);
 
   // Wait for response
-  unsigned long timeout = millis();
-  while (client.available() == 0) {
-    if (millis() - timeout > 5000) {
-      Serial.println("[UploaderComponent] Client RX Timeout");
+  unsigned long startMillis = millis();
+  while (client.connected() && millis() - startMillis < 5000) {
+    if (client.available()) {
+      // We don't need to process the full response body, so return as soon as
+      // we receive a line
+      String line = client.readStringUntil('\n');
+      Serial.println(line);
       client.stop();
-      return false;
+      return true;
     }
   }
-  client.stop();
 
-  return true;
+  Serial.println("[UploaderComponent] No response received within 5 seconds");
+  client.stop();
+  return false;
 }
 
 void UploaderComponent::syncTask(void *arg) {

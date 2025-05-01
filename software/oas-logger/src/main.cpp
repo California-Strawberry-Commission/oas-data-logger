@@ -23,35 +23,43 @@
 #include <Wire.h>
 #include <dlf_logger.h>
 
-// For testing purposes
-#define USB_POWER_OVERRIDE false
-#define WAIT_FOR_VALID_TIME true
-
 // Serial
-#define SERIAL_BAUD_RATE 115200
+const unsigned long SERIAL_BAUD_RATE{115200};
 
 // Input pins
 // Note: GPIO13 is also shared with the built-in LED (not the NeoPixel LED). The
 // built-in LED is used as a USB power indicator.
-#define PIN_USB_POWER GPIO_NUM_13
-#define PIN_SLEEP_BUTTON GPIO_NUM_35
+const gpio_num_t PIN_USB_POWER{GPIO_NUM_13};
+const gpio_num_t PIN_SLEEP_BUTTON{GPIO_NUM_35};
 
 // SD (SPI)
-#define PIN_SD_SCK GPIO_NUM_19
-#define PIN_SD_MOSI GPIO_NUM_21
-#define PIN_SD_MISO GPIO_NUM_22
-#define PIN_SD_CS GPIO_NUM_14
+const gpio_num_t PIN_SD_SCK{GPIO_NUM_19};
+const gpio_num_t PIN_SD_MOSI{GPIO_NUM_21};
+const gpio_num_t PIN_SD_MISO{GPIO_NUM_22};
+const gpio_num_t PIN_SD_CS{GPIO_NUM_14};
 
 // NeoPixel LED
 #define LED_PIN PIN_NEOPIXEL
-#define NUM_LEDS 1
-#define LED_BRIGHTNESS 10
 #define LED_TYPE WS2812
 #define LED_COLOR_ORDER GRB
+const int NUM_LEDS{1};
+const uint8_t LED_BRIGHTNESS{10};
 
 // GPS
-#define I2C_ADDR_GPS 0x10
-#define PIN_GPS_WAKE GPIO_NUM_32
+const int I2C_ADDR_GPS{0x10};
+const gpio_num_t PIN_GPS_WAKE{GPIO_NUM_32};
+
+// WIFI
+const unsigned long WIFI_CONFIG_AP_TIMEOUT_S{120};
+const char* WIFI_CONFIG_AP_NAME{"OASDataLogger"};
+
+// TODO: Configure upload endpoint in Access Point mode
+const char* UPLOAD_HOST{"oas-data-logger.vercel.app"};
+const uint16_t UPLOAD_PORT{443};
+
+// For testing purposes
+const bool USB_POWER_OVERRIDE{false};
+const bool WAIT_FOR_VALID_TIME{true};
 
 void waitForValidTime();
 void waitForSd();
@@ -199,8 +207,8 @@ void waitForSd() {
 void initializeWifi() {
   WiFi.mode(WIFI_STA);
   wifiManager.setConfigPortalBlocking(false);
-  wifiManager.setConfigPortalTimeout(120);
-  if (!wifiManager.autoConnect("OASDataLogger")) {
+  wifiManager.setConfigPortalTimeout(WIFI_CONFIG_AP_TIMEOUT_S);
+  if (!wifiManager.autoConnect(WIFI_CONFIG_AP_NAME)) {
     Serial.println(
         "Wi-Fi credentials missing or failed to connect. Starting "
         "ConfigPortal");
@@ -229,8 +237,7 @@ void initializeLogger() {
   POLL(logger, pos.lng, gpsDataLogInterval);
   POLL(logger, pos.alt, gpsDataLogInterval);
 
-  // TODO: be able to configure upload endpoint in Access Point mode
-  logger.syncTo("someurl.com", 3000).begin();
+  logger.syncTo(UPLOAD_HOST, UPLOAD_PORT).begin();
 }
 
 void enableGps() {

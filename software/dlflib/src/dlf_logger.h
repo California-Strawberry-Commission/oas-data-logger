@@ -98,7 +98,7 @@ class CSCLogger : public DlfComponent {
   POLL(double)
   POLL(float)
 
-  CSCLogger &syncTo(String server_ip, uint16_t port);
+  CSCLogger &syncTo(String host, uint16_t port);
 
   void prune();
 };
