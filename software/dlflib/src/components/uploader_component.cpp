@@ -1,39 +1,35 @@
-#include "dlf_sync.h"
+#include "uploader_component.h"
 
 #include <HTTPClient.h>
 #include <WiFi.h>
 
 #include "dlf_cfg.h"
 #include "dlf_logger.h"
-#include "dlf_wifi.h"
+#include "wifi_component.h"
 
-CSCDBSynchronizer::CSCDBSynchronizer(FS &fs, String fs_dir, size_t max_retries)
-    : _fs(fs), dir(fs_dir), max_retries(max_retries) {}
+UploaderComponent::UploaderComponent(FS &fs, String fsDir, String host,
+                                     uint16_t port)
+    : fs_(fs), dir_(fsDir), host_(host), port_(port) {}
 
-void CSCDBSynchronizer::syncTo(String server_ip, uint16_t port) {
-  this->server_ip = server_ip;
-  this->port = port;
-}
-
-bool CSCDBSynchronizer::begin() {
-  Serial.println("Sync begin");
-  xTaskCreate(task_sync, "sync", 4096, this, 5, NULL);
+bool UploaderComponent::begin() {
+  Serial.println("UploaderComponent begin");
+  xTaskCreate(taskSync, "sync", 4096, this, 5, NULL);
 
   return true;
 }
 
 // https://arduino.stackexchange.com/questions/93818/arduinohttpclient-post-multipart-form-data-from-sd-card-returning-400-bad-reques
-bool CSCDBSynchronizer::upload_run(File run_dir, String path) {
+bool UploaderComponent::uploadRun(File runDir, String path) {
   WiFiClient client;
 
-  if (!run_dir) {
+  if (!runDir) {
     Serial.println("No file.");
     return false;
   }
 
   // Try to init client
   for (int retries = 0;
-       retries++ < 3 && !client.connect(server_ip.c_str(), port);) {
+       retries++ < 3 && !client.connect(host_.c_str(), port_);) {
     Serial.println("Failed to connect. Retrying in 1s...");
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
@@ -44,24 +40,24 @@ bool CSCDBSynchronizer::upload_run(File run_dir, String path) {
   }
 
   // multipart boundary. Sent before each file.
-  const char *boundary_template =
+  const char *boundaryTemplate =
       "\r\n--boundary1\r\n"
       "Content-Disposition: form-data; name=\"files\"; filename=\"%s\"\r\n"
       "Content-Type: application/octet-stream\r\n\r\n";
 
   // after this, post the file data.
-  const char *closing_content = "\r\n--boundary1--\r\n";
+  const char *closingContent = "\r\n--boundary1--\r\n";
 
   // Calculate overall message length
   // -2 to account for leading \r\n for initial boundary template actually being
   // part of header
-  size_t msg_length = strlen(closing_content) - 2;
+  size_t msgLength = strlen(closingContent) - 2;
 
-  for (File f; f = run_dir.openNextFile();) {
-    msg_length += snprintf(NULL, 0, boundary_template, f.name()) + f.size();
+  for (File f; f = runDir.openNextFile();) {
+    msgLength += snprintf(NULL, 0, boundaryTemplate, f.name()) + f.size();
     f.close();
   }
-  run_dir.rewindDirectory();
+  runDir.rewindDirectory();
 
   // Send HTTP header
   client.printf(
@@ -69,24 +65,24 @@ bool CSCDBSynchronizer::upload_run(File run_dir, String path) {
       "Host: %s\r\n"
       "Content-Length: %ld\r\n"
       "Content-Type: multipart/form-data; boundary=boundary1\r\n",
-      path.c_str(), server_ip, msg_length);
+      path.c_str(), host_, msgLength);
 
   // Send files
-  const size_t chunk_size = 128;
-  uint8_t buf[chunk_size];
+  const size_t chunkSize = 128;
+  uint8_t buf[chunkSize];
 
-  for (File f; f = run_dir.openNextFile();) {
+  for (File f; f = runDir.openNextFile();) {
     // Send boundary
-    client.printf(boundary_template, f.name());
+    client.printf(boundaryTemplate, f.name());
 
     // Send file data
     while (f.available()) {
-      size_t num_read = f.read(buf, chunk_size);
+      size_t num_read = f.read(buf, chunkSize);
       client.write(buf, num_read);
     }
     f.close();
   }
-  client.print(closing_content);
+  client.print(closingContent);
 
   // Wait for response
   unsigned long timeout = millis();
@@ -102,24 +98,25 @@ bool CSCDBSynchronizer::upload_run(File run_dir, String path) {
   return true;
 }
 
-void CSCDBSynchronizer::task_sync(void *arg) {
-  CSCDBSynchronizer *a = static_cast<CSCDBSynchronizer *>(arg);
-  CSCWifiClient *c = a->get_component<CSCWifiClient>();
-  CSCLogger *l = a->get_component<CSCLogger>();
+void UploaderComponent::taskSync(void *arg) {
+  UploaderComponent *uploaderComponent = static_cast<UploaderComponent *>(arg);
+  WifiComponent *wifiComponent =
+      uploaderComponent->getComponent<WifiComponent>();
+  CSCLogger *logger = uploaderComponent->getComponent<CSCLogger>();
 
-  if (!l) {
+  if (!logger) {
     Serial.println("NO LOGGER??");
     vTaskDelete(NULL);
   }
 
-  if (!c) {
+  if (!wifiComponent) {
     Serial.println("Cannot sync - no wifi client.");
     vTaskDelete(NULL);
   }
 
   while (true) {
     // Make sure SD is inserted and provided path is a dir
-    File root = a->_fs.open(a->dir);
+    File root = uploaderComponent->fs_.open(uploaderComponent->dir_);
     if (!root) {
       Serial.println("No storage");
       vTaskDelay(pdMS_TO_TICKS(1000));
@@ -132,33 +129,39 @@ void CSCDBSynchronizer::task_sync(void *arg) {
     }
 
     // Wait for wifi to be connected
-    xEventGroupWaitBits(c->ev, CSCWifiClient::WLAN_READY, pdFALSE, pdTRUE,
-                        portMAX_DELAY);
+    xEventGroupWaitBits(wifiComponent->ev, WifiComponent::WLAN_READY, pdFALSE,
+                        pdTRUE, portMAX_DELAY);
 
     Serial.println("wlan ready - Beginning sync");
 
-    File run_dir;
-    int num_failures = 0;
-    while (xEventGroupGetBits(c->ev) & CSCWifiClient::WLAN_READY &&
-           (run_dir = root.openNextFile()) && num_failures < 3) {
+    File runDir;
+    int numFailures = 0;
+    while (xEventGroupGetBits(wifiComponent->ev) & WifiComponent::WLAN_READY &&
+           (runDir = root.openNextFile()) && numFailures < 3) {
       // Skip sys vol information file
-      if (!strcmp(run_dir.name(), "System Volume Information")) continue;
+      if (!strcmp(runDir.name(), "System Volume Information")) {
+        continue;
+      }
 
       // Skip syncing in-progress run directories
-      if (l->run_is_active(run_dir.name())) continue;
+      if (logger->run_is_active(runDir.name())) {
+        continue;
+      }
 
-      Serial.printf("SYNC: %s\n", run_dir.name());
+      Serial.printf("SYNC: %s\n", runDir.name());
 
       // only sync run directories
-      if (!run_dir.isDirectory()) continue;
+      if (!runDir.isDirectory()) {
+        continue;
+      }
 
-      String path = String("/api/upload/") + run_dir.name();
-      num_failures += !a->upload_run(run_dir, path);
+      String path = String("/api/upload/") + runDir.name();
+      numFailures += !uploaderComponent->uploadRun(runDir, path);
     }
     root.close();
-    Serial.printf("Done syncing (failures: %d)\n", num_failures);
+    Serial.printf("Done syncing (failures: %d)\n", numFailures);
 
-    xEventGroupWaitBits(l->ev, CSCLogger::NEW_RUN, pdTRUE, pdTRUE,
+    xEventGroupWaitBits(logger->ev, CSCLogger::NEW_RUN, pdTRUE, pdTRUE,
                         portMAX_DELAY);
   }
 }
