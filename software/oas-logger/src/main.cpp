@@ -59,6 +59,7 @@ const uint16_t UPLOAD_PORT{443};
 
 // For testing purposes
 const bool USB_POWER_OVERRIDE{false};
+const bool USB_POWER_OVERRIDE_VALUE{false};
 const bool WAIT_FOR_VALID_TIME{true};
 
 void waitForValidTime();
@@ -106,7 +107,7 @@ void setup() {
   pinMode(PIN_GPS_WAKE, OUTPUT);
 
   // Add delay to give time for serial to initialize
-  delay(1000);
+  vTaskDelay(pdMS_TO_TICKS(1000));
 
   // Start sleep monitor task to trigger sleep mode when USB power is
   // disconnected, or sleep button is pressed
@@ -141,9 +142,14 @@ void setup() {
     initializeWifi();
     initializeLogger();
 
-    FastLED.showColor(CRGB::Blue);
+    FastLED.showColor(CRGB::Yellow);
 
-    // TODO: add indication when upload is complete (and maybe go back to sleep)
+    // Just in case for logger sync/upload to start
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    logger.waitForSyncCompletion();
+    FastLED.showColor(CRGB::Blue);
+    // TODO: Maybe go back to sleep after sync complete
   }
 }
 
@@ -186,9 +192,9 @@ void waitForValidTime() {
       break;
     }
 
-    delay(250);
+    vTaskDelay(pdMS_TO_TICKS(250));
     FastLED.showColor(CRGB::Black);
-    delay(250);
+    vTaskDelay(pdMS_TO_TICKS(250));
   }
 }
 
@@ -198,9 +204,9 @@ void waitForSd() {
   SPI.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
   while (!SD.begin(PIN_SD_CS)) {
     FastLED.showColor(CRGB::Red);
-    delay(500);
+    vTaskDelay(pdMS_TO_TICKS(500));
     FastLED.showColor(CRGB::Black);
-    delay(500);
+    vTaskDelay(pdMS_TO_TICKS(500));
   }
   Serial.println("SD card connected");
 }
@@ -267,9 +273,9 @@ void enableGps() {
       break;
     }
 
-    delay(500);
+    vTaskDelay(pdMS_TO_TICKS(500));
     FastLED.showColor(CRGB::Black);
-    delay(500);
+    vTaskDelay(pdMS_TO_TICKS(500));
   }
 
   digitalWrite(PIN_GPS_WAKE, LOW);
@@ -292,7 +298,13 @@ void disableGps() {
   Serial.println("GPS disabled");
 }
 
-bool hasUsbPower() { return USB_POWER_OVERRIDE || digitalRead(PIN_USB_POWER); }
+bool hasUsbPower() {
+  if (USB_POWER_OVERRIDE) {
+    return USB_POWER_OVERRIDE_VALUE;
+  }
+
+  return digitalRead(PIN_USB_POWER);
+}
 
 /**
  * Polls GPS data from I2C.
@@ -317,7 +329,7 @@ void gpsTask(void* args) {
       pos.alt = gps.altitude.meters();
     }
 
-    delay(100);
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
@@ -326,7 +338,7 @@ void gpsTask(void* args) {
  * deep sleep. The device will be woken up when USB power is available again.
  */
 void sleepMonitorTask(void* args) {
-  delay(5000);
+  vTaskDelay(pdMS_TO_TICKS(5000));
 
   bool usbSleepTriggered{false};
   while (true) {
@@ -348,13 +360,18 @@ void sleepMonitorTask(void* args) {
       Serial.println("[Sleep Monitor] USB power disconnected");
     }
 
-    delay(1000);
+    vTaskDelay(pdMS_TO_TICKS(1000));
   }
 
+  FastLED.showColor(CRGB::Orange);
+
+  // If there is an active run, stop it and attempt to upload its data
   if (runHandle) {
     logger.stop_run(runHandle);
     Serial.println("[Sleep Monitor] Stopped active run");
-    // TODO: Wait for upload of new run
+    // Just in case for logger sync/upload to start
+    vTaskDelay(pdMS_TO_TICKS(100));
+    logger.waitForSyncCompletion();
   }
 
   // Turn off peripherals

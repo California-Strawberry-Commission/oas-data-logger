@@ -1,6 +1,6 @@
 # OAS Data Visualizer
 
-A Next.js app deployed on Vercel for visualizing OAS data.
+A Next.js app deployed on Vercel (using Neon PostgreSQL for the database) for visualizing OAS data.
 
 ## Environment setup
 
@@ -25,6 +25,8 @@ Run app:
 ```
 npm run dev
 ```
+
+Note: when running locally, the development branch DB on Neon is used.
 
 ## To make a DB schema change
 

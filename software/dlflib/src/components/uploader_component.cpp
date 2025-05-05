@@ -12,13 +12,15 @@ UploaderComponent::UploaderComponent(FS &fs, String fsDir, String host,
 bool UploaderComponent::begin() {
   Serial.println("[UploaderComponent] begin");
   wifiEvent_ = xEventGroupCreate();
+  syncEvent_ = xEventGroupCreate();
 
-  // Initial state
+  // Initial states
   if (WiFi.status() == WL_CONNECTED) {
     xEventGroupSetBits(wifiEvent_, WLAN_READY);
   } else {
     xEventGroupClearBits(wifiEvent_, WLAN_READY);
   }
+  xEventGroupSetBits(syncEvent_, SYNC_COMPLETE);
 
   // State change callbacks
   WiFi.onEvent(std::bind(&UploaderComponent::onWifiDisconnected, this,
@@ -139,6 +141,11 @@ bool UploaderComponent::uploadRun(File runDir, String path) {
   return false;
 }
 
+void UploaderComponent::waitForSyncCompletion() {
+  xEventGroupWaitBits(syncEvent_, SYNC_COMPLETE, pdFALSE, pdTRUE,
+                      portMAX_DELAY);
+}
+
 void UploaderComponent::syncTask(void *arg) {
   UploaderComponent *uploaderComponent = static_cast<UploaderComponent *>(arg);
   CSCLogger *logger = uploaderComponent->getComponent<CSCLogger>();
@@ -168,7 +175,11 @@ void UploaderComponent::syncTask(void *arg) {
     xEventGroupWaitBits(uploaderComponent->wifiEvent_, WLAN_READY, pdFALSE,
                         pdTRUE, portMAX_DELAY);
 
-    Serial.println("[UploaderComponent][syncTask] wlan ready - Beginning sync");
+    Serial.println("[UploaderComponent][syncTask] WLAN ready - beginning sync");
+
+    xEventGroupClearBits(uploaderComponent->syncEvent_, SYNC_COMPLETE);
+
+    // TODO: Don't attempt to sync runs that have already been synced
 
     File runDir;
     int numFailures = 0;
@@ -192,6 +203,8 @@ void UploaderComponent::syncTask(void *arg) {
     root.close();
     Serial.printf("[UploaderComponent][syncTask] Done syncing (failures: %d)\n",
                   numFailures);
+
+    xEventGroupSetBits(uploaderComponent->syncEvent_, SYNC_COMPLETE);
 
     xEventGroupWaitBits(logger->ev, CSCLogger::NEW_RUN, pdTRUE, pdTRUE,
                         portMAX_DELAY);

@@ -81,6 +81,12 @@ CSCLogger &CSCLogger::syncTo(String host, uint16_t port) {
   return *this;
 }
 
+void CSCLogger::waitForSyncCompletion() {
+  if (hasComponent<UploaderComponent>()) {
+    getComponent<UploaderComponent>()->waitForSyncCompletion();
+  }
+}
+
 bool CSCLogger::begin() {
   Serial.println("CSC Logger init");
   prune();

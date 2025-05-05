@@ -26,10 +26,9 @@ The GPS module provides support for GPS, GLONASS, GALILEO, and QZSS, providing u
 
 ## Software
 
-- IDE: PlatformIO (IDE for embedded systems, based on VSCode)
-- Framework: Arduino
-- Platform: ESP32
-- OS: FreeRTOS
+### ESP32
+
+`oas-logger` is a PlatformIO (IDE for embedded systems, based on VSCode) project for the ESP32 to log data from various attached sensors (currently only GPS) using the Arduino API. It depends on `dlflib`, which is used for writing and uploading log data.
 
 ### Server
 

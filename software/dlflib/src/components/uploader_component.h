@@ -4,6 +4,8 @@
 #include <FS.h>
 #include <WiFi.h>
 
+#include <functional>
+
 #include "dlf_component.h"
 
 class UploaderComponent : public DlfComponent {
@@ -13,10 +15,14 @@ class UploaderComponent : public DlfComponent {
   UploaderComponent(FS &fs, String fsDir, String host, uint16_t port);
   bool begin();
   bool uploadRun(File runDir, String path);
+  void waitForSyncCompletion();
 
  private:
   enum WifiEvent {
     WLAN_READY = 1,
+  };
+  enum SyncEvent {
+    SYNC_COMPLETE = 1,
   };
 
   // https://github.com/espressif/arduino-esp32/blob/master/libraries/WiFi/examples/WiFiClientEvents/WiFiClientEvents.ino
@@ -28,5 +34,8 @@ class UploaderComponent : public DlfComponent {
   String host_;
   uint16_t port_;
   size_t maxRetries_;
+  // Used to notify when WiFi connected/disconnected
   EventGroupHandle_t wifiEvent_;
+  // Used to notify when sync is in progress/complete
+  EventGroupHandle_t syncEvent_;
 };
