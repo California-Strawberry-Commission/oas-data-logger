@@ -8,6 +8,7 @@ const MapComponent = dynamic(() => import("./map"), {
   ssr: false,
 });
 
+const STREAM_ID_SATELLITES = "pos.satellites";
 const STREAM_ID_LATITUDE = "pos.lat";
 const STREAM_ID_LONGITUDE = "pos.lng";
 const STREAM_ID_ALTITUDE = "pos.alt";
@@ -26,11 +27,15 @@ type GpsPoints = {
 
 export function toGpsPoints(dataPoints: DataPoint[]): GpsPoints {
   // Split out datapoints into lat, lng, and alt
+  const satellitesMap = new Map<number, number>();
   const latMap = new Map<number, number>();
   const lngMap = new Map<number, number>();
   const altMap = new Map<number, number>();
   for (const dp of dataPoints) {
     switch (dp.streamId) {
+      case STREAM_ID_SATELLITES:
+        satellitesMap.set(dp.tick, dp.data);
+        break;
       case STREAM_ID_LATITUDE:
         latMap.set(dp.tick, dp.data);
         break;
@@ -46,12 +51,16 @@ export function toGpsPoints(dataPoints: DataPoint[]): GpsPoints {
   // Combine lat, lng, and alt based on tick
   const combined: { tick: number; lat: number; lng: number; alt?: number }[] =
     [];
-  for (const [tick, lat] of latMap.entries()) {
+  for (const [tick, satellites] of satellitesMap.entries()) {
+    const lat = latMap.get(tick);
     const lng = lngMap.get(tick);
-    if (lng !== undefined) {
-      const alt = altMap.get(tick);
-      combined.push({ tick, lat, lng, alt });
+    const alt = altMap.get(tick);
+
+    if (satellites === 0 || lat === undefined || lng === undefined) {
+      continue;
     }
+
+    combined.push({ tick, lat, lng, alt });
   }
 
   // Sort by ascending tick
@@ -82,7 +91,7 @@ export default function GpsPositionVisualization({
       return;
     }
     fetch(
-      `/api/runs/${runUuid}/streams?stream_ids=${STREAM_ID_LATITUDE},${STREAM_ID_LONGITUDE},${STREAM_ID_ALTITUDE}`
+      `/api/runs/${runUuid}/streams?stream_ids=${STREAM_ID_SATELLITES},${STREAM_ID_LATITUDE},${STREAM_ID_LONGITUDE},${STREAM_ID_ALTITUDE}`
     )
       .then((res) => res.json())
       .then((data) => {
