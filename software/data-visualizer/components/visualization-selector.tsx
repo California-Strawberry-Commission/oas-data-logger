@@ -67,6 +67,7 @@ export default function VisualizationSelector({
         placeholder={"Select visualization..."}
         searchPlaceholder={"Search visualization..."}
         onSelect={(viz) => setSelectedVisualization(viz)}
+        defaultSelected={items[0]?.value}
       />
       {run && renderVisualization(run, selectedVisualization)}
     </>

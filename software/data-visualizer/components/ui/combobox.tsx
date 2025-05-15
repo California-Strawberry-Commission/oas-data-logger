@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { Check, ChevronsUpDown } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export type Item = {
   value: string;
@@ -28,14 +28,25 @@ export default function Combobox({
   placeholder = "",
   searchPlaceholder = "",
   onSelect,
+  defaultSelected,
 }: {
   items: Item[];
   placeholder?: string;
   searchPlaceholder?: string;
   onSelect?: (value: string) => void;
+  defaultSelected?: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const [value, setValue] = useState("");
+  const [open, setOpen] = useState<boolean>(false);
+  const [value, setValue] = useState<string>("");
+
+  useEffect(() => {
+    if (!value && defaultSelected) {
+      setValue(defaultSelected);
+      if (onSelect) {
+        onSelect(defaultSelected);
+      }
+    }
+  }, [defaultSelected, value]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

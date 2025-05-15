@@ -43,6 +43,7 @@ export default function RunSelector({
       placeholder={"Select run..."}
       searchPlaceholder={"Search run..."}
       onSelect={onSelect}
+      defaultSelected={runItems[0]?.value}
     />
   );
 }
