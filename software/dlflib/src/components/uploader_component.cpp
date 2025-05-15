@@ -193,9 +193,10 @@ void UploaderComponent::syncTask(void *arg) {
         continue;
       }
 
+      String runDirPath = resolvePath({uploaderComponent->dir_, runDir.name()});
+
       // Skip syncing runs with uploaded marker
       bool uploadMarkerFound = false;
-      String runDirPath = resolvePath({uploaderComponent->dir_, runDir.name()});
       File file;
       while (file = runDir.openNextFile()) {
         if (!strcmp(file.name(), UPLOAD_MARKER_FILE_NAME)) {
@@ -218,17 +219,31 @@ void UploaderComponent::syncTask(void *arg) {
       bool uploadSuccess = uploaderComponent->uploadRun(runDir, path);
       numFailures += !uploadSuccess;
 
-      // Add upload marker
-      if (uploadSuccess && uploaderComponent->options_.markAfterUpload) {
-        Serial.printf(
-            "[UploaderComponent][syncTask] Upload successful. Adding uploaded "
-            "marker to %s\n",
-            runDir.name());
-        String markerFilePath =
-            resolvePath({runDirPath, UPLOAD_MARKER_FILE_NAME});
-        File f = uploaderComponent->fs_.open(markerFilePath, "w", true);
-        f.write(0);
-        f.close();
+      if (uploadSuccess) {
+        Serial.println("[UploaderComponent][syncTask] Upload successful");
+        if (uploaderComponent->options_.deleteAfterUpload) {
+          // Remove run data
+          runDir.rewindDirectory();
+          while (file = runDir.openNextFile()) {
+            uploaderComponent->fs_.remove(
+                resolvePath({runDirPath, file.name()}));
+          }
+          uploaderComponent->fs_.rmdir(runDirPath);
+          Serial.printf(
+              "[UploaderComponent][syncTask] Removed run data for %s\n",
+              runDir.name());
+        } else if (uploaderComponent->options_.markAfterUpload) {
+          // Add upload marker
+          String markerFilePath =
+              resolvePath({runDirPath, UPLOAD_MARKER_FILE_NAME});
+          File f = uploaderComponent->fs_.open(markerFilePath, "w", true);
+          f.write(0);
+          f.close();
+          Serial.printf("[UploaderComponent][syncTask] Marked %s as uploaded\n",
+                        runDir.name());
+        }
+      } else {
+        Serial.println("[UploaderComponent][syncTask] Upload failed");
       }
     }
 
