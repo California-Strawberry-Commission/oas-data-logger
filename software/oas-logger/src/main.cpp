@@ -23,6 +23,12 @@
 #include <Wire.h>
 #include <dlf_logger.h>
 
+// Various flags for testing purposes
+const bool USB_POWER_OVERRIDE{true};
+const bool USB_POWER_OVERRIDE_VALUE{false};
+const bool WAIT_FOR_VALID_TIME{true};
+const bool USE_LEGACY_GPIO_CONFIG{false};
+
 // Serial
 const unsigned long SERIAL_BAUD_RATE{115200};
 
@@ -33,9 +39,11 @@ const gpio_num_t PIN_USB_POWER{GPIO_NUM_13};
 const gpio_num_t PIN_SLEEP_BUTTON{GPIO_NUM_35};
 
 // SD (SPI)
-const gpio_num_t PIN_SD_SCK{GPIO_NUM_19};
-const gpio_num_t PIN_SD_MOSI{GPIO_NUM_21};
-const gpio_num_t PIN_SD_MISO{GPIO_NUM_22};
+const gpio_num_t PIN_SD_SCK{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_8 : GPIO_NUM_19};
+const gpio_num_t PIN_SD_MOSI{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_33
+                                                    : GPIO_NUM_21};
+const gpio_num_t PIN_SD_MISO{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_32
+                                                    : GPIO_NUM_22};
 const gpio_num_t PIN_SD_CS{GPIO_NUM_14};
 
 // NeoPixel LED
@@ -56,11 +64,6 @@ const char* WIFI_CONFIG_AP_NAME{"OASDataLogger"};
 // TODO: Configure upload endpoint in Access Point mode
 const char* UPLOAD_HOST{"oas-data-logger.vercel.app"};
 const uint16_t UPLOAD_PORT{443};
-
-// For testing purposes
-const bool USB_POWER_OVERRIDE{false};
-const bool USB_POWER_OVERRIDE_VALUE{false};
-const bool WAIT_FOR_VALID_TIME{true};
 
 void waitForValidTime();
 void waitForSd();
@@ -289,11 +292,15 @@ void disableGps() {
   }
 
   // Put GPS in Backup Mode
-  Wire.beginTransmission(I2C_ADDR_GPS);
-  Wire.write("$PMTK225,4*2F\r\n");
-  Wire.endTransmission();
+  if (!USE_LEGACY_GPIO_CONFIG) {
+    Wire.beginTransmission(I2C_ADDR_GPS);
+    Wire.write("$PMTK225,4*2F\r\n");
+    Wire.endTransmission();
+  }
+
   // Close I2C
   Wire.end();
+
   gpsEnabled = false;
   Serial.println("GPS disabled");
 }
