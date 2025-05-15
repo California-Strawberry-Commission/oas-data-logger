@@ -118,7 +118,7 @@ export default function GpsPositionVisualization({
       : undefined;
 
   return (
-    <div className="w-[800px] h-[600px]">
+    <div className="w-full h-[60vh] max-h-[600px] sm:h-[500px] sm:max-w-[800px] mx-auto">
       {gpsPoints && (
         <MapComponent
           points={gpsPoints.latLngs}

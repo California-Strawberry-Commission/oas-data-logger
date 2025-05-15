@@ -51,7 +51,9 @@ export default function Map({
     <MapContainer
       center={center}
       zoom={13}
-      scrollWheelZoom={false}
+      scrollWheelZoom={true}
+      touchZoom={true}
+      doubleClickZoom={true}
       className="h-full w-full"
     >
       <TileLayer
@@ -60,10 +62,18 @@ export default function Map({
       />
       <Polyline positions={points} color="blue" />
       <Marker position={points[0]} icon={greenIcon}>
-        <Popup>{startMarkerText}</Popup>
+        <Popup>
+          <div className="max-w-[200px] break-words text-sm">
+            {startMarkerText}
+          </div>
+        </Popup>
       </Marker>
       <Marker position={points[points.length - 1]} icon={redIcon}>
-        <Popup>{endMarkerText}</Popup>
+        <Popup>
+          <div className="max-w-[200px] break-words text-sm">
+            {endMarkerText}
+          </div>
+        </Popup>
       </Marker>
     </MapContainer>
   );

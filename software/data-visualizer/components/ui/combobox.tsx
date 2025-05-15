@@ -55,7 +55,7 @@ export default function Combobox({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="w-[400px] justify-between"
+          className="max-w-[400px] w-full justify-between"
         >
           {value
             ? items.find((item) => item.value === value)?.label
@@ -63,7 +63,7 @@ export default function Combobox({
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[400px] p-0 z-1000">
+      <PopoverContent className="max-w-[400px] w-full p-0 z-1000">
         <Command>
           <CommandInput placeholder={searchPlaceholder} />
           <CommandList>
