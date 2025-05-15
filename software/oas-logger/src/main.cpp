@@ -24,10 +24,13 @@
 #include <dlf_logger.h>
 
 // Various flags for testing purposes
-const bool USB_POWER_OVERRIDE{true};
+const bool USB_POWER_OVERRIDE{false};
 const bool USB_POWER_OVERRIDE_VALUE{false};
 const bool WAIT_FOR_VALID_TIME{true};
 const bool USE_LEGACY_GPIO_CONFIG{false};
+// Every X seconds, start a new run. Negative or zero means do not cut a run
+// (except when going to sleep).
+const int LOGGER_RUN_INTERVAL_S{0};
 
 // Serial
 const unsigned long SERIAL_BAUD_RATE{115200};
@@ -60,6 +63,7 @@ const gpio_num_t PIN_GPS_WAKE{GPIO_NUM_32};
 // WIFI
 const unsigned long WIFI_CONFIG_AP_TIMEOUT_S{120};
 const char* WIFI_CONFIG_AP_NAME{"OASDataLogger"};
+const int WIFI_RECONNECT_ATTEMPT_INTERVAL_MS{5000};
 
 // TODO: Configure upload endpoint in Access Point mode
 const char* UPLOAD_HOST{"oas-data-logger.vercel.app"};
@@ -70,6 +74,7 @@ void waitForSd();
 void initializeWifi();
 bool wifiCredentialsExist();
 void initializeLogger();
+void startLoggerRun();
 void enableGps();
 void disableGps();
 bool hasUsbPower();
@@ -82,6 +87,7 @@ ESP32Time rtc;
 WiFiManager wifiManager;
 unsigned long lastWifiReconnectAttemptMillis{0};
 CSCLogger logger{SD};
+unsigned long lastLoggerStartRunMillis{0};
 run_handle_t runHandle{0};
 bool offloadMode{false};
 bool gpsEnabled{false};
@@ -131,10 +137,7 @@ void setup() {
     waitForSd();
     initializeWifi();
     initializeLogger();
-
-    // Start logger run
-    double m = 0;
-    runHandle = logger.start_run(Encodable(m, "double"));
+    startLoggerRun();
 
     FastLED.showColor(CRGB::Green);
   } else {
@@ -163,10 +166,16 @@ void loop() {
   // If disconnected, try reconnecting periodically
   // TODO: Add a way to enter Access Point mode on demand
   if (WiFi.status() != WL_CONNECTED && !wifiManager.getConfigPortalActive() &&
-      millis() - lastWifiReconnectAttemptMillis > 5000) {
+      millis() - lastWifiReconnectAttemptMillis >
+          WIFI_RECONNECT_ATTEMPT_INTERVAL_MS) {
     Serial.println("WiFi not connected, retrying...");
     WiFi.begin();  // reattempt connection with stored credentials (if any)
     lastWifiReconnectAttemptMillis = millis();
+  }
+
+  if (runHandle && LOGGER_RUN_INTERVAL_S > 0 &&
+      millis() - lastLoggerStartRunMillis > LOGGER_RUN_INTERVAL_S * 1000) {
+    startLoggerRun();
   }
 }
 
@@ -248,6 +257,16 @@ void initializeLogger() {
   POLL(logger, pos.alt, gpsDataLogInterval);
 
   logger.syncTo(UPLOAD_HOST, UPLOAD_PORT).begin();
+}
+
+void startLoggerRun() {
+  // Stop existing run (if any) and start a new run
+  if (runHandle) {
+    logger.stop_run(runHandle);
+  }
+  double m = 0;
+  runHandle = logger.start_run(Encodable(m, "double"));
+  lastLoggerStartRunMillis = millis();
 }
 
 void enableGps() {
@@ -375,6 +394,7 @@ void sleepMonitorTask(void* args) {
   // If there is an active run, stop it and attempt to upload its data
   if (runHandle) {
     logger.stop_run(runHandle);
+    runHandle = 0;
     Serial.println("[Sleep Monitor] Stopped active run");
     // Just in case for logger sync/upload to start
     vTaskDelay(pdMS_TO_TICKS(100));
