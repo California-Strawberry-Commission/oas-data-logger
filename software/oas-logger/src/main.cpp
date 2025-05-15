@@ -31,6 +31,8 @@ const bool USE_LEGACY_GPIO_CONFIG{false};
 // Every X seconds, start a new run. Negative or zero means do not cut a run
 // (except when going to sleep).
 const int LOGGER_RUN_INTERVAL_S{0};
+const bool LOGGER_MARK_AFTER_UPLOAD{true};
+const bool LOGGER_DELETE_AFTER_UPLOAD{false};
 
 // Serial
 const unsigned long SERIAL_BAUD_RATE{115200};
@@ -128,15 +130,21 @@ void setup() {
     // Standard mode (create a new run on the logger and poll messages from GPS)
     offloadMode = false;
 
+    // We initialize as much as possible before enabling the GPS and waiting for
+    // valid time, as it can take a while to acquire a fix. The logger can be
+    // initialized here (which starts the upload task), but only start the run
+    // as the very last step.
+    waitForSd();
+    initializeWifi();
+    initializeLogger();
+
     // Enable GPS, wait for valid time, and start GPS update task in that order.
-    // Note that the order is important as the time comes from the GPS module.
+    // Note that we need to enable GPS first as the time comes from the GPS
+    // module.
     enableGps();
     waitForValidTime();
     xTaskCreate(gpsTask, "gps", 4096, NULL, 5, NULL);
 
-    waitForSd();
-    initializeWifi();
-    initializeLogger();
     startLoggerRun();
 
     FastLED.showColor(CRGB::Green);
@@ -256,7 +264,10 @@ void initializeLogger() {
   POLL(logger, pos.lng, gpsDataLogInterval);
   POLL(logger, pos.alt, gpsDataLogInterval);
 
-  logger.syncTo(UPLOAD_HOST, UPLOAD_PORT).begin();
+  UploaderComponent::Options options;
+  options.markAfterUpload = LOGGER_MARK_AFTER_UPLOAD;
+  options.deleteAfterUpload = LOGGER_DELETE_AFTER_UPLOAD;
+  logger.syncTo(UPLOAD_HOST, UPLOAD_PORT, options).begin();
 }
 
 void startLoggerRun() {

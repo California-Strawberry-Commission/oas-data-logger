@@ -30,14 +30,18 @@ run_handle_t CSCLogger::start_run(Encodable meta,
   run_handle_t h = get_available_handle();
 
   // If 0, out of space.
-  if (!h) return h;
+  if (!h) {
+    return h;
+  }
 
   Serial.printf("Starting logging with a cycle time-base of %dus\n", tick_rate);
 
   // Initialize new run
   dlf::Run *run = new dlf::Run(_fs, fs_dir, data_streams, tick_rate, meta);
 
-  if (run == NULL) return 0;
+  if (run == NULL) {
+    return 0;
+  }
 
   runs[h - 1] = std::unique_ptr<dlf::Run>(run);
 
@@ -45,7 +49,9 @@ run_handle_t CSCLogger::start_run(Encodable meta,
 }
 
 void CSCLogger::stop_run(run_handle_t h) {
-  if (!runs[h - 1]) return;
+  if (!runs[h - 1]) {
+    return;
+  }
 
   runs[h - 1]->close();
   runs[h - 1].reset();
@@ -73,9 +79,10 @@ CSCLogger &CSCLogger::_poll(Encodable value, String id,
   return *this;
 }
 
-CSCLogger &CSCLogger::syncTo(String host, uint16_t port) {
+CSCLogger &CSCLogger::syncTo(String host, uint16_t port,
+                             const UploaderComponent::Options &options) {
   if (!hasComponent<UploaderComponent>()) {
-    addComponent(new UploaderComponent(_fs, fs_dir, host, port));
+    addComponent(new UploaderComponent(_fs, fs_dir, host, port, options));
   }
 
   return *this;

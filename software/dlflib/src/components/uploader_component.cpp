@@ -6,8 +6,8 @@
 #include "dlf_logger.h"
 
 UploaderComponent::UploaderComponent(FS &fs, String fsDir, String host,
-                                     uint16_t port)
-    : fs_(fs), dir_(fsDir), host_(host), port_(port) {}
+                                     uint16_t port, const Options &options)
+    : fs_(fs), dir_(fsDir), host_(host), port_(port), options_(options) {}
 
 bool UploaderComponent::begin() {
   Serial.println("[UploaderComponent] begin");
@@ -129,10 +129,12 @@ bool UploaderComponent::uploadRun(File runDir, String path) {
     if (client.available()) {
       // We don't need to process the full response body, so return as soon as
       // we receive a line
-      String line = client.readStringUntil('\n');
-      Serial.println(line);
+      String statusLine = client.readStringUntil('\n');
+      Serial.println("[UploaderComponent] Response: " + statusLine);
       client.stop();
-      return true;
+
+      return statusLine.startsWith("HTTP/1.1 200") ||
+             statusLine.startsWith("HTTP/1.0 200");
     }
   }
 
@@ -179,8 +181,6 @@ void UploaderComponent::syncTask(void *arg) {
 
     xEventGroupClearBits(uploaderComponent->syncEvent_, SYNC_COMPLETE);
 
-    // TODO: Don't attempt to sync runs that have already been synced
-
     File runDir;
     int numFailures = 0;
     while (xEventGroupGetBits(uploaderComponent->wifiEvent_) & WLAN_READY &&
@@ -193,11 +193,43 @@ void UploaderComponent::syncTask(void *arg) {
         continue;
       }
 
+      // Skip syncing runs with uploaded marker
+      bool uploadMarkerFound = false;
+      String runDirPath = resolvePath({uploaderComponent->dir_, runDir.name()});
+      File file;
+      while (file = runDir.openNextFile()) {
+        if (!strcmp(file.name(), UPLOAD_MARKER_FILE_NAME)) {
+          uploadMarkerFound = true;
+          break;
+        }
+      }
+      if (uploadMarkerFound) {
+        Serial.printf(
+            "[UploaderComponent][syncTask] %s already uploaded. Skipping\n",
+            runDirPath.c_str());
+        continue;
+      }
+
+      // Upload run
       Serial.printf("[UploaderComponent][syncTask] Syncing: %s\n",
                     runDir.name());
-
+      runDir.rewindDirectory();
       String path = String("/api/upload/") + runDir.name();
-      numFailures += !uploaderComponent->uploadRun(runDir, path);
+      bool uploadSuccess = uploaderComponent->uploadRun(runDir, path);
+      numFailures += !uploadSuccess;
+
+      // Add upload marker
+      if (uploadSuccess && uploaderComponent->options_.markAfterUpload) {
+        Serial.printf(
+            "[UploaderComponent][syncTask] Upload successful. Adding uploaded "
+            "marker to %s\n",
+            runDir.name());
+        String markerFilePath =
+            resolvePath({runDirPath, UPLOAD_MARKER_FILE_NAME});
+        File f = uploaderComponent->fs_.open(markerFilePath, "w", true);
+        f.write(0);
+        f.close();
+      }
     }
 
     root.close();

@@ -98,7 +98,8 @@ class CSCLogger : public DlfComponent {
   POLL(double)
   POLL(float)
 
-  CSCLogger &syncTo(String host, uint16_t port);
+  CSCLogger &syncTo(String host, uint16_t port,
+                    const UploaderComponent::Options &options);
   void waitForSyncCompletion();
 
   void prune();

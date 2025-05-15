@@ -12,7 +12,12 @@ class UploaderComponent : public DlfComponent {
  public:
   static void syncTask(void *arg);
 
-  UploaderComponent(FS &fs, String fsDir, String host, uint16_t port);
+  struct Options {
+    bool deleteAfterUpload = false;
+    bool markAfterUpload = true;
+  };
+  UploaderComponent(FS &fs, String fsDir, String host, uint16_t port,
+                    const Options &options);
   bool begin();
   bool uploadRun(File runDir, String path);
   void waitForSyncCompletion();
@@ -33,7 +38,7 @@ class UploaderComponent : public DlfComponent {
   String dir_;
   String host_;
   uint16_t port_;
-  size_t maxRetries_;
+  Options options_;
   // Used to notify when WiFi connected/disconnected
   EventGroupHandle_t wifiEvent_;
   // Used to notify when sync is in progress/complete
