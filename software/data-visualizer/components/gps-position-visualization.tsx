@@ -34,6 +34,14 @@ function LoadingMap() {
   );
 }
 
+function NoData() {
+  return (
+    <div className="flex items-center justify-center h-full bg-gray-200">
+      <span className="text-gray-500">No data</span>
+    </div>
+  );
+}
+
 export function toGpsPoints(dataPoints: DataPoint[]): GpsPoints {
   // Split out datapoints into lat, lng, and alt
   const satellitesMap = new Map<number, number>();
@@ -128,14 +136,16 @@ export default function GpsPositionVisualization({
 
   return (
     <div className="w-full h-[60vh] max-h-[600px] sm:h-[500px] sm:max-w-[800px] mx-auto">
-      {gpsPoints ? (
+      {!gpsPoints ? (
+        <LoadingMap />
+      ) : gpsPoints.latLngs.length > 0 ? (
         <MapComponent
           points={gpsPoints.latLngs}
           startTimestampS={startTimestampS}
           endTimestampS={endTimestampS}
         />
       ) : (
-        <LoadingMap />
+        <NoData />
       )}
     </div>
   );
