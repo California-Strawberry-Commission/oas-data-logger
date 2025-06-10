@@ -17,12 +17,14 @@ Run::Run(FS &fs, String fs_dir, streams_t all_streams,
 
   Serial.printf("Starting run %s\n", _uuid.c_str());
 
-  // Make directory to contain run files.
+  // Make directory to contain run files
   _fs.mkdir(_run_dir);
 
+  // Create the lockfile first, as the presence of the lockfile indicates that
+  // the run is incomplete and should not be uploaded
   create_lockfile();
 
-  // Writes metafile for this log.
+  // Writes metafile for this log
   create_metafile(meta);
 
   // Create logfile instances
@@ -125,7 +127,8 @@ void Run::close() {
     lf->close();
   }
 
-  // delete lockfile
+  // Remove the lockfile last, as the presence of the lockfile indicates that
+  // the run is incomplete and should not be uploaded
   _fs.remove(_lockfile_path);
 
   Serial.println("Run closed cleanly!");
@@ -134,6 +137,10 @@ void Run::close() {
 const char *Run::uuid() { return _uuid.c_str(); }
 
 void Run::create_lockfile() {
+#ifdef DEBUG
+  Serial.println("Creating lockfile");
+#endif
+
   File f = _fs.open(_lockfile_path, "w", true);
   f.write(0);
   f.close();

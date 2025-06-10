@@ -185,28 +185,41 @@ void UploaderComponent::syncTask(void *arg) {
     int numFailures = 0;
     while (xEventGroupGetBits(uploaderComponent->wifiEvent_) & WLAN_READY &&
            (runDir = root.openNextFile()) && numFailures < 3) {
-      // Skip syncing files, hidden dirs, system volume information dir, and
-      // in-progress run directories
+      // Skip syncing files, hidden dirs, and system volume information dir
       if (!runDir.isDirectory() || runDir.name()[0] == '.' ||
-          !strcmp(runDir.name(), "System Volume Information") ||
-          logger->run_is_active(runDir.name())) {
+          !strcmp(runDir.name(), "System Volume Information")) {
         continue;
       }
 
       String runDirPath = resolvePath({uploaderComponent->dir_, runDir.name()});
 
-      // Skip syncing runs with uploaded marker
+      // Skip syncing in-progress runs. We check the presence of the
+      // lock file, which indicates that the run is incomplete.
+      bool lockfileFound = false;
+      // Skip syncing runs that have already been uploaded. We check for the
+      // presence of a file with a specific filename, which indicates that the
+      // run has already been uploaded.
       bool uploadMarkerFound = false;
       File file;
       while (file = runDir.openNextFile()) {
-        if (!strcmp(file.name(), UPLOAD_MARKER_FILE_NAME)) {
+        if (!strcmp(file.name(), LOCKFILE_NAME)) {
+          lockfileFound = true;
+          break;
+        } else if (!strcmp(file.name(), UPLOAD_MARKER_FILE_NAME)) {
           uploadMarkerFound = true;
           break;
         }
       }
-      if (uploadMarkerFound) {
+      if (lockfileFound) {
         Serial.printf(
-            "[UploaderComponent][syncTask] %s already uploaded. Skipping\n",
+            "[UploaderComponent][syncTask] %s is active and/or incomplete. "
+            "Skipping\n",
+            runDirPath.c_str());
+        continue;
+      } else if (uploadMarkerFound) {
+        Serial.printf(
+            "[UploaderComponent][syncTask] %s has already been uploaded. "
+            "Skipping\n",
             runDirPath.c_str());
         continue;
       }
