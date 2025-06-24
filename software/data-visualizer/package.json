@@ -9,7 +9,8 @@
     "lint": "next lint",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
-    "db:push": "dotenv -e .env.local -- npx prisma db push",
+    "db:migrate": "dotenv -e .env.local -- npx prisma migrate dev --name",
+    "db:deploy": "dotenv -e .env.local -- npx prisma migrate deploy",
     "db:studio": "dotenv -e .env.local -- npx prisma studio",
     "vercel-build": "prisma generate && prisma migrate deploy && next build"
   },
