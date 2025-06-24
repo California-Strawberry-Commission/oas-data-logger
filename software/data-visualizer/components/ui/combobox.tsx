@@ -46,7 +46,7 @@ export default function Combobox({
         onSelect(defaultSelected);
       }
     }
-  }, [defaultSelected, value]);
+  }, [onSelect, defaultSelected, value, setValue]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
