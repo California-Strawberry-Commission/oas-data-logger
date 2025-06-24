@@ -10,7 +10,8 @@
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:push": "dotenv -e .env.local -- npx prisma db push",
-    "db:studio": "dotenv -e .env.local -- npx prisma studio"
+    "db:studio": "dotenv -e .env.local -- npx prisma studio",
+    "vercel-build": "prisma generate && prisma migrate deploy && next build"
   },
   "dependencies": {
     "@prisma/client": "^6.6.0",
