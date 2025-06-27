@@ -63,9 +63,8 @@ const int I2C_ADDR_GPS{0x10};
 const gpio_num_t PIN_GPS_WAKE{GPIO_NUM_32};
 
 // WIFI
-const unsigned long WIFI_CONFIG_AP_TIMEOUT_S{120};
 const char* WIFI_CONFIG_AP_NAME{"OASDataLogger"};
-const int WIFI_RECONNECT_ATTEMPT_INTERVAL_MS{5000};
+const int WIFI_RECONNECT_ATTEMPT_INTERVAL_MS{10000};
 
 // TODO: Configure upload endpoint in Access Point mode
 const char* UPLOAD_HOST{"oas-data-logger.vercel.app"};
@@ -168,12 +167,9 @@ void setup() {
 }
 
 void loop() {
-  // Required when using WiFiManager in non-blocking mode
-  wifiManager.process();
-
-  // If disconnected, try reconnecting periodically
+  // If WiFi is not connected, try reconnecting periodically
   // TODO: Add a way to enter Access Point mode on demand
-  if (WiFi.status() != WL_CONNECTED && !wifiManager.getConfigPortalActive() &&
+  if (WiFi.status() != WL_CONNECTED &&
       millis() - lastWifiReconnectAttemptMillis >
           WIFI_RECONNECT_ATTEMPT_INTERVAL_MS) {
     Serial.println("WiFi not connected, retrying...");
@@ -219,6 +215,7 @@ void waitForValidTime() {
 }
 
 void waitForSd() {
+  Serial.println("Initializing SPI for SD card...");
   SPI.setFrequency(1000000);
   SPI.setDataMode(SPI_MODE0);
   SPI.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
@@ -232,13 +229,25 @@ void waitForSd() {
 }
 
 void initializeWifi() {
+  Serial.println("Initializing WiFi...");
+
+  FastLED.showColor(CRGB::Yellow);
   WiFi.mode(WIFI_STA);
-  wifiManager.setConfigPortalBlocking(false);
-  wifiManager.setConfigPortalTimeout(WIFI_CONFIG_AP_TIMEOUT_S);
-  if (!wifiManager.autoConnect(WIFI_CONFIG_AP_NAME)) {
-    Serial.println(
-        "Wi-Fi credentials missing or failed to connect. Starting "
-        "ConfigPortal");
+  wifiManager.setConfigPortalBlocking(true);
+
+  if (wifiCredentialsExist()) {
+    // If credentials exist, try to connect
+    Serial.println("WiFi credentials already exist, attempting to connect...");
+    WiFi.begin();
+  } else {
+    // If no credentials are saved, block until the user configures via config
+    // portal
+    Serial.println("No WiFi credentials, launching config portal...");
+
+    if (!wifiManager.autoConnect(WIFI_CONFIG_AP_NAME)) {
+      Serial.println("Config failed or timed out, restarting device...");
+      ESP.restart();
+    }
   }
 }
 
@@ -256,6 +265,7 @@ bool wifiCredentialsExist() {
 }
 
 void initializeLogger() {
+  Serial.println("Initializing logger...");
   auto satellitesLogInterval{std::chrono::seconds(5)};
   POLL(logger, pos.satellites, satellitesLogInterval);
 
@@ -268,6 +278,7 @@ void initializeLogger() {
   options.markAfterUpload = LOGGER_MARK_AFTER_UPLOAD;
   options.deleteAfterUpload = LOGGER_DELETE_AFTER_UPLOAD;
   logger.syncTo(UPLOAD_HOST, UPLOAD_PORT, options).begin();
+  Serial.println("Logger initialized");
 }
 
 void startLoggerRun() {
@@ -284,6 +295,8 @@ void enableGps() {
   if (gpsEnabled) {
     return;
   }
+
+  Serial.println("Enabling GPS...");
 
   // Initialize I2C
   Wire.begin();
@@ -320,6 +333,8 @@ void disableGps() {
   if (!gpsEnabled) {
     return;
   }
+
+  Serial.println("Disabling GPS...");
 
   // Put GPS in Backup Mode
   if (!USE_LEGACY_GPIO_CONFIG) {
