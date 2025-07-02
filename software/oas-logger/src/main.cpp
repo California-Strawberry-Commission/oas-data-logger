@@ -13,7 +13,7 @@
 // Configuration
 const int SERIAL_BAUD_RATE{115200};
 const uint32_t LOGGER_MARK_AFTER_UPLOAD{100 * 1024};
-const bool LOGGER_DELETE_AFTER_UPLOAD{false};
+const bool LOGGER_DELETE_AFTER_UPLOAD{true};
 const bool WAIT_FOR_VALID_TIME{true};
 const bool USE_LEGACY_GPIO_CONFIG{true};
 const bool USB_POWER_OVERRIDE{false};
@@ -43,8 +43,14 @@ const int I2C_ADDR_GPS{0x10};
 // WiFi Configuration
 const char* WIFI_CONFIG_AP_NAME{"OASDataLogger"};
 const int WIFI_RECONNECT_ATTEMPT_INTERVAL_MS{10000};
-const char* UPLOAD_HOST{"oas-data-logger.vercel.app"};
-const uint16_t UPLOAD_PORT{443};
+
+// Uncomment for online database
+//const char* UPLOAD_HOST{"oas-data-logger.vercel.app"};
+//const uint16_t UPLOAD_PORT{443};
+
+const char* UPLOAD_HOST{"192.168.1.129"};  // Your computer's local IP
+const uint16_t UPLOAD_PORT{3000};
+
 
 // State Machine States
 enum class SystemState {
@@ -75,6 +81,7 @@ TinyGPSPlus gps;
 ESP32Time rtc;
 WiFiManager wifiManager;
 CSCLogger logger{SD};
+TaskHandle_t xGPS_Handle;
 
 // State Machine Variables
 SystemState currentState = SystemState::INIT;
@@ -329,7 +336,7 @@ void handleWaitGpsState() {
   
   if (gpsEnabled) {
     // Start GPS task
-    xTaskCreate(gpsTask, "gps", 4096, NULL, 5, NULL);
+    xTaskCreate(gpsTask, "gps", 4096, NULL, 5, &xGPS_Handle);
     transitionToState(SystemState::WAIT_TIME);
   }
 }
@@ -387,7 +394,7 @@ void handleRunningState() {
 }
 
 void handleOffloadState() {
-  initializeLogger();
+  initializeLogger();                                   // WHY do we reinit? 
   
   // Give logger sync/upload time to start
   vTaskDelay(pdMS_TO_TICKS(100));
@@ -421,8 +428,12 @@ void handleSleepState() {
   // Turn off LED
   FastLED.showColor(CRGB::Black);
   
-  // Configure wake on USB power
-  esp_sleep_enable_ext0_wakeup(PIN_USB_POWER, 1);
+  // Configure wake on USB power only if unconnected, else wake on reset.
+  if (!hasUsbPower()) {
+    esp_sleep_enable_ext0_wakeup(PIN_USB_POWER, 1);
+  } else {
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+  }
   
   // Enter deep sleep
   esp_deep_sleep_start();
@@ -500,6 +511,14 @@ void disableGps() {
   }
   
   Serial.println("Disabling GPS...");
+
+  // Check if the task handle is valid
+  if (gpsTask != NULL)
+  {
+      Serial.println("[GPS] Deleting GPS task...");
+      // Delete the task
+      vTaskDelete(xGPS_Handle);
+  }
   
   // Put GPS in Backup Mode
   if (!USE_LEGACY_GPIO_CONFIG) {
@@ -557,16 +576,16 @@ void gpsTask(void* args) {
     
     // Update GPS data with mutex protection
     if (xSemaphoreTake(gpsDataMutex, portMAX_DELAY) == pdTRUE) {
-      if (gps.satellites.isUpdated() && gps.satellites.isValid()) {
+      // Make sure the data will be valid
+      if (gps.satellites.isUpdated() && gps.satellites.isValid() && gps.satellites.value() != 0 ) {
         gpsData.satellites = gps.satellites.value();
+
+        if (gps.location.isUpdated() && gps.location.isValid()) {
+          gpsData.lat = gps.location.lat();
+          gpsData.lng = gps.location.lng();
+          gpsData.alt = gps.altitude.meters();
+        }
       }
-      
-      if (gps.location.isUpdated() && gps.location.isValid()) {
-        gpsData.lat = gps.location.lat();
-        gpsData.lng = gps.location.lng();
-        gpsData.alt = gps.altitude.meters();
-      }
-      
       xSemaphoreGive(gpsDataMutex);
     }
     
