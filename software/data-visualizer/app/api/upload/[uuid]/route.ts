@@ -6,35 +6,43 @@ import { resolve } from "path";
 
 export const dynamic = "force-dynamic";
 
-// Vercel Serverless Functions only allow writes to /tmp
 const UPLOAD_DIR = "/tmp/oas/uploads";
 
 function getRunUploadDir(runUuid: string) {
   return resolve(UPLOAD_DIR, runUuid);
 }
 
-// Each run is associated with 3 files (meta.dlf, event.dlf, polled.dlf)
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ uuid: string }> }
 ) {
   const { uuid } = await params;
+  console.log(`\n=== UPLOAD REQUEST RECEIVED ===`);
+  console.log(`UUID: ${uuid}`);
+  console.log(`Time: ${new Date().toISOString()}`);
+  console.log(`Headers:`, Object.fromEntries(request.headers.entries()));
+  
   const uploadDir = getRunUploadDir(uuid);
 
   try {
     mkdirSync(uploadDir, { recursive: true });
 
     const formData = await request.formData();
+    console.log(`FormData entries:`, Array.from(formData.keys()));
+    
     const files = formData.getAll("files");
+    console.log(`Number of files received: ${files.length}`);
 
     const expected = new Set(["meta.dlf", "event.dlf", "polled.dlf"]);
     const uploaded = new Set<string>();
 
     for (const file of files) {
       if (!(file instanceof File)) {
+        console.log(`Non-file entry found:`, file);
         continue;
       }
 
+      console.log(`Processing file: ${file.name}, size: ${file.size} bytes`);
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
       const filePath = resolve(uploadDir, file.name);
@@ -43,8 +51,12 @@ export async function POST(
     }
 
     // Check that all expected files are present
+    console.log(`Expected files:`, Array.from(expected));
+    console.log(`Uploaded files:`, Array.from(uploaded));
+    
     for (const name of expected) {
       if (!uploaded.has(name)) {
+        console.error(`ERROR: Missing file: ${name}`);
         return NextResponse.json(
           { error: `Missing file: ${name}` },
           { status: 400 }
@@ -52,20 +64,23 @@ export async function POST(
       }
     }
 
+    console.log(`All required files present, ingesting run...`);
     const res = await ingestRun(uuid);
+    console.log(`Ingestion result:`, res);
+    
     return NextResponse.json({
       message: res ? "Upload successful" : "Run already exists. Ignored",
     });
   } catch (err) {
-    console.error(err);
+    console.error(`ERROR in upload handler:`, err);
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });
   } finally {
-    // Clean up locally uploaded files
     try {
       rmSync(uploadDir, { recursive: true, force: true });
     } catch {}
   }
 }
+
 
 async function ingestRun(runUuid: string): Promise<boolean> {
   const alreadyIngested = await prisma.run.count({ where: { uuid: runUuid } });

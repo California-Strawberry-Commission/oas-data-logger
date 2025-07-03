@@ -48,9 +48,8 @@ const int WIFI_RECONNECT_ATTEMPT_INTERVAL_MS{10000};
 //const char* UPLOAD_HOST{"oas-data-logger.vercel.app"};
 //const uint16_t UPLOAD_PORT{443};
 
-const char* UPLOAD_HOST{"192.168.1.129"};  // Your computer's local IP
+const char* UPLOAD_HOST{"10.185.61.111"};  // Your computer's local IP
 const uint16_t UPLOAD_PORT{3000};
-
 
 // State Machine States
 enum class SystemState {
@@ -129,6 +128,7 @@ void initializeLogger();
 void startLoggerRun();
 void gpsTask(void* args);
 void sleepMonitorTask(void* args);
+void testNetworkConnectivity(void);
 
 void setup() {
   Serial.begin(SERIAL_BAUD_RATE);
@@ -301,27 +301,71 @@ void handleWaitSdState() {
   // Keep trying, no immediate error transition
 }
 
-
 void handleWaitWifiState() {
   Serial.println("Initializing WiFi...");
-  
   WiFi.mode(WIFI_STA);
   wifiManager.setConfigPortalBlocking(true);
-  
-  if (wifiCredentialsExist()) {
-    Serial.println("WiFi credentials exist, attempting to connect...");
-    WiFi.begin();
-    transitionToState(offloadMode ? SystemState::OFFLOAD : SystemState::WAIT_GPS);
-  } else {
-    Serial.println("No WiFi credentials, launching config portal...");
-    
-    if (!wifiManager.autoConnect(WIFI_CONFIG_AP_NAME)) {
-      currentError = ErrorType::WIFI_CONFIG_FAILED;
-      transitionToState(SystemState::ERROR);
-      return;
+
+  bool hasCreds = wifiCredentialsExist();
+
+  if (offloadMode) {
+    if (hasCreds) {
+      Serial.println("Offload mode with credentials, attempting to connect indefinitely...");
+      WiFi.begin();
+      while (WiFi.status() != WL_CONNECTED) {
+        Serial.println("Waiting for WiFi (offload mode)...");
+        delay(1000);
+      }
+      Serial.println("Connected to WiFi.");
+      testNetworkConnectivity();
+      transitionToState(SystemState::OFFLOAD);
+    } else {
+      Serial.println("Offload mode with no credentials, entering AP mode indefinitely...");
+      wifiManager.setConfigPortalTimeout(0); // Block until credentials provided
+      if (!wifiManager.autoConnect(WIFI_CONFIG_AP_NAME)) {
+        currentError = ErrorType::WIFI_CONFIG_FAILED;
+        transitionToState(SystemState::ERROR);
+        return;
+      }
+      Serial.println("Credentials acquired in AP mode.");
+      transitionToState(SystemState::OFFLOAD);
     }
-    
-    transitionToState(offloadMode ? SystemState::OFFLOAD : SystemState::WAIT_GPS);
+  } else {
+    if (hasCreds) {
+      Serial.println("Normal mode with credentials, attempting connection...");
+      WiFi.begin();
+      unsigned long startAttempt = millis();
+      while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
+        delay(500);
+        Serial.print(".");
+      }
+
+      if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("\nConnected to WiFi.");
+        testNetworkConnectivity();
+        transitionToState(SystemState::WAIT_GPS);
+      } else {
+        Serial.println("\nConnection failed, entering AP mode for 3 minutes...");
+        wifiManager.setConfigPortalTimeout(180); // 3 minutes
+        wifiManager.startConfigPortal(WIFI_CONFIG_AP_NAME);
+        Serial.println("Exiting AP mode (timeout or user finished). Continuing program.");
+        transitionToState(SystemState::WAIT_GPS); // Proceed regardless of connection
+      }
+    } else {
+      Serial.println("No credentials, waiting in AP mode until provided...");
+      wifiManager.setConfigPortalTimeout(0); // No timeout
+      if (!wifiManager.autoConnect(WIFI_CONFIG_AP_NAME)) {
+        currentError = ErrorType::WIFI_CONFIG_FAILED;
+        transitionToState(SystemState::ERROR);
+        return;
+      }
+      Serial.println("Credentials acquired in AP mode.");
+      transitionToState(SystemState::WAIT_GPS);
+    }
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    testNetworkConnectivity();
   }
 }
 
@@ -641,4 +685,45 @@ void sleepMonitorTask(void* args) {
   
   // Task will be deleted when system enters sleep
   vTaskDelete(NULL);
+}
+
+// Debug Function for network failing
+void testNetworkConnectivity() {
+  Serial.println("\n=== NETWORK CONNECTIVITY TEST ===");
+  
+  // Show WiFi status
+  Serial.printf("WiFi Status: %s\n", 
+    WiFi.status() == WL_CONNECTED ? "Connected" : "Not Connected");
+  Serial.printf("Local IP: %s\n", WiFi.localIP().toString().c_str());
+  Serial.printf("Gateway: %s\n", WiFi.gatewayIP().toString().c_str());
+  Serial.printf("Subnet: %s\n", WiFi.subnetMask().toString().c_str());
+  Serial.printf("DNS: %s\n", WiFi.dnsIP().toString().c_str());
+  
+  // Ping the server
+  WiFiClient testClient;
+  Serial.printf("\nTesting connection to %s:%d...\n", UPLOAD_HOST, UPLOAD_PORT);
+  
+  if (testClient.connect(UPLOAD_HOST, UPLOAD_PORT)) {
+    Serial.println("SUCCESS: Can connect to server!");
+    
+    // Send a simple GET request to test
+    testClient.print("GET / HTTP/1.1\r\n");
+    testClient.printf("Host: %s\r\n", UPLOAD_HOST);
+    testClient.print("Connection: close\r\n\r\n");
+    
+    // Wait for response
+    unsigned long timeout = millis() + 5000;
+    while (testClient.connected() && millis() < timeout) {
+      if (testClient.available()) {
+        String line = testClient.readStringUntil('\n');
+        Serial.println("Response: " + line);
+        break;
+      }
+    }
+    testClient.stop();
+  } else {
+    Serial.println("FAILED: Cannot connect to server!");
+  }
+  
+  Serial.println("================================\n");
 }
