@@ -9,10 +9,10 @@ const MapComponent = dynamic(() => import("./map"), {
   loading: () => <LoadingMap />,
 });
 
-const STREAM_ID_SATELLITES = "pos.satellites";
-const STREAM_ID_LATITUDE = "pos.lat";
-const STREAM_ID_LONGITUDE = "pos.lng";
-const STREAM_ID_ALTITUDE = "pos.alt";
+const STREAM_ID_SATELLITES = "gpsData.satellites";
+const STREAM_ID_LATITUDE = "gpsData.lat";
+const STREAM_ID_LONGITUDE = "gpsData.lng";
+const STREAM_ID_ALTITUDE = "gpsData.alt";
 
 type DataPoint = {
   streamId: string;

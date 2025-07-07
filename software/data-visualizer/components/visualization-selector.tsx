@@ -19,7 +19,9 @@ type Stream = {
 
 function hasGpsData(run: Run): boolean {
   const streamIds = new Set(run.streams.map((s) => s.streamId));
-  return streamIds.has("pos.lat") && streamIds.has("pos.lng");
+  // Check for both old and new stream ID formats
+  return (streamIds.has("pos.lat") && streamIds.has("pos.lng")) || 
+         (streamIds.has("gpsData.lat") && streamIds.has("gpsData.lng"));
 }
 
 function renderVisualization(run: Run, visualization: string) {
@@ -54,6 +56,13 @@ export default function VisualizationSelector({
       .then((res) => res.json())
       .then((data: Run) => setRun(data));
   }, [runUuid]);
+
+  // Auto-select the first available visualization when run data is loaded
+  useEffect(() => {
+    if (run && hasGpsData(run) && selectedVisualization === "") {
+      setSelectedVisualization("gps");
+    }
+  }, [run, selectedVisualization]);
 
   const items = [];
   if (run && hasGpsData(run)) {
