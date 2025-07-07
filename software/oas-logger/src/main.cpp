@@ -437,9 +437,7 @@ void handleRunningState() {
   }
 }
 
-void handleOffloadState() {
-  initializeLogger();                                   // WHY do we reinit? 
-  
+void handleOffloadState() { 
   // Give logger sync/upload time to start
   vTaskDelay(pdMS_TO_TICKS(100));
   
