@@ -2,7 +2,7 @@
 #include <ESP32Time.h>
 #include <FastLED.h>
 #include <SD.h>
-#include <SparkFun_u-blox_GNSS_Arduino_Library.h>
+#include <SparkFun_u-blox_GNSS_v3.h>
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include <Wire.h>
@@ -16,17 +16,17 @@ const uint32_t LOGGER_MARK_AFTER_UPLOAD{100 * 1024};
 const bool LOGGER_DELETE_AFTER_UPLOAD{true};
 const bool WAIT_FOR_VALID_TIME{true};
 const bool USE_LEGACY_GPIO_CONFIG{false};
-const bool USB_POWER_OVERRIDE{false};
+const bool USB_POWER_OVERRIDE{true};
 const bool USB_POWER_OVERRIDE_VALUE{true};
 const int LOGGER_RUN_INTERVAL_S{0};
 const int GPS_PRINT_INTERVAL_MS{1000};  
 
 // Pin Definitions
 const gpio_num_t PIN_USB_POWER{GPIO_NUM_13};
-const gpio_num_t PIN_SLEEP_BUTTON{GPIO_NUM_35};
+const gpio_num_t PIN_SLEEP_BUTTON{GPIO_NUM_0};
 const gpio_num_t PIN_SD_SCK{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_8 : GPIO_NUM_19};
-const gpio_num_t PIN_SD_MOSI{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_33 : GPIO_NUM_21};
-const gpio_num_t PIN_SD_MISO{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_32 : GPIO_NUM_20};
+const gpio_num_t PIN_SD_MOSI{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_33 : GPIO_NUM_21}; //AKA DI
+const gpio_num_t PIN_SD_MISO{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_32 : GPIO_NUM_20}; //AKA DO
 const gpio_num_t PIN_SD_CS{GPIO_NUM_14};
 const gpio_num_t PIN_GPS_WAKE{GPIO_NUM_5}; // Used for power control on SAM-M10Q
 const gpio_num_t PIN_GPS_SDA{GPIO_NUM_40};
@@ -133,6 +133,7 @@ void startLoggerRun();
 void gpsTask(void* args);
 void sleepMonitorTask(void* args);
 void testNetworkConnectivity(void);
+void scanI2C(void);
 
 void setup() {
   Serial.begin(SERIAL_BAUD_RATE);
@@ -517,13 +518,16 @@ void enableGps() {
   
   // Initialize I2C
   if (!Wire.begin()) {
+    void scanI2C();
     currentError = ErrorType::I2C_INIT_FAILED;
     transitionToState(SystemState::ERROR);
     return;
   }
+
+  printf("i2c init was OK.\n");
   
   // Power on GPS module (if wake pin is connected to power control)
-  digitalWrite(PIN_GPS_WAKE, HIGH);
+  // digitalWrite(PIN_GPS_WAKE, HIGH);
   
   // Small delay to ensure power stability
   vTaskDelay(pdMS_TO_TICKS(100));
@@ -565,7 +569,7 @@ void disableGps() {
   }
   
   // Turn off power to GPS module (if wake pin is connected to power control)
-  digitalWrite(PIN_GPS_WAKE, LOW);
+  // digitalWrite(PIN_GPS_WAKE, LOW);
   
   // Close I2C
   Wire.end();
@@ -687,4 +691,17 @@ void testNetworkConnectivity() {
   } else {
     Serial.println("Failed to connect to upload server");
   }
+}
+
+void scanI2C() {
+  Serial.println("Scanning I2C bus...");
+  for (uint8_t address = 1; address < 127; address++) {
+    Wire.beginTransmission(address);
+    uint8_t error = Wire.endTransmission();
+    if (error == 0) {
+      Serial.print("I2C device found at address 0x");
+      Serial.println(address, HEX);
+    }
+  }
+  Serial.println("I2C scan complete");
 }
