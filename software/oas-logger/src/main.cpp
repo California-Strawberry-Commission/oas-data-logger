@@ -2,7 +2,7 @@
 #include <ESP32Time.h>
 #include <FastLED.h>
 #include <SD.h>
-#include <TinyGPSPlus.h>
+#include <SparkFun_u-blox_GNSS_Arduino_Library.h>
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include <Wire.h>
@@ -15,7 +15,7 @@ const int SERIAL_BAUD_RATE{115200};
 const uint32_t LOGGER_MARK_AFTER_UPLOAD{100 * 1024};
 const bool LOGGER_DELETE_AFTER_UPLOAD{true};
 const bool WAIT_FOR_VALID_TIME{true};
-const bool USE_LEGACY_GPIO_CONFIG{true};
+const bool USE_LEGACY_GPIO_CONFIG{false};
 const bool USB_POWER_OVERRIDE{false};
 const bool USB_POWER_OVERRIDE_VALUE{true};
 const int LOGGER_RUN_INTERVAL_S{0};
@@ -26,9 +26,11 @@ const gpio_num_t PIN_USB_POWER{GPIO_NUM_13};
 const gpio_num_t PIN_SLEEP_BUTTON{GPIO_NUM_35};
 const gpio_num_t PIN_SD_SCK{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_8 : GPIO_NUM_19};
 const gpio_num_t PIN_SD_MOSI{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_33 : GPIO_NUM_21};
-const gpio_num_t PIN_SD_MISO{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_32 : GPIO_NUM_22};
+const gpio_num_t PIN_SD_MISO{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_32 : GPIO_NUM_20};
 const gpio_num_t PIN_SD_CS{GPIO_NUM_14};
-const gpio_num_t PIN_GPS_WAKE{GPIO_NUM_5}; // CURRENTLY UNCONNECTED ON PROTOTYPE
+const gpio_num_t PIN_GPS_WAKE{GPIO_NUM_5}; // Used for power control on SAM-M10Q
+const gpio_num_t PIN_GPS_SDA{GPIO_NUM_40};
+const gpio_num_t PIN_GPS_SCL{GPIO_NUM_39};
 
 // LED Configuration
 #define LED_PIN PIN_NEOPIXEL
@@ -38,7 +40,9 @@ const int NUM_LEDS{1};
 const uint8_t LED_BRIGHTNESS{10};
 
 // GPS Configuration
-const int I2C_ADDR_GPS{0x10};
+// SAM-M10Q default I2C address is 0x42
+const int I2C_ADDR_GPS{0x42};
+const uint32_t GPS_UPDATE_RATE_MS{100}; // 10Hz update rate
 
 // WiFi Configuration
 const char* WIFI_CONFIG_AP_NAME{"OASDataLogger"};
@@ -76,7 +80,7 @@ enum class ErrorType {
 
 // Global Objects
 CRGB leds[NUM_LEDS];
-TinyGPSPlus gps;
+SFE_UBLOX_GNSS myGNSS;  // u-blox GNSS object
 ESP32Time rtc;
 WiFiManager wifiManager;
 CSCLogger logger{SD};
@@ -271,7 +275,7 @@ void updateLedPattern() {
 void transitionToState(SystemState newState) {
   Serial.printf("State transition: %d -> %d\n", (int)currentState, (int)newState);
   currentState = newState;
-  
+
   // Reset LED toggle state on transition
   ledToggleState = false;
   lastLedToggleMillis = millis();
@@ -302,6 +306,9 @@ void handleWaitSdState() {
 }
 
 void handleWaitWifiState() {
+  transitionToState(SystemState::WAIT_GPS);  // FORT TESTING GPS ONLY, WO WIFI
+  return;
+
   Serial.println("Initializing WiFi...");
   WiFi.mode(WIFI_STA);
   wifiManager.setConfigPortalBlocking(true);
@@ -339,28 +346,28 @@ void handleWaitWifiState() {
         delay(500);
         Serial.print(".");
       }
-
-      if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("\nConnected to WiFi.");
-        testNetworkConnectivity();
-        transitionToState(SystemState::WAIT_GPS);
-      } else {
-        Serial.println("\nConnection failed, entering AP mode for 3 minutes...");
-        wifiManager.setConfigPortalTimeout(180); // 3 minutes
-        wifiManager.startConfigPortal(WIFI_CONFIG_AP_NAME);
-        Serial.println("Exiting AP mode (timeout or user finished). Continuing program.");
-        transitionToState(SystemState::WAIT_GPS); // Proceed regardless of connection
-      }
-    } else {
-      Serial.println("No credentials, waiting in AP mode until provided...");
-      wifiManager.setConfigPortalTimeout(0); // No timeout
-      if (!wifiManager.autoConnect(WIFI_CONFIG_AP_NAME)) {
-        currentError = ErrorType::WIFI_CONFIG_FAILED;
-        transitionToState(SystemState::ERROR);
-        return;
-      }
-      Serial.println("Credentials acquired in AP mode.");
+    
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("\nConnected to WiFi.");
+      testNetworkConnectivity();
       transitionToState(SystemState::WAIT_GPS);
+    } else {
+      Serial.println("\nConnection failed, entering AP mode for 3 minutes...");
+      wifiManager.setConfigPortalTimeout(180); // 3 minutes
+      wifiManager.startConfigPortal(WIFI_CONFIG_AP_NAME);
+      Serial.println("Exiting AP mode (timeout or user finished). Continuing program.");
+      transitionToState(SystemState::WAIT_GPS); // Proceed regardless of connection
+    }
+  } else {
+    Serial.println("No credentials, waiting in AP mode until provided...");
+    wifiManager.setConfigPortalTimeout(0); // No timeout
+    if (!wifiManager.autoConnect(WIFI_CONFIG_AP_NAME)) {
+      currentError = ErrorType::WIFI_CONFIG_FAILED;
+      transitionToState(SystemState::ERROR);
+      return;
+    }
+    Serial.println("Credentials acquired in AP mode.");
+    transitionToState(SystemState::WAIT_GPS);
     }
   }
 
@@ -388,13 +395,12 @@ void handleWaitGpsState() {
 void handleWaitTimeState() {
   // Try to get GPS data with mutex protection
   if (xSemaphoreTake(gpsDataMutex, portMAX_DELAY) == pdTRUE) {
-    // Check if we have valid time
-    if (gps.date.isUpdated() && gps.date.isValid() && 
-        gps.time.isUpdated() && gps.time.isValid() && 
-        gps.location.age() < 2000 && gps.date.year() >= 2025) {
+    // Check if we have valid time from GPS
+    if (myGNSS.getDateValid() && myGNSS.getTimeValid() && 
+        myGNSS.getYear() >= 2025) {
       
-      rtc.setTime(gps.time.second(), gps.time.minute(), gps.time.hour(),
-                  gps.date.day(), gps.date.month(), gps.date.year());
+      rtc.setTime(myGNSS.getSecond(), myGNSS.getMinute(), myGNSS.getHour(),
+                  myGNSS.getDay(), myGNSS.getMonth(), myGNSS.getYear());
       Serial.println("Valid time received");
       
       xSemaphoreGive(gpsDataMutex);
@@ -411,12 +417,12 @@ void handleWaitTimeState() {
 
 void handleRunningState() {
   // WiFi reconnection logic
-  if (WiFi.status() != WL_CONNECTED &&
-      millis() - lastWifiReconnectAttemptMillis > WIFI_RECONNECT_ATTEMPT_INTERVAL_MS) {
-    Serial.println("WiFi not connected, retrying...");
-    WiFi.begin();
-    lastWifiReconnectAttemptMillis = millis();
-  }
+//   if (WiFi.status() != WL_CONNECTED &&
+//       millis() - lastWifiReconnectAttemptMillis > WIFI_RECONNECT_ATTEMPT_INTERVAL_MS) {
+//     Serial.println("WiFi not connected, retrying...");
+//     WiFi.begin();
+//     lastWifiReconnectAttemptMillis = millis();
+//   }
   
   // GPS printing logic - independent of logger run interval
   if (millis() - lastGpsPrintMillis > GPS_PRINT_INTERVAL_MS) {
@@ -506,6 +512,8 @@ void enableGps() {
   }
   
   Serial.println("Enabling GPS...");
+
+  Wire.setPins(PIN_GPS_SDA, PIN_GPS_SCL); // SDA: 40, SCL: 39
   
   // Initialize I2C
   if (!Wire.begin()) {
@@ -514,35 +522,28 @@ void enableGps() {
     return;
   }
   
-  // Activate wake pin
+  // Power on GPS module (if wake pin is connected to power control)
   digitalWrite(PIN_GPS_WAKE, HIGH);
   
-  // Wait for GPS to respond
-  bool gpsResponding = false;
-  int attempts = 0;
-  const int maxAttempts = 10;
+  // Small delay to ensure power stability
+  vTaskDelay(pdMS_TO_TICKS(100));
   
-  while (!gpsResponding && attempts < maxAttempts) {
-    Wire.requestFrom(I2C_ADDR_GPS, 32);
-    while (Wire.available()) {
-      char c = Wire.read();
-      gps.encode(c);
-      gpsResponding = true;
-    }
-    
-    if (!gpsResponding) {
-      attempts++;
-      vTaskDelay(pdMS_TO_TICKS(500));
-    }
-  }
-  
-  if (!gpsResponding) {
+  // Initialize u-blox GNSS
+  if (!myGNSS.begin(Wire, I2C_ADDR_GPS)) {
     currentError = ErrorType::GPS_NOT_RESPONDING;
     transitionToState(SystemState::ERROR);
     return;
   }
   
-  digitalWrite(PIN_GPS_WAKE, LOW);
+  // Configure the u-blox module
+  myGNSS.setI2COutput(COM_TYPE_UBX); // Set I2C port to output UBX only (no NMEA)
+  myGNSS.setNavigationFrequency(10); // Set output to 10Hz
+  myGNSS.setAutoPVT(true); // Tell the GPS to send PVT messages automatically
+  myGNSS.saveConfiguration(); // Save the current settings to flash and BBR
+  
+  // Configure power saving mode if needed
+  // myGNSS.powerSaveMode(true); // Enable power save mode
+  
   gpsEnabled = true;
   Serial.println("GPS enabled");
 }
@@ -555,19 +556,16 @@ void disableGps() {
   Serial.println("Disabling GPS...");
 
   // Check if the task handle is valid
-  if (gpsTask != NULL)
+  if (xGPS_Handle != NULL)
   {
       Serial.println("[GPS] Deleting GPS task...");
       // Delete the task
       vTaskDelete(xGPS_Handle);
+      xGPS_Handle = NULL;
   }
   
-  // Put GPS in Backup Mode
-  if (!USE_LEGACY_GPIO_CONFIG) {
-    Wire.beginTransmission(I2C_ADDR_GPS);
-    Wire.write("$PMTK225,4*2F\r\n");
-    Wire.endTransmission();
-  }
+  // Turn off power to GPS module (if wake pin is connected to power control)
+  digitalWrite(PIN_GPS_WAKE, LOW);
   
   // Close I2C
   Wire.end();
@@ -607,31 +605,25 @@ void startLoggerRun() {
 
 void gpsTask(void* args) {
   while (true) {
-    // Request data from GPS
-    Wire.requestFrom(I2C_ADDR_GPS, 32);
-    
-    // Process received data
-    while (Wire.available()) {
-      char c = Wire.read();
-      gps.encode(c);
-    }
-    
-    // Update GPS data with mutex protection
-    if (xSemaphoreTake(gpsDataMutex, portMAX_DELAY) == pdTRUE) {
-      // Make sure the data will be valid
-      if (gps.satellites.isUpdated() && gps.satellites.isValid() && gps.satellites.value() != 0 ) {
-        gpsData.satellites = gps.satellites.value();
-
-        if (gps.location.isUpdated() && gps.location.isValid()) {
-          gpsData.lat = gps.location.lat();
-          gpsData.lng = gps.location.lng();
-          gpsData.alt = gps.altitude.meters();
+    // Check for new GPS data
+    if (myGNSS.getPVT()) {
+      // Update GPS data with mutex protection
+      if (xSemaphoreTake(gpsDataMutex, portMAX_DELAY) == pdTRUE) {
+        // Get satellite count
+        gpsData.satellites = myGNSS.getSIV();
+        
+        // Check if we have a valid fix
+        if (myGNSS.getFixType() > 0 && myGNSS.getInvalidLlh() == false) {
+          gpsData.lat = myGNSS.getLatitude() / 10000000.0; // Convert from degrees * 10^7
+          gpsData.lng = myGNSS.getLongitude() / 10000000.0; // Convert from degrees * 10^7
+          gpsData.alt = myGNSS.getAltitude() / 1000.0; // Convert from mm to meters
         }
+        
+        xSemaphoreGive(gpsDataMutex);
       }
-      xSemaphoreGive(gpsDataMutex);
     }
     
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(GPS_UPDATE_RATE_MS));
   }
 }
 
@@ -685,43 +677,14 @@ void sleepMonitorTask(void* args) {
   vTaskDelete(NULL);
 }
 
-// Debug Function for network failing
 void testNetworkConnectivity() {
-  Serial.println("\n=== NETWORK CONNECTIVITY TEST ===");
+  Serial.println("Testing network connectivity...");
   
-  // Show WiFi status
-  Serial.printf("WiFi Status: %s\n", 
-    WiFi.status() == WL_CONNECTED ? "Connected" : "Not Connected");
-  Serial.printf("Local IP: %s\n", WiFi.localIP().toString().c_str());
-  Serial.printf("Gateway: %s\n", WiFi.gatewayIP().toString().c_str());
-  Serial.printf("Subnet: %s\n", WiFi.subnetMask().toString().c_str());
-  Serial.printf("DNS: %s\n", WiFi.dnsIP().toString().c_str());
-  
-  // Ping the server
-  WiFiClient testClient;
-  Serial.printf("\nTesting connection to %s:%d...\n", UPLOAD_HOST, UPLOAD_PORT);
-  
-  if (testClient.connect(UPLOAD_HOST, UPLOAD_PORT)) {
-    Serial.println("SUCCESS: Can connect to server!");
-    
-    // Send a simple GET request to test
-    testClient.print("GET / HTTP/1.1\r\n");
-    testClient.printf("Host: %s\r\n", UPLOAD_HOST);
-    testClient.print("Connection: close\r\n\r\n");
-    
-    // Wait for response
-    unsigned long timeout = millis() + 5000;
-    while (testClient.connected() && millis() < timeout) {
-      if (testClient.available()) {
-        String line = testClient.readStringUntil('\n');
-        Serial.println("Response: " + line);
-        break;
-      }
-    }
-    testClient.stop();
+  WiFiClient client;
+  if (client.connect(UPLOAD_HOST, UPLOAD_PORT)) {
+    Serial.println("Successfully connected to upload server");
+    client.stop();
   } else {
-    Serial.println("FAILED: Cannot connect to server!");
+    Serial.println("Failed to connect to upload server");
   }
-  
-  Serial.println("================================\n");
 }
