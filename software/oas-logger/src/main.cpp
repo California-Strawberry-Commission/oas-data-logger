@@ -10,6 +10,9 @@
 #include <freertos/semphr.h>
 #include <dlf_logger.h>
 
+#include "FS.h"
+#include "SD_MMC.h"
+
 // Configuration
 const int SERIAL_BAUD_RATE{115200};
 const uint32_t LOGGER_MARK_AFTER_UPLOAD{100 * 1024};
@@ -24,9 +27,15 @@ const int GPS_PRINT_INTERVAL_MS{1000};
 // Pin Definitions
 const gpio_num_t PIN_USB_POWER{GPIO_NUM_13};
 const gpio_num_t PIN_SLEEP_BUTTON{GPIO_NUM_0};
-const gpio_num_t PIN_SD_SCK{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_8 : GPIO_NUM_19};
+// const gpio_num_t PIN_SD_CLK{GPIO_NUM_7};     // Clock
+// const gpio_num_t PIN_SD_CMD{GPIO_NUM_8};     // Command
+// const gpio_num_t PIN_SD_D0{GPIO_NUM_9};      // Data 0
+// const gpio_num_t PIN_SD_D1{GPIO_NUM_10};     // Data 1 (for 4-bit mode)
+// const gpio_num_t PIN_SD_D2{GPIO_NUM_11};     // Data 2 (for 4-bit mode)
+// const gpio_num_t PIN_SD_D3{GPIO_NUM_12};     // Data 3 (for 4-bit mode)
+const gpio_num_t PIN_SD_SCK{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_8 : GPIO_NUM_26};
 const gpio_num_t PIN_SD_MOSI{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_33 : GPIO_NUM_21}; //AKA DI
-const gpio_num_t PIN_SD_MISO{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_32 : GPIO_NUM_20}; //AKA DO
+const gpio_num_t PIN_SD_MISO{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_32 : GPIO_NUM_33}; //AKA DO
 const gpio_num_t PIN_SD_CS{GPIO_NUM_14};
 const gpio_num_t PIN_GPS_WAKE{GPIO_NUM_5}; // Used for power control on SAM-M10Q
 const gpio_num_t PIN_GPS_SDA{GPIO_NUM_40};
@@ -83,7 +92,8 @@ CRGB leds[NUM_LEDS];
 SFE_UBLOX_GNSS myGNSS;  // u-blox GNSS object
 ESP32Time rtc;
 WiFiManager wifiManager;
-CSCLogger logger{SD};
+CSCLogger logger{SD};  
+// CSCLogger logger{SD_MMC};
 TaskHandle_t xGPS_Handle;
 
 // State Machine Variables
@@ -290,7 +300,36 @@ void handleInitState() {
   }
 }
 
+// Uncomment for SDIO
+// void handleWaitSdState() {
+//   Serial.println("Initializing SDIO for SD card...");
+
+//   // Configure the pins for SDIO
+//   if (!SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0, PIN_SD_D1, PIN_SD_D2, PIN_SD_D3)) {
+//     Serial.println("Pin configuration failed!");
+//     return;
+//   }
+
+//   // Initialize SD_MMC
+//   // Parameters: mount point, mode1bit, format_if_failed, sd_max_frequency, max_files
+//   if (SD_MMC.begin("/sdcard", false)) {  // false = use 4-bit mode
+//     Serial.println("SD card connected via SDIO");
+//     transitionToState(SystemState::WAIT_WIFI);
+//   } else {
+//     Serial.println("SD card initialization failed");
+//     // Keep trying, no immediate error transition
+//   }
+// }
+
+// __--''--____--''--____--''--____--''--____--''--____--''--__
+// 
+// >> Add PULL UP RESISTORS (10k) on ALL SDIO data lines!! <<
+// 
+// __--''--____--''--____--''--____--''--____--''--____--''--__
+
+
 void handleWaitSdState() {
+
   Serial.println("Initializing SPI for SD card...");
 
   SPI.setFrequency(1000000);
@@ -476,6 +515,9 @@ void handleSleepState() {
   
   // Turn off LED
   FastLED.showColor(CRGB::Black);
+
+  // Turn off GPS                                 -- TODO
+  // Tunr off SD card                             -- TODO
   
   // Configure wake on USB power only if unconnected, else wake on reset.
   if (!hasUsbPower()) {
