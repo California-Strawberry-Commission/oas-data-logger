@@ -68,6 +68,8 @@ class CSCLogger : public DlfComponent {
                          microseconds tick_rate = milliseconds(100));
 
   void stop_run(run_handle_t h);
+  
+  void flush(run_handle_t h);
 
   bool run_is_active(const char *uuid);
 

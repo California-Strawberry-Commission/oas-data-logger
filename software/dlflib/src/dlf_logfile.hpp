@@ -1,3 +1,4 @@
+
 #pragma once
 #include <Arduino.h>
 #include <freertos/stream_buffer.h>
@@ -53,6 +54,8 @@ namespace dlf
          */
         void _write_header(dlf_stream_type_e stream_type);
 
+        
+
         /**
          * Updates and closes the underlying file. Does not flush internal
          * buffers
@@ -79,5 +82,8 @@ namespace dlf
          * Flushes and closes this logfile
          */
         void close();
+
+        void flush();
+
     };
 } // namespace dlf

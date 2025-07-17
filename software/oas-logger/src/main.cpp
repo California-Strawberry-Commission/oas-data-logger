@@ -13,7 +13,7 @@
 // Configuration
 const int SERIAL_BAUD_RATE{115200};
 const uint32_t LOGGER_MARK_AFTER_UPLOAD{100 * 1024};
-const bool LOGGER_DELETE_AFTER_UPLOAD{true};
+const bool LOGGER_DELETE_AFTER_UPLOAD{false};
 const bool WAIT_FOR_VALID_TIME{true};
 const bool USE_LEGACY_GPIO_CONFIG{true};
 const bool USB_POWER_OVERRIDE{false};
@@ -42,13 +42,13 @@ const int I2C_ADDR_GPS{0x10};
 
 // WiFi Configuration
 const char* WIFI_CONFIG_AP_NAME{"OASDataLogger"};
-const int WIFI_RECONNECT_ATTEMPT_INTERVAL_MS{10000};
+const int WIFI_CONNECT_ATTEMPT_INTERVAL_MS{10000};
 
 // Uncomment for online database
 //const char* UPLOAD_HOST{"oas-data-logger.vercel.app"};
 //const uint16_t UPLOAD_PORT{443};
 
-const char* UPLOAD_HOST{"10.185.61.111"};  // Your computer's local IP
+const char* UPLOAD_HOST{"192.168.1.129"};  // Your computer's local IP
 const uint16_t UPLOAD_PORT{3000};
 
 // State Machine States
@@ -411,11 +411,78 @@ void handleWaitTimeState() {
 
 void handleRunningState() {
   // WiFi reconnection logic
-  if (WiFi.status() != WL_CONNECTED &&
-      millis() - lastWifiReconnectAttemptMillis > WIFI_RECONNECT_ATTEMPT_INTERVAL_MS) {
-    Serial.println("WiFi not connected, retrying...");
-    WiFi.begin();
-    lastWifiReconnectAttemptMillis = millis();
+  if (millis() - lastWifiReconnectAttemptMillis > WIFI_CONNECT_ATTEMPT_INTERVAL_MS) {
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("WiFi not connected, retrying...");
+      WiFi.begin();
+      lastWifiReconnectAttemptMillis = millis();
+    } else {
+      // Upload the current run over wifi
+      static unsigned long lastUploadAttemptMillis = 0;
+      const unsigned long UPLOAD_ATTEMPT_INTERVAL_MS = 60000; // Try upload every minute when connected
+      
+      if (millis() - lastUploadAttemptMillis > UPLOAD_ATTEMPT_INTERVAL_MS) {
+        lastUploadAttemptMillis = millis();
+        
+        if (runHandle) {
+          // Get the current run directory name
+          // The run name format appears to be based on when start_run was called
+          // We need to access the logger's current run directory
+          
+          Serial.println("[Running State] Attempting to upload current run while logging...");
+
+          UploaderComponent::Options tempOptions;
+          tempOptions.deleteAfterUpload = false;
+          tempOptions.markAfterUpload = false;
+          
+          // Create a temporary uploader instance for the current run
+          UploaderComponent tempUploader(SD, "/", UPLOAD_HOST, UPLOAD_PORT, tempOptions);
+          
+          // The logger stores runs in the root directory with a specific naming convention
+          // We need to find the current run directory
+          File root = SD.open("/");
+          if (root) {
+            File runDir;
+            String currentRunPath;
+            
+            // Find the most recent run directory (which should be our current run)
+            // Run directories don't have the lockfile when complete, but our current run
+            // should still have it
+            while (runDir = root.openNextFile()) {
+              if (runDir.isDirectory() && runDir.name()[0] != '.' &&
+                  strcmp(runDir.name(), "System Volume Information") != 0) {
+                
+                // Check if this directory has a lockfile (indicating active run)
+                File lockCheck = SD.open(String("/") + runDir.name() + "/" + LOCKFILE_NAME);
+                if (lockCheck) {
+
+                  lockCheck.close();
+                  currentRunPath = String("/") + runDir.name();
+                  Serial.printf("[Running State] Found active run: %s\n", runDir.name());
+
+                  Serial.println("[Running State] Flushing data and finalizing headers for upload...");
+                  logger.flush(runHandle); 
+
+                  // Upload this run
+                  String uploadPath = String("/api/upload/") + runDir.name();
+                  bool uploadSuccess = tempUploader.uploadRun(runDir, uploadPath);
+
+                  if (uploadSuccess) {
+                    Serial.println("[Running State] Successfully uploaded current run data");
+                    // Note: We don't mark or delete the run since it's still active
+                  } else {
+                    Serial.println("[Running State] Failed to upload current run data");
+                  }
+                  
+                  break; // We found and processed the current run
+                }
+              }
+            }
+            root.close();
+          }
+        }
+      }
+    } 
   }
   
   // GPS printing logic - independent of logger run interval
