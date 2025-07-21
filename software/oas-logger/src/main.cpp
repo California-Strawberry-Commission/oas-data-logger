@@ -60,14 +60,14 @@ const int WIFI_RECONNECT_ATTEMPT_INTERVAL_MS{10000};
 // For server hosting
 // 1. Uncomment lines below 
 // 2. In uploader component, change to WifiClientSecure
-//const char* UPLOAD_HOST{"oas-data-logger.vercel.app"};
-//const uint16_t UPLOAD_PORT{443};
+const char* UPLOAD_HOST{"oas-data-logger.vercel.app"};
+const uint16_t UPLOAD_PORT{443};
 
 // For local hosting:
 // 1. Uncomment the lines below
 // 2. Go to uploader_component.cpp and change from WiFiClientSecure to WiFiClient.
- const char* UPLOAD_HOST{"192.168.1.129"};  // Your computer's local IP
- const uint16_t UPLOAD_PORT{3000};
+//const char* UPLOAD_HOST{"192.168.1.129"};  // Your computer's local IP
+//const uint16_t UPLOAD_PORT{3000};
 
 // State Machine States
 enum class SystemState {
