@@ -17,6 +17,8 @@ model Run {
   tickBaseUs Int
   metadata   Json
   runData    RunData[]
+
+  files      RunFile[]  
 }
 
 model RunData {
@@ -27,6 +29,20 @@ model RunData {
   streamId   String
   tick       BigInt
   data       String
+}
+
+model RunFile {
+  id        Int      @id @default(autoincrement())
+  runId     Int
+  fileName  String
+  data      Bytes
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  
+  @@unique([runId, fileName])
+  @@index([runId])
 }
 
 enum StreamType {
