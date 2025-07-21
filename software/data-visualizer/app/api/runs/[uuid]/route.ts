@@ -24,8 +24,8 @@ export async function GET(
 
     return NextResponse.json({
       uuid: run.uuid,
-      epochTimeS: run.epochTimeS,
-      tickBaseUs: run.tickBaseUs,
+      epochTimeS: Number(run.epochTimeS),
+      tickBaseUs: Number(run.tickBaseUs),
       metadata: run.metadata,
       streams: streams.map((s) => ({
         streamId: s.streamId,
