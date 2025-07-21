@@ -45,7 +45,7 @@ async function getPersistedFiles(runId: number): Promise<Map<string, Buffer>> {
   
   const fileMap = new Map<string, Buffer>();
   files.forEach(file => {
-    fileMap.set(file.fileName, file.data);
+    fileMap.set(file.fileName, Buffer.from(file.data));
   });
   
   return fileMap;
