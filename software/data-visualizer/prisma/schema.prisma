@@ -13,12 +13,14 @@ datasource db {
 model Run {
   id         Int       @id @default(autoincrement())
   uuid       String    @unique
-  epochTimeS Int
-  tickBaseUs Int
+  epochTimeS BigInt
+  tickBaseUs BigInt
   metadata   Json
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @default(now()) @updatedAt
+  
   runData    RunData[]
-
-  files      RunFile[]  
+  files      RunFile[]  // Add this line
 }
 
 model RunData {
