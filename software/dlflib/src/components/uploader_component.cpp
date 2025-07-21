@@ -49,7 +49,9 @@ void UploaderComponent::onWifiConnected(arduino_event_id_t event,
 }
 
 bool UploaderComponent::uploadRun(File runDir, String path) {
-  WiFiClient client; 
+  //WiFiClient client; 
+  WiFiClientSecure client;
+  client.setInsecure();
   
   Serial.println("\n=== UPLOAD DEBUG INFO ===");
   Serial.printf("Host: %s\n", host_.c_str());

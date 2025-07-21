@@ -57,9 +57,17 @@ const uint32_t GPS_UPDATE_RATE_MS{100}; // 10Hz update rate
 const char* WIFI_CONFIG_AP_NAME{"OASDataLogger"};
 const int WIFI_RECONNECT_ATTEMPT_INTERVAL_MS{10000};
 
-// Uncomment for online database
-//const char* UPLOAD_HOST{"oas-data-logger.vercel.app"};
-//const uint16_t UPLOAD_PORT{443};
+// For local hosting:
+// 1. Uncomment the lines below
+// 2. Go to uploader_component.cpp and change from WiFiClientSecure to WiFiClient.
+//const char* WIFI_CONFIG_AP_NAME{"OASDataLogger"};
+//const int WIFI_CONNECT_ATTEMPT_INTERVAL_MS{10000};
+
+// For server hosting
+// 1. Uncomment lines below 
+// 2. In uploader component, change to WifiClientSecure
+const char* UPLOAD_HOST{"oas-data-logger.vercel.app"};
+const uint16_t UPLOAD_PORT{443};
 
 const char* UPLOAD_HOST{"10.185.61.111"};  // Your computer's local IP
 const uint16_t UPLOAD_PORT{3000};
