@@ -41,21 +41,20 @@ const uint8_t LED_BRIGHTNESS{10};
 const int I2C_ADDR_GPS{0x10};
 
 // WiFi Configuration 
-
-// For local hosting:
-// 1. Uncomment the lines below
-// 2. Go to uploader_component.cpp and change from WiFiClientSecure to WiFiClient.
-//const char* WIFI_CONFIG_AP_NAME{"OASDataLogger"};
-//const int WIFI_CONNECT_ATTEMPT_INTERVAL_MS{10000};
+const char* WIFI_CONFIG_AP_NAME{"OASDataLogger"};
+const int WIFI_CONNECT_ATTEMPT_INTERVAL_MS{10000};
 
 // For server hosting
 // 1. Uncomment lines below 
 // 2. In uploader component, change to WifiClientSecure
-const char* UPLOAD_HOST{"oas-data-logger.vercel.app"};
-const uint16_t UPLOAD_PORT{443};
+//const char* UPLOAD_HOST{"oas-data-logger.vercel.app"};
+//const uint16_t UPLOAD_PORT{443};
 
-const char* UPLOAD_HOST{"192.168.1.129"};  // Your computer's local IP
-const uint16_t UPLOAD_PORT{3000};
+// For local hosting:
+// 1. Uncomment the lines below
+// 2. Go to uploader_component.cpp and change from WiFiClientSecure to WiFiClient.
+ const char* UPLOAD_HOST{"192.168.1.129"};  // Your computer's local IP
+ const uint16_t UPLOAD_PORT{3000};
 
 // State Machine States
 enum class SystemState {
@@ -425,7 +424,7 @@ void handleRunningState() {
     } else {
       // Upload the current run over wifi
       static unsigned long lastUploadAttemptMillis = 0;
-      const unsigned long UPLOAD_ATTEMPT_INTERVAL_MS = 60000; // Try upload every minute when connected
+      const unsigned long UPLOAD_ATTEMPT_INTERVAL_MS = 30000; // Try upload every 30s when connected
       
       if (millis() - lastUploadAttemptMillis > UPLOAD_ATTEMPT_INTERVAL_MS) {
         lastUploadAttemptMillis = millis();
