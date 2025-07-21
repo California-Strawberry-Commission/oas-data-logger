@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
 import { FSAdapter } from "dlflib-js/dist/fsadapter.js";
-import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from "fs";
+import { mkdirSync, rmSync, writeFileSync, existsSync } from "fs";
 import { NextRequest, NextResponse } from "next/server";
 import { resolve } from "path";
 
