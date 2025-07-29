@@ -39,6 +39,7 @@ const gpio_num_t PIN_SD_MISO{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_32 : GPIO_NUM_33}
 const gpio_num_t PIN_SD_CS{GPIO_NUM_14};
 const gpio_num_t PIN_GPS_WAKE{GPIO_NUM_5}; // Used for power control on SAM-M10Q
 const gpio_num_t PIN_GPS_SDA{GPIO_NUM_40};
+
 const gpio_num_t PIN_GPS_SCL{GPIO_NUM_39};
 
 // LED Configuration
