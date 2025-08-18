@@ -146,3 +146,10 @@ void CSCLogger::prune() {
   }
   root.close();
 }
+
+void CSCLogger::flush(run_handle_t h) {
+    if (!runs[h - 1]) {
+        return;
+    }
+    runs[h - 1]->flush();
+}

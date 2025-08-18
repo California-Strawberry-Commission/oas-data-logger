@@ -51,6 +51,8 @@ class Run {
 
   void close();
 
+  void flush(); 
+
   const char *uuid();
 };
 

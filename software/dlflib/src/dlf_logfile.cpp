@@ -23,6 +23,7 @@ void LogFile::task_flusher(void *arg) {
     size_t received = xStreamBufferReceive(self->_stream, buf, sizeof(buf),
                                            pdMS_TO_TICKS(1000));
     self->_f.write(buf, received);
+    self->_f.flush();
   }
 
   /* BEGIN EXIT - NO LONGER IN LOGGING STATE */
@@ -128,6 +129,25 @@ void LogFile::sample(dlf_tick_t tick) {
       if (xStreamBufferIsFull(_stream)) _state = QUEUE_FULL;
     }
   }
+}
+
+void LogFile::flush() {
+    if (_state != LOGGING) return;
+
+    // Wait for the stream buffer to be mostly empty
+    // This isn't a perfect guarantee but prevents flushing a file
+    // that the flusher task is actively writing to in large chunks.
+    while (xStreamBufferBytesAvailable(_stream) > DLF_SD_BLOCK_WRITE_SIZE) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    // Update header with the last known number of ticks
+    _f.seek(offsetof(dlf_logfile_header_t, tick_span));
+    _f.write(reinterpret_cast<uint8_t*>(&_last_tick), sizeof(dlf_tick_t));
+    _f.flush(); // Ensure the header update is written to the SD card
+
+    // Return the file pointer to the end for subsequent writes
+    _f.seek(_f.size());
 }
 
 void LogFile::close() {

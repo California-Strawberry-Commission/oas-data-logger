@@ -146,4 +146,11 @@ void Run::create_lockfile() {
   f.close();
 }
 
+void Run::flush() {
+    if (_status != LOGGING) return;
+    for (auto &lf : _log_files) {
+        lf->flush();
+    }
+}
+
 }  // namespace dlf
