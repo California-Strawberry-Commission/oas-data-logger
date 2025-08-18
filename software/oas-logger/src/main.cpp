@@ -27,20 +27,18 @@ const int GPS_PRINT_INTERVAL_MS{1000};
 // Pin Definitions
 const gpio_num_t PIN_USB_POWER{GPIO_NUM_13};
 const gpio_num_t PIN_SLEEP_BUTTON{GPIO_NUM_0};
-// const gpio_num_t PIN_SD_CLK{GPIO_NUM_7};     // Clock
-// const gpio_num_t PIN_SD_CMD{GPIO_NUM_8};     // Command
-// const gpio_num_t PIN_SD_D0{GPIO_NUM_9};      // Data 0
-// const gpio_num_t PIN_SD_D1{GPIO_NUM_10};     // Data 1 (for 4-bit mode)
-// const gpio_num_t PIN_SD_D2{GPIO_NUM_11};     // Data 2 (for 4-bit mode)
-// const gpio_num_t PIN_SD_D3{GPIO_NUM_12};     // Data 3 (for 4-bit mode)
-const gpio_num_t PIN_SD_SCK{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_8 : GPIO_NUM_26};
-const gpio_num_t PIN_SD_MOSI{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_33 : GPIO_NUM_21}; //AKA DI
-const gpio_num_t PIN_SD_MISO{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_32 : GPIO_NUM_33}; //AKA DO
-const gpio_num_t PIN_SD_CS{GPIO_NUM_14};
-const gpio_num_t PIN_GPS_WAKE{GPIO_NUM_5}; // Used for power control on SAM-M10Q
-const gpio_num_t PIN_GPS_SDA{GPIO_NUM_40};
+const gpio_num_t PIN_SD_CLK{GPIO_NUM_34};    // Clock
+const gpio_num_t PIN_SD_CMD{GPIO_NUM_35};    // Command
+const gpio_num_t PIN_SD_D0{GPIO_NUM_36};     // Data 0
+const gpio_num_t PIN_SD_D1{GPIO_NUM_37};     // Data 1 (for 4-bit mode)
+const gpio_num_t PIN_SD_D2{GPIO_NUM_38};     // Data 2 (for 4-bit mode)
+const gpio_num_t PIN_SD_D3{GPIO_NUM_39};     // Data 3 (for 4-bit mode)
 
-const gpio_num_t PIN_GPS_SCL{GPIO_NUM_39};
+const gpio_num_t PIN_GPS_WAKE{GPIO_NUM_5}; // Used for power control on SAM-M10Q
+
+// Define the UART pins here:
+const gpio_num_t PIN_GPS_TX{GPIO_NUM_43};   // GPS UART TX pin
+const gpio_num_t PIN_GPS_RX{GPIO_NUM_44};   // GPS UART RX pin
 
 // LED Configuration
 #define LED_PIN PIN_NEOPIXEL
@@ -50,8 +48,8 @@ const int NUM_LEDS{1};
 const uint8_t LED_BRIGHTNESS{10};
 
 // GPS Configuration
-// SAM-M10Q default I2C address is 0x42
-const int I2C_ADDR_GPS{0x42};
+// SAM-M10Q UART baud rate
+const int GPS_BAUD_RATE{9600};
 const uint32_t GPS_UPDATE_RATE_MS{100}; // 10Hz update rate
 
 // WiFi Configuration
@@ -88,7 +86,6 @@ enum class ErrorType {
   NONE,
   SD_INIT_FAILED,
   GPS_NOT_RESPONDING,
-  I2C_INIT_FAILED,
   WIFI_CONFIG_FAILED,
   LOGGER_INIT_FAILED
 };
@@ -98,8 +95,8 @@ CRGB leds[NUM_LEDS];
 SFE_UBLOX_GNSS myGNSS;  // u-blox GNSS object
 ESP32Time rtc;
 WiFiManager wifiManager;
-CSCLogger logger{SD};  
-// CSCLogger logger{SD_MMC};
+// CSCLogger logger{SD};  
+CSCLogger logger{SD_MMC};
 TaskHandle_t xGPS_Handle;
 
 // State Machine Variables
@@ -149,7 +146,6 @@ void startLoggerRun();
 void gpsTask(void* args);
 void sleepMonitorTask(void* args);
 void testNetworkConnectivity(void);
-void scanI2C(void);
 
 void setup() {
   Serial.begin(SERIAL_BAUD_RATE);
@@ -265,9 +261,6 @@ void updateLedPattern() {
         case ErrorType::GPS_NOT_RESPONDING:
           blinkInterval = 400; // Medium blink
           break;
-        case ErrorType::I2C_INIT_FAILED:
-          blinkInterval = 600; // Slow blink
-          break;
         case ErrorType::WIFI_CONFIG_FAILED:
           blinkInterval = 800; // Very slow blink
           break;
@@ -306,26 +299,6 @@ void handleInitState() {
   }
 }
 
-// Uncomment for SDIO
-// void handleWaitSdState() {
-//   Serial.println("Initializing SDIO for SD card...");
-
-//   // Configure the pins for SDIO
-//   if (!SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0, PIN_SD_D1, PIN_SD_D2, PIN_SD_D3)) {
-//     Serial.println("Pin configuration failed!");
-//     return;
-//   }
-
-//   // Initialize SD_MMC
-//   // Parameters: mount point, mode1bit, format_if_failed, sd_max_frequency, max_files
-//   if (SD_MMC.begin("/sdcard", false)) {  // false = use 4-bit mode
-//     Serial.println("SD card connected via SDIO");
-//     transitionToState(SystemState::WAIT_WIFI);
-//   } else {
-//     Serial.println("SD card initialization failed");
-//     // Keep trying, no immediate error transition
-//   }
-// }
 
 // __--''--____--''--____--''--____--''--____--''--____--''--__
 // 
@@ -335,20 +308,26 @@ void handleInitState() {
 
 
 void handleWaitSdState() {
+  Serial.println("Initializing SDIO for SD card...");
 
-  Serial.println("Initializing SPI for SD card...");
-
-  SPI.setFrequency(1000000);
-  SPI.setDataMode(SPI_MODE0);
-
-  SPI.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS); // No return value to check
-
-  if (SD.begin(PIN_SD_CS)) {
-    Serial.println("SD card connected");
-    transitionToState(SystemState::WAIT_WIFI);
+  // Configure the pins for SDIO
+  if (!SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0, PIN_SD_D1, PIN_SD_D2, PIN_SD_D3)) {
+    Serial.println("Pin configuration failed!");
+    currentError = ErrorType::SD_INIT_FAILED;
+    transitionToState(SystemState::ERROR);
+    return;
   }
 
-  // Keep trying, no immediate error transition
+  // Initialize SD_MMC
+  // Parameters: mount point, mode1bit, format_if_failed, sd_max_frequency, max_files
+  if (SD_MMC.begin("/sdcard", false)) {  // false = use 4-bit mode
+    Serial.println("SD card connected via SDIO");
+    transitionToState(SystemState::WAIT_WIFI);
+  } else {
+    Serial.println("SD card initialization failed");
+    currentError = ErrorType::SD_INIT_FAILED;
+    transitionToState(SystemState::ERROR);
+  }
 }
 
 void handleWaitWifiState() {
@@ -488,11 +467,11 @@ void handleRunningState() {
           tempOptions.markAfterUpload = false;
           
           // Create a temporary uploader instance for the current run
-          UploaderComponent tempUploader(SD, "/", UPLOAD_HOST, UPLOAD_PORT, tempOptions);
+          UploaderComponent tempUploader(SD_MMC, "/", UPLOAD_HOST, UPLOAD_PORT, tempOptions);
           
           // The logger stores runs in the root directory with a specific naming convention
           // We need to find the current run directory
-          File root = SD.open("/");
+          File root = SD_MMC.open("/");
           if (root) {
             File runDir;
             String currentRunPath;
@@ -505,7 +484,7 @@ void handleRunningState() {
                   strcmp(runDir.name(), "System Volume Information") != 0) {
                 
                 // Check if this directory has a lockfile (indicating active run)
-                File lockCheck = SD.open(String("/") + runDir.name() + "/" + LOCKFILE_NAME);
+                File lockCheck = SD_MMC.open(String("/") + runDir.name() + "/" + LOCKFILE_NAME);
                 if (lockCheck) {
 
                   lockCheck.close();
@@ -629,17 +608,10 @@ void enableGps() {
   
   Serial.println("Enabling GPS...");
 
-  Wire.setPins(PIN_GPS_SDA, PIN_GPS_SCL); // SDA: 40, SCL: 39
-  
-  // Initialize I2C
-  if (!Wire.begin()) {
-    void scanI2C();
-    currentError = ErrorType::I2C_INIT_FAILED;
-    transitionToState(SystemState::ERROR);
-    return;
-  }
+  // Initialize UART for GPS communication
+  Serial2.begin(GPS_BAUD_RATE, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
 
-  printf("i2c init was OK.\n");
+  printf("UART init was OK.\n");
   
   // Power on GPS module (if wake pin is connected to power control)
   // digitalWrite(PIN_GPS_WAKE, HIGH);
@@ -648,14 +620,14 @@ void enableGps() {
   vTaskDelay(pdMS_TO_TICKS(100));
   
   // Initialize u-blox GNSS
-  if (!myGNSS.begin(Wire, I2C_ADDR_GPS)) {
+  if (!myGNSS.begin(Serial2)) {
     currentError = ErrorType::GPS_NOT_RESPONDING;
     transitionToState(SystemState::ERROR);
     return;
   }
   
   // Configure the u-blox module
-  myGNSS.setI2COutput(COM_TYPE_UBX); // Set I2C port to output UBX only (no NMEA)
+  myGNSS.setUART1Output(COM_TYPE_UBX); // Set UART port to output UBX only (no NMEA)
   myGNSS.setNavigationFrequency(10); // Set output to 10Hz
   myGNSS.setAutoPVT(true); // Tell the GPS to send PVT messages automatically
   myGNSS.saveConfiguration(); // Save the current settings to flash and BBR
@@ -686,8 +658,8 @@ void disableGps() {
   // Turn off power to GPS module (if wake pin is connected to power control)
   // digitalWrite(PIN_GPS_WAKE, LOW);
   
-  // Close I2C
-  Wire.end();
+  // Close UART
+  Serial2.end();
   
   gpsEnabled = false;
   Serial.println("GPS disabled");
@@ -808,15 +780,3 @@ void testNetworkConnectivity() {
   }
 }
 
-void scanI2C() {
-  Serial.println("Scanning I2C bus...");
-  for (uint8_t address = 1; address < 127; address++) {
-    Wire.beginTransmission(address);
-    uint8_t error = Wire.endTransmission();
-    if (error == 0) {
-      Serial.print("I2C device found at address 0x");
-      Serial.println(address, HEX);
-    }
-  }
-  Serial.println("I2C scan complete");
-}
