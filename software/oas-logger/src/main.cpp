@@ -1,4 +1,4 @@
-#include <Arduino.h>
+#include <arduino.h>
 #include <ESP32Time.h>
 #include <FastLED.h>
 #include <SD.h>
@@ -463,7 +463,7 @@ void handleWaitTimeState() {
 
 void handleRunningState() {
   // WiFi reconnection logic
-  if (millis() - lastWifiReconnectAttemptMillis > WIFI_CONNECT_ATTEMPT_INTERVAL_MS) {
+  if (millis() - lastWifiReconnectAttemptMillis > WIFI_RECONNECT_ATTEMPT_INTERVAL_MS) {
     if (WiFi.status() != WL_CONNECTED) {
       Serial.println("WiFi not connected, retrying...");
       WiFi.begin();
