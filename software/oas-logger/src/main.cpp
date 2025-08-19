@@ -5,11 +5,13 @@
 #include <SparkFun_u-blox_GNSS_v3.h>
 #include <WiFi.h>
 #include <WiFiManager.h>
+#include <WiFiClientSecure.h>
+#include <WifiClient.h>
 #include <Wire.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <dlf_logger.h>
-
+#include <sys/time.h>
 #include "FS.h"
 #include "SD_MMC.h"
 
@@ -36,9 +38,9 @@ const gpio_num_t PIN_SD_D3{GPIO_NUM_39};     // Data 3 (for 4-bit mode)
 
 const gpio_num_t PIN_GPS_WAKE{GPIO_NUM_5}; // Used for power control on SAM-M10Q
 
-// Define the UART pins here:
-const gpio_num_t PIN_GPS_TX{GPIO_NUM_43};   // GPS UART TX pin
-const gpio_num_t PIN_GPS_RX{GPIO_NUM_44};   // GPS UART RX pin
+// Move GPS UART to safe pins
+const gpio_num_t PIN_GPS_TX{GPIO_NUM_16};   // ESP TX -> GPS RX
+const gpio_num_t PIN_GPS_RX{GPIO_NUM_17};   // ESP RX <- GPS TX
 
 // LED Configuration
 #define LED_PIN PIN_NEOPIXEL
@@ -48,25 +50,20 @@ const int NUM_LEDS{1};
 const uint8_t LED_BRIGHTNESS{10};
 
 // GPS Configuration
-// SAM-M10Q UART baud rate
-const int GPS_BAUD_RATE{9600};
+const int GPS_BAUD_RATE{38400};  // SAM-M10Q default
 const uint32_t GPS_UPDATE_RATE_MS{100}; // 10Hz update rate
+#define mySerial Serial1 // GPS Serial port
 
 // WiFi Configuration
 const char* WIFI_CONFIG_AP_NAME{"OASDataLogger"};
-const int WIFI_RECONNECT_ATTEMPT_INTERVAL_MS{10000};
+const int WIFI_RECONNECT_BACKOFF_MS{2000};
+const int WIFI_MAX_BACKOFF_MS{30000};
+static volatile bool wifiConnecting = false;
+static uint32_t wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;
 
 // For server hosting
-// 1. Uncomment lines below 
-// 2. In uploader component, change to WifiClientSecure
 const char* UPLOAD_HOST{"oas-data-logger.vercel.app"};
 const uint16_t UPLOAD_PORT{443};
-
-// For local hosting:
-// 1. Uncomment the lines below
-// 2. Go to uploader_component.cpp and change from WiFiClientSecure to WiFiClient.
-//const char* UPLOAD_HOST{"192.168.1.129"};  // Your computer's local IP
-//const uint16_t UPLOAD_PORT{3000};
 
 // State Machine States
 enum class SystemState {
@@ -92,12 +89,11 @@ enum class ErrorType {
 
 // Global Objects
 CRGB leds[NUM_LEDS];
-SFE_UBLOX_GNSS myGNSS;  // u-blox GNSS object
+SFE_UBLOX_GNSS_SERIAL myGNSS;  // u-blox GNSS object
 ESP32Time rtc;
 WiFiManager wifiManager;
-// CSCLogger logger{SD};  
 CSCLogger logger{SD_MMC};
-TaskHandle_t xGPS_Handle;
+TaskHandle_t xGPS_Handle = NULL;
 
 // State Machine Variables
 SystemState currentState = SystemState::INIT;
@@ -106,8 +102,12 @@ bool offloadMode = false;
 bool gpsEnabled = false;
 run_handle_t runHandle{0};
 
+// GPS Time tracking (separate from position data)
+bool gpsTimeValid = false;
+time_t gpsEpoch = 0;
+uint8_t gpsFixType = 0;
+
 // Timing Variables
-unsigned long lastWifiReconnectAttemptMillis{0};
 unsigned long lastLoggerStartRunMillis{0};
 unsigned long lastLedToggleMillis{0};
 unsigned long lastGpsPrintMillis{0};
@@ -145,7 +145,8 @@ void initializeLogger();
 void startLoggerRun();
 void gpsTask(void* args);
 void sleepMonitorTask(void* args);
-void testNetworkConnectivity(void);
+void testNetworkConnectivity();
+void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info);
 
 void setup() {
   Serial.begin(SERIAL_BAUD_RATE);
@@ -165,6 +166,7 @@ void setup() {
   pinMode(PIN_USB_POWER, INPUT_PULLDOWN);
   pinMode(PIN_SLEEP_BUTTON, INPUT_PULLUP);
   pinMode(PIN_GPS_WAKE, OUTPUT);
+  digitalWrite(PIN_GPS_WAKE, LOW); // Start with GPS off
   
   // Add delay to give time for serial to initialize
   vTaskDelay(pdMS_TO_TICKS(1000));
@@ -215,6 +217,45 @@ void loop() {
   }
   
   vTaskDelay(pdMS_TO_TICKS(10));
+}
+
+void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+  switch (event) {
+    case ARDUINO_EVENT_WIFI_STA_START:
+      Serial.println("[WiFi] STA started");
+      break;
+    case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+      Serial.println("[WiFi] Connected to AP");
+      wifiConnecting = false;
+      wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS; // Reset backoff
+      break;
+    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+      Serial.print("[WiFi] Got IP: ");
+      Serial.println(WiFi.localIP());
+      wifiConnecting = false;
+      break;
+    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+      Serial.printf("[WiFi] Disconnected, reason: %d\n", info.wifi_sta_disconnected.reason);
+      
+      // Handle auth failures differently
+      if (info.wifi_sta_disconnected.reason == 201) { // AUTH_FAIL
+        Serial.println("[WiFi] Authentication failed - check credentials");
+        // Don't auto-reconnect on auth failure
+        wifiConnecting = false;
+      } else {
+        // For other disconnection reasons, use backoff and reconnect
+        vTaskDelay(pdMS_TO_TICKS(wifiReconnectBackoff));
+        wifiReconnectBackoff = min<uint32_t>(wifiReconnectBackoff * 2, WIFI_MAX_BACKOFF_MS);
+        
+        if (!wifiConnecting) {
+          WiFi.reconnect();
+          wifiConnecting = true;
+        }
+      }
+      break;
+    default:
+      break;
+  }
 }
 
 void initializeLeds() {
@@ -299,14 +340,6 @@ void handleInitState() {
   }
 }
 
-
-// __--''--____--''--____--''--____--''--____--''--____--''--__
-// 
-// >> Add PULL UP RESISTORS (10k) on ALL SDIO data lines!! <<
-// 
-// __--''--____--''--____--''--____--''--____--''--____--''--__
-
-/*
 void handleWaitSdState() {
   Serial.println("Initializing SDIO for SD card...");
 
@@ -318,49 +351,22 @@ void handleWaitSdState() {
     return;
   }
 
-  // Initialize SD_MMC
-  // Parameters: mount point, mode1bit, format_if_failed, sd_max_frequency, max_files
-  if (SD_MMC.begin("/sdcard", false)) { 
-    Serial.println("SD card connected via SDIO");
-    transitionToState(SystemState::WAIT_WIFI);
-  } else {
-    Serial.println("SD card initialization failed");
-    currentError = ErrorType::SD_INIT_FAILED;
-    transitionToState(SystemState::ERROR);
-  }
-}
-*/
-
-void handleWaitSdState() {
-  Serial.println("Initializing SDIO for SD card...");
-
-  // Configure the pins for SDIO
-  if (!SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0, PIN_SD_D1, PIN_SD_D2, PIN_SD_D3)) {
-    Serial.println("Pin configuration failed!");
-    currentError = ErrorType::SD_INIT_FAILED;
-    transitionToState(SystemState::ERROR);
-    return;
-  }
-
-  // Try 1-bit mode first (more reliable for debugging)
+  // Try 1-bit mode first (more reliable)
   Serial.println("Trying 1-bit mode...");
   if (SD_MMC.begin("/sdcard", true)) {  // true = use 1-bit mode
     Serial.println("SD card connected via SDIO (1-bit mode)");
     
-    // If 1-bit works, you could try 4-bit
+    // Optionally try 4-bit mode
     SD_MMC.end();
     delay(100);
     Serial.println("Now trying 4-bit mode...");
-    if (SD_MMC.begin("/sdcard", false)) {  // false = 4-bit mode
+    if (SD_MMC.begin("/sdcard", true, false, SDMMC_FREQ_DEFAULT)) {  // false = 4-bit mode
       Serial.println("SD card connected via SDIO (4-bit mode)");
-      transitionToState(SystemState::WAIT_WIFI);
-      return;
     } else {
       Serial.println("4-bit failed, falling back to 1-bit");
       SD_MMC.begin("/sdcard", true);
-      transitionToState(SystemState::WAIT_WIFI);
-      return;
     }
+    transitionToState(SystemState::WAIT_WIFI);
   } else {
     Serial.println("SD card initialization failed even in 1-bit mode");
     currentError = ErrorType::SD_INIT_FAILED;
@@ -369,74 +375,37 @@ void handleWaitSdState() {
 }
 
 void handleWaitWifiState() {
-  transitionToState(SystemState::WAIT_GPS);  // FORT TESTING GPS ONLY, WO WIFI
-  return;
-
-  Serial.println("Initializing WiFi...");
+  Serial.println("Initializing WiFi (STA)...");
+  
+  // Set WiFi mode and register event handler
   WiFi.mode(WIFI_STA);
-  wifiManager.setConfigPortalBlocking(true);
-
-  bool hasCreds = wifiCredentialsExist();
-
-  if (offloadMode) {
-    if (hasCreds) {
-      Serial.println("Offload mode with credentials, attempting to connect indefinitely...");
-      WiFi.begin();
-      while (WiFi.status() != WL_CONNECTED) {
-        Serial.println("Waiting for WiFi (offload mode)...");
-        delay(1000);
-      }
-      Serial.println("Connected to WiFi.");
-      testNetworkConnectivity();
-      transitionToState(SystemState::OFFLOAD);
-    } else {
-      Serial.println("Offload mode with no credentials, entering AP mode indefinitely...");
-      wifiManager.setConfigPortalTimeout(0); // Block until credentials provided
-      if (!wifiManager.autoConnect(WIFI_CONFIG_AP_NAME)) {
-        currentError = ErrorType::WIFI_CONFIG_FAILED;
-        transitionToState(SystemState::ERROR);
-        return;
-      }
-      Serial.println("Credentials acquired in AP mode.");
-      transitionToState(SystemState::OFFLOAD);
-    }
+  WiFi.onEvent(onWiFiEvent);
+  WiFi.setAutoReconnect(false); // We'll handle reconnection ourselves
+  
+  // Check if we have saved credentials
+  if (WiFi.SSID().length() == 0) {
+    Serial.println("No WiFi credentials saved. Starting WiFi Manager...");
+    wifiManager.autoConnect(WIFI_CONFIG_AP_NAME);
   } else {
-    if (hasCreds) {
-      Serial.println("Normal mode with credentials, attempting connection...");
-      WiFi.begin();
-      unsigned long startAttempt = millis();
-      while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
-        delay(500);
-        Serial.print(".");
-      }
-    
-    if (WiFi.status() == WL_CONNECTED) {
-      Serial.println("\nConnected to WiFi.");
-      testNetworkConnectivity();
-      transitionToState(SystemState::WAIT_GPS);
-    } else {
-      Serial.println("\nConnection failed, entering AP mode for 3 minutes...");
-      wifiManager.setConfigPortalTimeout(180); // 3 minutes
-      wifiManager.startConfigPortal(WIFI_CONFIG_AP_NAME);
-      Serial.println("Exiting AP mode (timeout or user finished). Continuing program.");
-      transitionToState(SystemState::WAIT_GPS); // Proceed regardless of connection
-    }
-  } else {
-    Serial.println("No credentials, waiting in AP mode until provided...");
-    wifiManager.setConfigPortalTimeout(0); // No timeout
-    if (!wifiManager.autoConnect(WIFI_CONFIG_AP_NAME)) {
-      currentError = ErrorType::WIFI_CONFIG_FAILED;
-      transitionToState(SystemState::ERROR);
-      return;
-    }
-    Serial.println("Credentials acquired in AP mode.");
-    transitionToState(SystemState::WAIT_GPS);
-    }
+    Serial.printf("Connecting to saved WiFi: %s\n", WiFi.SSID().c_str());
+    WiFi.begin(); // Use saved credentials
+    wifiConnecting = true;
   }
-
+  
+  // Wait up to 15 seconds for connection
+  unsigned long startTime = millis();
+  while (wifiConnecting && (millis() - startTime < 15000)) {
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+  
   if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("WiFi connected successfully");
     testNetworkConnectivity();
+  } else {
+    Serial.println("WiFi not connected; continuing without network.");
   }
+  
+  transitionToState(SystemState::WAIT_GPS);
 }
 
 void handleWaitGpsState() {
@@ -456,113 +425,110 @@ void handleWaitGpsState() {
 }
 
 void handleWaitTimeState() {
-  // Try to get GPS data with mutex protection
-  if (xSemaphoreTake(gpsDataMutex, portMAX_DELAY) == pdTRUE) {
-    // Check if we have valid time from GPS
-    if (myGNSS.getDateValid() && myGNSS.getTimeValid() && 
-        myGNSS.getYear() >= 2025) {
-      
-      rtc.setTime(myGNSS.getSecond(), myGNSS.getMinute(), myGNSS.getHour(),
-                  myGNSS.getDay(), myGNSS.getMonth(), myGNSS.getYear());
-      Serial.println("Valid time received");
-      
-      xSemaphoreGive(gpsDataMutex);
-      
-      // Initialize logger and start run
-      initializeLogger();
-      startLoggerRun();
-      transitionToState(SystemState::RUNNING);
-    } else {
-      xSemaphoreGive(gpsDataMutex);
+  // Check if we have valid time AND a GPS fix
+  if (gpsTimeValid && gpsEpoch >= 1735689600 /* 2025-01-01 UTC */) {
+    // Set system time for TLS operations
+    struct timeval tv;
+    tv.tv_sec = gpsEpoch;
+    tv.tv_usec = 0;
+    settimeofday(&tv, nullptr);
+    
+    // Also set the RTC
+    rtc.setTime(gpsEpoch);
+    
+    Serial.printf("Valid time received: %ld\n", gpsEpoch);
+    
+    // Initialize logger and start run
+    initializeLogger();
+    startLoggerRun();
+    transitionToState(SystemState::RUNNING);
+  } else {
+    // Print waiting status every 5 seconds
+    static unsigned long lastPrintTime = 0;
+    if (millis() - lastPrintTime > 5000) {
+      lastPrintTime = millis();
+      Serial.println("Waiting for valid GPS time...");
     }
   }
 }
 
 void handleRunningState() {
-  // WiFi reconnection logic
-  if (millis() - lastWifiReconnectAttemptMillis > WIFI_RECONNECT_ATTEMPT_INTERVAL_MS) {
-    if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("WiFi not connected, retrying...");
-      WiFi.begin();
-      lastWifiReconnectAttemptMillis = millis();
-    } else {
-      // Upload the current run over wifi
-      static unsigned long lastUploadAttemptMillis = 0;
-      const unsigned long UPLOAD_ATTEMPT_INTERVAL_MS = 30000; // Try upload every 30s when connected
-      
-      if (millis() - lastUploadAttemptMillis > UPLOAD_ATTEMPT_INTERVAL_MS) {
-        lastUploadAttemptMillis = millis();
-        
-        if (runHandle) {
-          // Get the current run directory name
-          // The run name format appears to be based on when start_run was called
-          // We need to access the logger's current run directory
-          
-          Serial.println("[Running State] Attempting to upload current run while logging...");
-
-          UploaderComponent::Options tempOptions;
-          tempOptions.deleteAfterUpload = false;
-          tempOptions.markAfterUpload = false;
-          
-          // Create a temporary uploader instance for the current run
-          UploaderComponent tempUploader(SD_MMC, "/", UPLOAD_HOST, UPLOAD_PORT, tempOptions);
-          
-          // The logger stores runs in the root directory with a specific naming convention
-          // We need to find the current run directory
-          File root = SD_MMC.open("/");
-          if (root) {
-            File runDir;
-            String currentRunPath;
-            
-            // Find the most recent run directory (which should be our current run)
-            // Run directories don't have the lockfile when complete, but our current run
-            // should still have it
-            while (runDir = root.openNextFile()) {
-              if (runDir.isDirectory() && runDir.name()[0] != '.' &&
-                  strcmp(runDir.name(), "System Volume Information") != 0) {
-                
-                // Check if this directory has a lockfile (indicating active run)
-                File lockCheck = SD_MMC.open(String("/") + runDir.name() + "/" + LOCKFILE_NAME);
-                if (lockCheck) {
-
-                  lockCheck.close();
-                  currentRunPath = String("/") + runDir.name();
-                  Serial.printf("[Running State] Found active run: %s\n", runDir.name());
-
-                  Serial.println("[Running State] Flushing data and finalizing headers for upload...");
-                  logger.flush(runHandle); 
-
-                  // Upload this run
-                  String uploadPath = String("/api/upload/") + runDir.name();
-                  bool uploadSuccess = tempUploader.uploadRun(runDir, uploadPath);
-
-                  if (uploadSuccess) {
-                    Serial.println("[Running State] Successfully uploaded current run data");
-                    // Note: We don't mark or delete the run since it's still active
-                  } else {
-                    Serial.println("[Running State] Failed to upload current run data");
-                  }
-                  
-                  break; // We found and processed the current run
-                }
-              }
-            }
-            root.close();
-          }
-        }
-      }
-    } 
-  }
-  
-  // GPS printing logic - independent of logger run interval
+  // GPS printing logic
   if (millis() - lastGpsPrintMillis > GPS_PRINT_INTERVAL_MS) {
     lastGpsPrintMillis = millis();
     
     // Try to get GPS data with mutex protection
     if (xSemaphoreTake(gpsDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-      Serial.printf("[GPS] Lat: %.6f, Lng: %.6f, Alt: %.1fm, Sats: %d\n", 
-                    gpsData.lat, gpsData.lng, gpsData.alt, gpsData.satellites);
+      Serial.printf("[GPS] Lat: %.6f, Lng: %.6f, Alt: %.1fm, Sats: %d, Fix: %d\n", 
+                    gpsData.lat, gpsData.lng, gpsData.alt, gpsData.satellites, gpsFixType);
       xSemaphoreGive(gpsDataMutex);
+    }
+  }
+  
+  // Upload current run if WiFi is connected
+  static unsigned long lastUploadAttemptMillis = 0;
+  const unsigned long UPLOAD_ATTEMPT_INTERVAL_MS = 30000; // Try upload every 30s
+  
+  if (WiFi.status() == WL_CONNECTED && 
+      millis() - lastUploadAttemptMillis > UPLOAD_ATTEMPT_INTERVAL_MS) {
+    lastUploadAttemptMillis = millis();
+    
+    if (runHandle) {
+      // Get the current run directory name
+      // The run name format appears to be based on when start_run was called
+      // We need to access the logger's current run directory
+      
+      Serial.println("[Running State] Attempting to upload current run while logging...");
+
+      UploaderComponent::Options tempOptions;
+      tempOptions.deleteAfterUpload = false;
+      tempOptions.markAfterUpload = false;
+      
+      // Create a temporary uploader instance for the current run
+      UploaderComponent tempUploader(SD, "/", UPLOAD_HOST, UPLOAD_PORT, tempOptions);
+      
+      // The logger stores runs in the root directory with a specific naming convention
+      // We need to find the current run directory
+      File root = SD.open("/");
+      if (root) {
+        File runDir;
+        String currentRunPath;
+        
+        // Find the most recent run directory (which should be our current run)
+        // Run directories don't have the lockfile when complete, but our current run
+        // should still have it
+        while (runDir = root.openNextFile()) {
+          if (runDir.isDirectory() && runDir.name()[0] != '.' &&
+              strcmp(runDir.name(), "System Volume Information") != 0) {
+            
+            // Check if this directory has a lockfile (indicating active run)
+            File lockCheck = SD.open(String("/") + runDir.name() + "/" + LOCKFILE_NAME);
+            if (lockCheck) {
+
+              lockCheck.close();
+              currentRunPath = String("/") + runDir.name();
+              Serial.printf("[Running State] Found active run: %s\n", runDir.name());
+
+              Serial.println("[Running State] Flushing data and finalizing headers for upload...");
+              logger.flush(runHandle); 
+
+              // Upload this run
+              String uploadPath = String("/api/upload/") + runDir.name();
+              bool uploadSuccess = tempUploader.uploadRun(runDir, uploadPath);
+
+              if (uploadSuccess) {
+                Serial.println("[Running State] Successfully uploaded current run data");
+                // Note: We don't mark or delete the run since it's still active
+              } else {
+                Serial.println("[Running State] Failed to upload current run data");
+              }
+              
+              break; // We found and processed the current run
+            }
+          }
+        }
+        root.close();
+      }
     }
   }
   
@@ -585,9 +551,6 @@ void handleOffloadState() {
 
 void handleErrorState() {
   // Error state is handled by LED pattern
-  // Could add recovery logic here if needed
-  
-  // Log error details
   Serial.printf("System in ERROR state. Error type: %d\n", (int)currentError);
   
   // For critical errors, restart after 10 seconds
@@ -605,11 +568,8 @@ void handleSleepState() {
   
   // Turn off LED
   FastLED.showColor(CRGB::Black);
-
-  // Turn off GPS                                 -- TODO
-  // Tunr off SD card                             -- TODO
   
-  // Configure wake on USB power only if unconnected, else wake on reset.
+  // Configure wake on USB power only if unconnected, else wake on reset
   if (!hasUsbPower()) {
     esp_sleep_enable_ext0_wakeup(PIN_USB_POWER, 1);
   } else {
@@ -628,98 +588,96 @@ bool hasUsbPower() {
 }
 
 bool wifiCredentialsExist() {
-  wifi_config_t conf;
-  esp_err_t result = esp_wifi_get_config(WIFI_IF_STA, &conf);
-  
-  if (result != ESP_OK) {
-    Serial.printf("esp_wifi_get_config failed: %d\n", result);
-    return false;
-  }
-  
-  return strlen((const char*)conf.sta.ssid) > 0;
+  return WiFi.SSID().length() > 0;
 }
 
-// void enableGps() {
-//   if (gpsEnabled) {
-//     return;
-//   }
-  
-//   Serial.println("Enabling GPS...");
-
-//   // Initialize UART for GPS communication
-//   Serial2.begin(GPS_BAUD_RATE, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
-
-//   printf("UART init was OK.\n");
-  
-//   // Power on GPS module (if wake pin is connected to power control)
-//   // digitalWrite(PIN_GPS_WAKE, HIGH);
-  
-//   // Small delay to ensure power stability
-//   vTaskDelay(pdMS_TO_TICKS(100));
-  
-//   // Initialize u-blox GNSS
-//   if (!myGNSS.begin(Serial2)) {
-//     currentError = ErrorType::GPS_NOT_RESPONDING;
-//     transitionToState(SystemState::ERROR);
-//     return;
-//   }
-  
-//   // Configure the u-blox module
-//   myGNSS.setUART1Output(COM_TYPE_UBX); // Set UART port to output UBX only (no NMEA)
-//   myGNSS.setNavigationFrequency(10); // Set output to 10Hz
-//   myGNSS.setAutoPVT(true); // Tell the GPS to send PVT messages automatically
-//   myGNSS.saveConfiguration(); // Save the current settings to flash and BBR
-  
-//   // Configure power saving mode if needed
-//   // myGNSS.powerSaveMode(true); // Enable power save mode
-  
-//   gpsEnabled = true;
-//   Serial.println("GPS enabled");
-// }
-
 void enableGps() {
-  if (gpsEnabled) {
-    return;
-  }
-  
+  if (gpsEnabled) return;
   Serial.println("Enabling GPS...");
 
-  // Initialize UART for GPS communication
-  Serial2.begin(GPS_BAUD_RATE, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
-  
-  printf("UART init was OK.\n");
-  
-  // Power on GPS module (if wake pin is connected to power control)
-  // digitalWrite(PIN_GPS_WAKE, HIGH);
-  
-  // Small delay to ensure power stability
-  vTaskDelay(pdMS_TO_TICKS(500));  // Increased delay for UART stability
-  
-  // IMPORTANT: Tell the u-blox library to use UART, not I2C!
-  myGNSS.begin(Serial2);  // This should work
-  
-  // Alternative: If the above doesn't work, try this more explicit approach:
-  // myGNSS.init();  // Initialize without communication
-  // if (!myGNSS.begin(Serial2, 0x42, 1100, false)) {  // UART mode with timeout
-  
-  // Check if GPS is responding
-  if (!myGNSS.isConnected()) {
-    Serial.println("GPS not responding on UART");
+  // Bind UART to the selected pins
+  mySerial.end();
+  mySerial.begin(38400, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
+  bool connected = myGNSS.begin(mySerial);
+
+  if (!connected) {
+    mySerial.updateBaudRate(9600);
+    connected = myGNSS.begin(mySerial);
+    if (connected) {
+      myGNSS.setSerialRate(38400);
+      vTaskDelay(pdMS_TO_TICKS(100));
+      mySerial.updateBaudRate(38400);
+    }
+  }
+  if (!connected) {
+    Serial.println("GPS not responding");
     currentError = ErrorType::GPS_NOT_RESPONDING;
     transitionToState(SystemState::ERROR);
     return;
   }
-  
-  Serial.println("GPS connected via UART");
-  
-  // Configure the u-blox module
-  myGNSS.setUART1Output(COM_TYPE_UBX); // Set UART port to output UBX only
-  myGNSS.setNavigationFrequency(10); // Set output to 10Hz
-  myGNSS.setAutoPVT(true); // Tell the GPS to send PVT messages automatically
-  myGNSS.saveConfiguration(); // Save the current settings to flash and BBR
-  
+
+  myGNSS.setUART1Output(COM_TYPE_UBX);
+  myGNSS.setNavigationFrequency(10);
+  myGNSS.setAutoPVT(true);
+  myGNSS.saveConfiguration();
+
   gpsEnabled = true;
   Serial.println("GPS enabled");
+}
+
+void gpsTask(void* args) {
+  Serial.println("[GPS Task] Started");
+  
+  while (true) {
+    // Request PVT data - returns true when new data is available
+    if (myGNSS.getPVT()) {
+      // Get fix type and satellite count (not protected by mutex)
+      gpsFixType = myGNSS.getFixType();
+      
+      // Update GPS data with mutex protection
+      if (xSemaphoreTake(gpsDataMutex, portMAX_DELAY) == pdTRUE) {
+        // Get satellite count
+        gpsData.satellites = myGNSS.getSIV();
+        
+        // Only update position if we have a valid fix
+        if (gpsFixType >= 2 && !myGNSS.getInvalidLlh()) {
+          gpsData.lat = myGNSS.getLatitude() / 10000000.0;  // Convert from degrees * 10^7
+          gpsData.lng = myGNSS.getLongitude() / 10000000.0; // Convert from degrees * 10^7
+          gpsData.alt = myGNSS.getAltitudeMSL() / 1000.0;   // Convert from mm to meters
+        }
+        
+        xSemaphoreGive(gpsDataMutex);
+      }
+      
+      // Check time validity more strictly (outside mutex protection)
+      // Only consider time valid if we have a fix AND valid date/time
+      if (gpsFixType >= 2 && 
+          myGNSS.getDateValid() && 
+          myGNSS.getTimeValid() && 
+          myGNSS.getYear() >= 2025 &&
+          myGNSS.getMonth() >= 1 && myGNSS.getMonth() <= 12 &&
+          myGNSS.getDay() >= 1 && myGNSS.getDay() <= 31) {
+        
+        struct tm t = {};
+        t.tm_year = myGNSS.getYear() - 1900;
+        t.tm_mon = myGNSS.getMonth() - 1;
+        t.tm_mday = myGNSS.getDay();
+        t.tm_hour = myGNSS.getHour();
+        t.tm_min = myGNSS.getMinute();
+        t.tm_sec = myGNSS.getSecond();
+        
+        time_t newEpoch = mktime(&t);
+        
+        // Additional sanity check
+        if (newEpoch >= 1735689600) { // 2025-01-01 UTC
+          gpsEpoch = newEpoch;
+          gpsTimeValid = true;
+        }
+      }
+    }
+    
+    vTaskDelay(pdMS_TO_TICKS(GPS_UPDATE_RATE_MS));
+  }
 }
 
 void disableGps() {
@@ -728,21 +686,19 @@ void disableGps() {
   }
   
   Serial.println("Disabling GPS...");
-
-  // Check if the task handle is valid
-  if (xGPS_Handle != NULL)
-  {
-      Serial.println("[GPS] Deleting GPS task...");
-      // Delete the task
-      vTaskDelete(xGPS_Handle);
-      xGPS_Handle = NULL;
+  
+  // Delete GPS task if it exists
+  if (xGPS_Handle != NULL) {
+    Serial.println("[GPS] Deleting GPS task...");
+    vTaskDelete(xGPS_Handle);
+    xGPS_Handle = NULL;
   }
   
-  // Turn off power to GPS module (if wake pin is connected to power control)
-  // digitalWrite(PIN_GPS_WAKE, LOW);
+  // Turn off power to GPS module
+  digitalWrite(PIN_GPS_WAKE, LOW);
   
   // Close UART
-  Serial2.end();
+  mySerial.end();
   
   gpsEnabled = false;
   Serial.println("GPS disabled");
@@ -775,30 +731,6 @@ void startLoggerRun() {
   double m = 0;
   runHandle = logger.start_run(Encodable(m, "double"));
   lastLoggerStartRunMillis = millis();
-}
-
-void gpsTask(void* args) {
-  while (true) {
-    // Check for new GPS data
-    if (myGNSS.getPVT()) {
-      // Update GPS data with mutex protection
-      if (xSemaphoreTake(gpsDataMutex, portMAX_DELAY) == pdTRUE) {
-        // Get satellite count
-        gpsData.satellites = myGNSS.getSIV();
-        
-        // Check if we have a valid fix
-        if (myGNSS.getFixType() > 0 && myGNSS.getInvalidLlh() == false) {
-          gpsData.lat = myGNSS.getLatitude() / 10000000.0; // Convert from degrees * 10^7
-          gpsData.lng = myGNSS.getLongitude() / 10000000.0; // Convert from degrees * 10^7
-          gpsData.alt = myGNSS.getAltitude() / 1000.0; // Convert from mm to meters
-        }
-        
-        xSemaphoreGive(gpsDataMutex);
-      }
-    }
-    
-    vTaskDelay(pdMS_TO_TICKS(GPS_UPDATE_RATE_MS));
-  }
 }
 
 void sleepMonitorTask(void* args) {
@@ -852,14 +784,30 @@ void sleepMonitorTask(void* args) {
 }
 
 void testNetworkConnectivity() {
-  Serial.println("Testing network connectivity...");
+  Serial.println("Testing HTTPS connectivity...");
   
-  WiFiClient client;
-  if (client.connect(UPLOAD_HOST, UPLOAD_PORT)) {
-    Serial.println("Successfully connected to upload server");
-    client.stop();
-  } else {
-    Serial.println("Failed to connect to upload server");
+  WiFiClientSecure client;
+  client.setInsecure(); // For debugging - replace with setCACert() for production
+  client.setTimeout(12000);
+  
+  if (!client.connect(UPLOAD_HOST, UPLOAD_PORT)) {
+    Serial.println("HTTPS connect failed");
+    return;
   }
+  
+  // Send a simple HTTP request
+  client.printf("GET / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", UPLOAD_HOST);
+  
+  // Read response
+  unsigned long timeout = millis();
+  while (client.connected() && (millis() - timeout < 5000)) {
+    if (client.available()) {
+      String line = client.readStringUntil('\n');
+      Serial.printf("HTTPS response: %s\n", line.c_str());
+      break;
+    }
+  }
+  
+  client.stop();
+  Serial.println("HTTPS test complete");
 }
-
