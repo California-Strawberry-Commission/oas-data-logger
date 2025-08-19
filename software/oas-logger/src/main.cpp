@@ -306,7 +306,7 @@ void handleInitState() {
 // 
 // __--''--____--''--____--''--____--''--____--''--____--''--__
 
-
+/*
 void handleWaitSdState() {
   Serial.println("Initializing SDIO for SD card...");
 
@@ -320,11 +320,49 @@ void handleWaitSdState() {
 
   // Initialize SD_MMC
   // Parameters: mount point, mode1bit, format_if_failed, sd_max_frequency, max_files
-  if (SD_MMC.begin("/sdcard", false)) {  // false = use 4-bit mode
+  if (SD_MMC.begin("/sdcard", false)) { 
     Serial.println("SD card connected via SDIO");
     transitionToState(SystemState::WAIT_WIFI);
   } else {
     Serial.println("SD card initialization failed");
+    currentError = ErrorType::SD_INIT_FAILED;
+    transitionToState(SystemState::ERROR);
+  }
+}
+*/
+
+void handleWaitSdState() {
+  Serial.println("Initializing SDIO for SD card...");
+
+  // Configure the pins for SDIO
+  if (!SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0, PIN_SD_D1, PIN_SD_D2, PIN_SD_D3)) {
+    Serial.println("Pin configuration failed!");
+    currentError = ErrorType::SD_INIT_FAILED;
+    transitionToState(SystemState::ERROR);
+    return;
+  }
+
+  // Try 1-bit mode first (more reliable for debugging)
+  Serial.println("Trying 1-bit mode...");
+  if (SD_MMC.begin("/sdcard", true)) {  // true = use 1-bit mode
+    Serial.println("SD card connected via SDIO (1-bit mode)");
+    
+    // If 1-bit works, you could try 4-bit
+    SD_MMC.end();
+    delay(100);
+    Serial.println("Now trying 4-bit mode...");
+    if (SD_MMC.begin("/sdcard", false)) {  // false = 4-bit mode
+      Serial.println("SD card connected via SDIO (4-bit mode)");
+      transitionToState(SystemState::WAIT_WIFI);
+      return;
+    } else {
+      Serial.println("4-bit failed, falling back to 1-bit");
+      SD_MMC.begin("/sdcard", true);
+      transitionToState(SystemState::WAIT_WIFI);
+      return;
+    }
+  } else {
+    Serial.println("SD card initialization failed even in 1-bit mode");
     currentError = ErrorType::SD_INIT_FAILED;
     transitionToState(SystemState::ERROR);
   }
@@ -601,6 +639,44 @@ bool wifiCredentialsExist() {
   return strlen((const char*)conf.sta.ssid) > 0;
 }
 
+// void enableGps() {
+//   if (gpsEnabled) {
+//     return;
+//   }
+  
+//   Serial.println("Enabling GPS...");
+
+//   // Initialize UART for GPS communication
+//   Serial2.begin(GPS_BAUD_RATE, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
+
+//   printf("UART init was OK.\n");
+  
+//   // Power on GPS module (if wake pin is connected to power control)
+//   // digitalWrite(PIN_GPS_WAKE, HIGH);
+  
+//   // Small delay to ensure power stability
+//   vTaskDelay(pdMS_TO_TICKS(100));
+  
+//   // Initialize u-blox GNSS
+//   if (!myGNSS.begin(Serial2)) {
+//     currentError = ErrorType::GPS_NOT_RESPONDING;
+//     transitionToState(SystemState::ERROR);
+//     return;
+//   }
+  
+//   // Configure the u-blox module
+//   myGNSS.setUART1Output(COM_TYPE_UBX); // Set UART port to output UBX only (no NMEA)
+//   myGNSS.setNavigationFrequency(10); // Set output to 10Hz
+//   myGNSS.setAutoPVT(true); // Tell the GPS to send PVT messages automatically
+//   myGNSS.saveConfiguration(); // Save the current settings to flash and BBR
+  
+//   // Configure power saving mode if needed
+//   // myGNSS.powerSaveMode(true); // Enable power save mode
+  
+//   gpsEnabled = true;
+//   Serial.println("GPS enabled");
+// }
+
 void enableGps() {
   if (gpsEnabled) {
     return;
@@ -610,30 +686,37 @@ void enableGps() {
 
   // Initialize UART for GPS communication
   Serial2.begin(GPS_BAUD_RATE, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
-
+  
   printf("UART init was OK.\n");
   
   // Power on GPS module (if wake pin is connected to power control)
   // digitalWrite(PIN_GPS_WAKE, HIGH);
   
   // Small delay to ensure power stability
-  vTaskDelay(pdMS_TO_TICKS(100));
+  vTaskDelay(pdMS_TO_TICKS(500));  // Increased delay for UART stability
   
-  // Initialize u-blox GNSS
-  if (!myGNSS.begin(Serial2)) {
+  // IMPORTANT: Tell the u-blox library to use UART, not I2C!
+  myGNSS.begin(Serial2);  // This should work
+  
+  // Alternative: If the above doesn't work, try this more explicit approach:
+  // myGNSS.init();  // Initialize without communication
+  // if (!myGNSS.begin(Serial2, 0x42, 1100, false)) {  // UART mode with timeout
+  
+  // Check if GPS is responding
+  if (!myGNSS.isConnected()) {
+    Serial.println("GPS not responding on UART");
     currentError = ErrorType::GPS_NOT_RESPONDING;
     transitionToState(SystemState::ERROR);
     return;
   }
   
+  Serial.println("GPS connected via UART");
+  
   // Configure the u-blox module
-  myGNSS.setUART1Output(COM_TYPE_UBX); // Set UART port to output UBX only (no NMEA)
+  myGNSS.setUART1Output(COM_TYPE_UBX); // Set UART port to output UBX only
   myGNSS.setNavigationFrequency(10); // Set output to 10Hz
   myGNSS.setAutoPVT(true); // Tell the GPS to send PVT messages automatically
   myGNSS.saveConfiguration(); // Save the current settings to flash and BBR
-  
-  // Configure power saving mode if needed
-  // myGNSS.powerSaveMode(true); // Enable power save mode
   
   gpsEnabled = true;
   Serial.println("GPS enabled");
