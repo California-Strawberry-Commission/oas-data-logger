@@ -1,19 +1,121 @@
 #include <arduino.h>
-#include <ESP32Time.h>
-#include <FastLED.h>
-#include <SD.h>
-#include <SparkFun_u-blox_GNSS_v3.h>
-#include <WiFi.h>
-#include <WiFiManager.h>
-#include <WiFiClientSecure.h>
-#include <WifiClient.h>
-#include <Wire.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/semphr.h>
-#include <dlf_logger.h>
-#include <sys/time.h>
-#include "FS.h"
 #include "SD_MMC.h"
+#include "driver/sdmmc_host.h"
+#include "esp_log.h"
+
+// Pin Definitions
+const gpio_num_t PIN_SD_CLK{GPIO_NUM_45};    // Clock
+const gpio_num_t PIN_SD_CMD{GPIO_NUM_40};    // Command
+const gpio_num_t PIN_SD_D0{GPIO_NUM_39};     // Data 0
+const gpio_num_t PIN_SD_D1{GPIO_NUM_38};     // Data 1 (for 4-bit mode)
+const gpio_num_t PIN_SD_D2{GPIO_NUM_41};     // Data 2 (for 4-bit mode)
+const gpio_num_t PIN_SD_D3{GPIO_NUM_42};     // Data 3 (for 4-bit mode)
+
+const gpio_num_t PIN_SD_ENABLE{GPIO_NUM_3};  // Power enable for SD card
+
+// Enable debug logging
+static const char* TAG = "SD_DEBUG";
+bool initAttempted = false;
+
+void setup() {
+  // USB CDC initialization - critical for ESP32-S3
+  Serial.begin(115200);
+
+  // CRITICAL: Wait for USB CDC to be ready AND for boot to complete
+  // ESP32-S3 samples strapping pins during early boot
+  unsigned long startTime = millis();
+  while (!Serial && (millis() - startTime < 5000)) {
+    delay(100);
+  }
+  delay(500);  // Extra delay for stability
+
+  Serial.println("\n\n=== ESP32-S3 Boot Test ===");
+  Serial.println("Boot successful! ESP32 is running.");
+  Serial.printf("Millis: %lu\n", millis());
+  Serial.flush();
+
+  // Enable verbose logging for SDMMC
+  esp_log_level_set("sdmmc_cmd", ESP_LOG_VERBOSE);
+  esp_log_level_set("sdmmc_common", ESP_LOG_VERBOSE);
+  esp_log_level_set("sdmmc_sd", ESP_LOG_VERBOSE);
+
+  Serial.println("\n=== SD Card Init Test ===\n");
+  Serial.flush();
+
+  // CRITICAL FIX: Delay GPIO 3 configuration until AFTER boot completes
+  // GPIO 3 is a strapping pin (JTAG signal source)
+  // Setting it LOW during boot interferes with boot process
+  Serial.println("Step 1: Configuring power pin (GPIO 3 - strapping pin)...");
+  Serial.flush();
+
+  pinMode(PIN_SD_ENABLE, OUTPUT);
+  digitalWrite(PIN_SD_ENABLE, LOW);
+  Serial.println("Power OFF");
+  Serial.flush();
+  delay(500);
+
+  digitalWrite(PIN_SD_ENABLE, HIGH);
+  Serial.println("Power ON");
+  Serial.flush();
+  delay(1000);  // Give SD card more time to stabilize
+
+  Serial.println("\nStep 2: Configuring SD_MMC pins (1-bit mode)...");
+  Serial.flush();
+
+  // Try 1-bit mode first (more reliable)
+  if (!SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0)) {
+    Serial.println("ERROR: setPins failed!");
+    Serial.flush();
+    return;
+  }
+  Serial.println("Pins configured successfully");
+  Serial.flush();
+
+  Serial.println("\nStep 3: Attempting SD_MMC.begin() with 1-bit mode...");
+  Serial.println("(This is where it might hang...)");
+  Serial.flush();
+}
+
+void loop() {
+  if (!initAttempted) {
+    initAttempted = true;
+    
+    Serial.println("\n>>> Calling SD_MMC.begin()...");
+    Serial.flush();
+    
+    bool success = SD_MMC.begin("/sdcard", true);  // true = 1-bit mode
+    
+    Serial.println(">>> SD_MMC.begin() returned!");
+    
+    if (success) {
+      Serial.println("\n✓ SUCCESS! SD card initialized");
+
+      // Print card info
+      uint64_t cardSize = SD_MMC.cardSize() / (1024 * 1024);
+      Serial.printf("SD Card Size: %llu MB\n", cardSize);
+      Serial.printf("Card Type: %d\n", SD_MMC.cardType());
+    } else {
+      Serial.println("\n✗ FAILED to initialize SD card");
+      Serial.println("Possible reasons:");
+      Serial.println("  - SD card not inserted");
+      Serial.println("  - Wrong pin configuration");
+      Serial.println("  - Power issue");
+      Serial.println("  - Faulty SD card");
+      SD_MMC.end();
+    }
+  }
+
+  // Blink to show we're alive
+  static unsigned long lastBlink = 0;
+  if (millis() - lastBlink > 1000) {
+    lastBlink = millis();
+    Serial.println("Loop running...");
+  }
+
+  delay(1000);
+}
+
+/*
 
 // Configuration
 const int SERIAL_BAUD_RATE{115200};
@@ -29,18 +131,20 @@ const int GPS_PRINT_INTERVAL_MS{1000};
 // Pin Definitions
 const gpio_num_t PIN_USB_POWER{GPIO_NUM_13};
 const gpio_num_t PIN_SLEEP_BUTTON{GPIO_NUM_0};
-const gpio_num_t PIN_SD_CLK{GPIO_NUM_34};    // Clock
-const gpio_num_t PIN_SD_CMD{GPIO_NUM_35};    // Command
-const gpio_num_t PIN_SD_D0{GPIO_NUM_36};     // Data 0
-const gpio_num_t PIN_SD_D1{GPIO_NUM_37};     // Data 1 (for 4-bit mode)
-const gpio_num_t PIN_SD_D2{GPIO_NUM_38};     // Data 2 (for 4-bit mode)
-const gpio_num_t PIN_SD_D3{GPIO_NUM_39};     // Data 3 (for 4-bit mode)
+const gpio_num_t PIN_SD_CLK{GPIO_NUM_40};    // Clock
+const gpio_num_t PIN_SD_CMD{GPIO_NUM_45};    // Command
+const gpio_num_t PIN_SD_D0{GPIO_NUM_39};     // Data 0
+const gpio_num_t PIN_SD_D1{GPIO_NUM_38};     // Data 1 (for 4-bit mode)
+const gpio_num_t PIN_SD_D2{GPIO_NUM_41};     // Data 2 (for 4-bit mode)
+const gpio_num_t PIN_SD_D3{GPIO_NUM_42};     // Data 3 (for 4-bit mode)
 
-const gpio_num_t PIN_GPS_WAKE{GPIO_NUM_5}; // Used for power control on SAM-M10Q
+// GPS Power and Control Pins (TESTED AND WORKING)
+const gpio_num_t PIN_GPS_ENABLE{GPIO_NUM_3}; // Power enable for GPS module (same as SD card enable)
+const gpio;_num_t PIN_GPS_WAKE{GPIO_NUM_5};   // Wake signal for SAM-M10Q (set HIGH)
 
-// Move GPS UART to safe pins
-const gpio_num_t PIN_GPS_TX{GPIO_NUM_16};   // ESP TX -> GPS RX
-const gpio_num_t PIN_GPS_RX{GPIO_NUM_17};   // ESP RX <- GPS TX
+// GPS UART Pins (TESTED AND WORKING - RX/TX swapped from schematic)
+const gpio_num_t PIN_GPS_TX{GPIO_NUM_36};    // ESP TX -> GPS RX (swapped)
+const gpio_num_t PIN_GPS_RX{GPIO_NUM_37};    // ESP RX <- GPS TX (swapped)
 
 // LED Configuration
 #define LED_PIN PIN_NEOPIXEL
@@ -165,8 +269,12 @@ void setup() {
   // Configure pins
   pinMode(PIN_USB_POWER, INPUT_PULLDOWN);
   pinMode(PIN_SLEEP_BUTTON, INPUT_PULLUP);
+  
+  // GPS power pins - start with GPS off
+  pinMode(PIN_GPS_ENABLE, OUTPUT);
   pinMode(PIN_GPS_WAKE, OUTPUT);
-  digitalWrite(PIN_GPS_WAKE, LOW); // Start with GPS off
+  digitalWrite(PIN_GPS_ENABLE, LOW);
+  digitalWrite(PIN_GPS_WAKE, LOW);
   
   // Add delay to give time for serial to initialize
   vTaskDelay(pdMS_TO_TICKS(1000));
@@ -426,7 +534,7 @@ void handleWaitGpsState() {
 
 void handleWaitTimeState() {
   // Check if we have valid time AND a GPS fix
-  if (gpsTimeValid && gpsEpoch >= 1735689600 /* 2025-01-01 UTC */) {
+  if (gpsTimeValid && gpsEpoch >= 1735689600  ) { //2025-01-01 UTC
     // Set system time for TLS operations
     struct timeval tv;
     tv.tv_sec = gpsEpoch;
@@ -595,6 +703,14 @@ void enableGps() {
   if (gpsEnabled) return;
   Serial.println("Enabling GPS...");
 
+  // Power cycle the GPS module (TESTED AND WORKING)
+  digitalWrite(PIN_GPS_ENABLE, LOW);
+  digitalWrite(PIN_GPS_WAKE, LOW);
+  vTaskDelay(pdMS_TO_TICKS(100));
+  digitalWrite(PIN_GPS_WAKE, HIGH);  // Wake signal must be HIGH
+  digitalWrite(PIN_GPS_ENABLE, HIGH); // Power enable HIGH
+  vTaskDelay(pdMS_TO_TICKS(1000));    // GPS needs time to boot
+
   // Bind UART to the selected pins
   mySerial.end();
   mySerial.begin(38400, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
@@ -695,6 +811,7 @@ void disableGps() {
   }
   
   // Turn off power to GPS module
+  digitalWrite(PIN_GPS_ENABLE, LOW);
   digitalWrite(PIN_GPS_WAKE, LOW);
   
   // Close UART
@@ -811,3 +928,5 @@ void testNetworkConnectivity() {
   client.stop();
   Serial.println("HTTPS test complete");
 }
+
+*/

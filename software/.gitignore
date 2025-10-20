@@ -5,3 +5,6 @@
 # dependencies
 /node_modules
 .vercel
+
+# AI
+.claude

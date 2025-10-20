@@ -1,9 +1,0 @@
-Cart		https://www.digikey.com/short/8qz30pnn
-
-ESP32 		https://www.adafruit.com/product/5889
-SD breakout	https://www.adafruit.com/product/4682
-Battery		https://www.adafruit.com/product/2750
-GPS		https://www.adafruit.com/product/4415
-Qwicc conn. 	https://www.adafruit.com/product/4399
-
-Battery Conn.	https://www.digikey.com/en/products/detail/adafruit-industries-llc/2750/6612470
