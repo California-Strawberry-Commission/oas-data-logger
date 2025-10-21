@@ -1,1 +1,22 @@
-.vercel
+# KiCad temporary files
+*.bak
+*.bck
+*-cache.lib
+*-rescue.lib
+fp-info-cache
+*.net
+*.xml
+*.csv
+*-job.gbrjob
+
+# Output files (gerbers, drill files, etc.)
+gerbers/
+*.gbr
+*.drl
+*.pdf
+*.ps
+*.svg
+
+# Backup files
+*~
+*.tmp
