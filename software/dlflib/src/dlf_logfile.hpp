@@ -45,7 +45,9 @@ namespace dlf
         StreamBufferHandle_t _stream;
         dlf_file_state_e _state;
         SemaphoreHandle_t _sync;
+        SemaphoreHandle_t _file_mutex;  // Protects file operations from race conditions
         dlf_tick_t _last_tick;
+        size_t _file_end_position;  // Track file end position to prevent truncation on close
 
         /**
          * @brief Writes a complete header into this logfile.

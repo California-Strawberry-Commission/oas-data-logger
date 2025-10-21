@@ -129,7 +129,27 @@ void Run::close() {
 
   // Remove the lockfile last, as the presence of the lockfile indicates that
   // the run is incomplete and should not be uploaded
-  _fs.remove(_lockfile_path);
+  Serial.printf("[RUN] Removing lockfile: %s\n", _lockfile_path.c_str());
+  bool lockfileRemoved = _fs.remove(_lockfile_path);
+  if (lockfileRemoved) {
+    Serial.println("[RUN] Lockfile successfully removed");
+  } else {
+    Serial.println("[RUN] WARNING: Failed to remove lockfile!");
+  }
+
+  // Verify lockfile was actually deleted by listing directory contents
+  Serial.printf("[RUN] Verifying run directory contents for %s:\n", _run_dir.c_str());
+  File runDir = _fs.open(_run_dir);
+  if (runDir && runDir.isDirectory()) {
+    File file;
+    while (file = runDir.openNextFile()) {
+      Serial.printf("[RUN]   - %s (%d bytes)\n", file.name(), file.size());
+      file.close();
+    }
+    runDir.close();
+  } else {
+    Serial.println("[RUN] WARNING: Could not open run directory for verification!");
+  }
 
   Serial.println("Run closed cleanly!");
 }

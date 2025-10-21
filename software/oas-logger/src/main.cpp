@@ -2,8 +2,28 @@
 #include "SD_MMC.h"
 #include "driver/sdmmc_host.h"
 #include "esp_log.h"
+#include <FastLED.h>
+#include <WiFiManager.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <ESP32Time.h>
+#include <SparkFun_u-blox_GNSS_v3.h>
+#include <dlf_logger.h>
+
+// Configuration
+const int SERIAL_BAUD_RATE{115200};
+const uint32_t LOGGER_MARK_AFTER_UPLOAD{100 * 1024};
+const bool LOGGER_DELETE_AFTER_UPLOAD{false};
+const bool WAIT_FOR_VALID_TIME{true};
+const bool USE_LEGACY_GPIO_CONFIG{false};
+const bool USB_POWER_OVERRIDE{true};
+const bool USB_POWER_OVERRIDE_VALUE{true};
+const int LOGGER_RUN_INTERVAL_S{0};
+const int GPS_PRINT_INTERVAL_MS{1000};
 
 // Pin Definitions
+const gpio_num_t PIN_USB_POWER{GPIO_NUM_13};
+const gpio_num_t PIN_SLEEP_BUTTON{GPIO_NUM_0};
 const gpio_num_t PIN_SD_CLK{GPIO_NUM_45};    // Clock
 const gpio_num_t PIN_SD_CMD{GPIO_NUM_40};    // Command
 const gpio_num_t PIN_SD_D0{GPIO_NUM_39};     // Data 0
@@ -11,136 +31,10 @@ const gpio_num_t PIN_SD_D1{GPIO_NUM_38};     // Data 1 (for 4-bit mode)
 const gpio_num_t PIN_SD_D2{GPIO_NUM_41};     // Data 2 (for 4-bit mode)
 const gpio_num_t PIN_SD_D3{GPIO_NUM_42};     // Data 3 (for 4-bit mode)
 
-const gpio_num_t PIN_SD_ENABLE{GPIO_NUM_3};  // Power enable for SD card
-
-// Enable debug logging
-static const char* TAG = "SD_DEBUG";
-bool initAttempted = false;
-
-void setup() {
-  // USB CDC initialization - critical for ESP32-S3
-  Serial.begin(115200);
-
-  // CRITICAL: Wait for USB CDC to be ready AND for boot to complete
-  // ESP32-S3 samples strapping pins during early boot
-  unsigned long startTime = millis();
-  while (!Serial && (millis() - startTime < 5000)) {
-    delay(100);
-  }
-  delay(500);  // Extra delay for stability
-
-  Serial.println("\n\n=== ESP32-S3 Boot Test ===");
-  Serial.println("Boot successful! ESP32 is running.");
-  Serial.printf("Millis: %lu\n", millis());
-  Serial.flush();
-
-  // Enable verbose logging for SDMMC
-  esp_log_level_set("sdmmc_cmd", ESP_LOG_VERBOSE);
-  esp_log_level_set("sdmmc_common", ESP_LOG_VERBOSE);
-  esp_log_level_set("sdmmc_sd", ESP_LOG_VERBOSE);
-
-  Serial.println("\n=== SD Card Init Test ===\n");
-  Serial.flush();
-
-  // CRITICAL FIX: Delay GPIO 3 configuration until AFTER boot completes
-  // GPIO 3 is a strapping pin (JTAG signal source)
-  // Setting it LOW during boot interferes with boot process
-  Serial.println("Step 1: Configuring power pin (GPIO 3 - strapping pin)...");
-  Serial.flush();
-
-  pinMode(PIN_SD_ENABLE, OUTPUT);
-  digitalWrite(PIN_SD_ENABLE, LOW);
-  Serial.println("Power OFF");
-  Serial.flush();
-  delay(500);
-
-  digitalWrite(PIN_SD_ENABLE, HIGH);
-  Serial.println("Power ON");
-  Serial.flush();
-  delay(1000);  // Give SD card more time to stabilize
-
-  Serial.println("\nStep 2: Configuring SD_MMC pins (1-bit mode)...");
-  Serial.flush();
-
-  // Try 1-bit mode first (more reliable)
-  if (!SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0)) {
-    Serial.println("ERROR: setPins failed!");
-    Serial.flush();
-    return;
-  }
-  Serial.println("Pins configured successfully");
-  Serial.flush();
-
-  Serial.println("\nStep 3: Attempting SD_MMC.begin() with 1-bit mode...");
-  Serial.println("(This is where it might hang...)");
-  Serial.flush();
-}
-
-void loop() {
-  if (!initAttempted) {
-    initAttempted = true;
-    
-    Serial.println("\n>>> Calling SD_MMC.begin()...");
-    Serial.flush();
-    
-    bool success = SD_MMC.begin("/sdcard", true);  // true = 1-bit mode
-    
-    Serial.println(">>> SD_MMC.begin() returned!");
-    
-    if (success) {
-      Serial.println("\n✓ SUCCESS! SD card initialized");
-
-      // Print card info
-      uint64_t cardSize = SD_MMC.cardSize() / (1024 * 1024);
-      Serial.printf("SD Card Size: %llu MB\n", cardSize);
-      Serial.printf("Card Type: %d\n", SD_MMC.cardType());
-    } else {
-      Serial.println("\n✗ FAILED to initialize SD card");
-      Serial.println("Possible reasons:");
-      Serial.println("  - SD card not inserted");
-      Serial.println("  - Wrong pin configuration");
-      Serial.println("  - Power issue");
-      Serial.println("  - Faulty SD card");
-      SD_MMC.end();
-    }
-  }
-
-  // Blink to show we're alive
-  static unsigned long lastBlink = 0;
-  if (millis() - lastBlink > 1000) {
-    lastBlink = millis();
-    Serial.println("Loop running...");
-  }
-
-  delay(1000);
-}
-
-/*
-
-// Configuration
-const int SERIAL_BAUD_RATE{115200};
-const uint32_t LOGGER_MARK_AFTER_UPLOAD{100 * 1024};
-const bool LOGGER_DELETE_AFTER_UPLOAD{true};
-const bool WAIT_FOR_VALID_TIME{true};
-const bool USE_LEGACY_GPIO_CONFIG{false};
-const bool USB_POWER_OVERRIDE{true};
-const bool USB_POWER_OVERRIDE_VALUE{true};
-const int LOGGER_RUN_INTERVAL_S{0};
-const int GPS_PRINT_INTERVAL_MS{1000};  
-
-// Pin Definitions
-const gpio_num_t PIN_USB_POWER{GPIO_NUM_13};
-const gpio_num_t PIN_SLEEP_BUTTON{GPIO_NUM_0};
-const gpio_num_t PIN_SD_CLK{GPIO_NUM_40};    // Clock
-const gpio_num_t PIN_SD_CMD{GPIO_NUM_45};    // Command
-const gpio_num_t PIN_SD_D0{GPIO_NUM_39};     // Data 0
-const gpio_num_t PIN_SD_D1{GPIO_NUM_38};     // Data 1 (for 4-bit mode)
-const gpio_num_t PIN_SD_D2{GPIO_NUM_41};     // Data 2 (for 4-bit mode)
-const gpio_num_t PIN_SD_D3{GPIO_NUM_42};     // Data 3 (for 4-bit mode)
 
 // GPS Power and Control Pins (TESTED AND WORKING)
 const gpio_num_t PIN_GPS_ENABLE{GPIO_NUM_3}; // Power enable for GPS module (same as SD card enable)
-const gpio;_num_t PIN_GPS_WAKE{GPIO_NUM_5};   // Wake signal for SAM-M10Q (set HIGH)
+const gpio_num_t PIN_GPS_WAKE{GPIO_NUM_5};   // Wake signal for SAM-M10Q (set HIGH)
 
 // GPS UART Pins (TESTED AND WORKING - RX/TX swapped from schematic)
 const gpio_num_t PIN_GPS_TX{GPIO_NUM_36};    // ESP TX -> GPS RX (swapped)
@@ -269,15 +163,18 @@ void setup() {
   // Configure pins
   pinMode(PIN_USB_POWER, INPUT_PULLDOWN);
   pinMode(PIN_SLEEP_BUTTON, INPUT_PULLUP);
-  
-  // GPS power pins - start with GPS off
+
+  // CRITICAL: GPIO 3 is a strapping pin - configure it after boot delay
+  // This pin powers BOTH SD card and GPS module
+  // We need SD card active from the start, GPS will be enabled later
+  vTaskDelay(pdMS_TO_TICKS(1000)); // Wait for boot to complete before configuring GPIO 3
+
   pinMode(PIN_GPS_ENABLE, OUTPUT);
   pinMode(PIN_GPS_WAKE, OUTPUT);
-  digitalWrite(PIN_GPS_ENABLE, LOW);
-  digitalWrite(PIN_GPS_WAKE, LOW);
-  
-  // Add delay to give time for serial to initialize
-  vTaskDelay(pdMS_TO_TICKS(1000));
+  digitalWrite(PIN_GPS_ENABLE, HIGH);  // Enable power for SD card (shared with GPS)
+  digitalWrite(PIN_GPS_WAKE, LOW);     // GPS wake signal LOW (GPS not active yet)
+
+  vTaskDelay(pdMS_TO_TICKS(500)); // Give SD card time to power up
   
   // Start sleep monitor task
   xTaskCreate(sleepMonitorTask, "sleep_monitor", 4096, NULL, 5, NULL);
@@ -561,84 +458,87 @@ void handleWaitTimeState() {
 }
 
 void handleRunningState() {
-  // GPS printing logic
-  if (millis() - lastGpsPrintMillis > GPS_PRINT_INTERVAL_MS) {
+  // GPS printing logic with enhanced diagnostics
+  // Only print if GPS is still enabled (prevents printing during shutdown)
+  if (gpsEnabled && millis() - lastGpsPrintMillis > GPS_PRINT_INTERVAL_MS) {
     lastGpsPrintMillis = millis();
-    
+
     // Try to get GPS data with mutex protection
     if (xSemaphoreTake(gpsDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-      Serial.printf("[GPS] Lat: %.6f, Lng: %.6f, Alt: %.1fm, Sats: %d, Fix: %d\n", 
+      Serial.printf("[GPS] Lat: %.6f, Lng: %.6f, Alt: %.1fm, Sats: %d, Fix: %d\n",
                     gpsData.lat, gpsData.lng, gpsData.alt, gpsData.satellites, gpsFixType);
+      Serial.printf("[DIAG] RunHandle: %d, Uptime: %lu ms\n", runHandle, millis());
       xSemaphoreGive(gpsDataMutex);
     }
   }
   
+  // PARTIAL UPLOADS DISABLED FOR DEBUGGING
   // Upload current run if WiFi is connected
-  static unsigned long lastUploadAttemptMillis = 0;
-  const unsigned long UPLOAD_ATTEMPT_INTERVAL_MS = 30000; // Try upload every 30s
-  
-  if (WiFi.status() == WL_CONNECTED && 
-      millis() - lastUploadAttemptMillis > UPLOAD_ATTEMPT_INTERVAL_MS) {
-    lastUploadAttemptMillis = millis();
-    
-    if (runHandle) {
-      // Get the current run directory name
-      // The run name format appears to be based on when start_run was called
-      // We need to access the logger's current run directory
-      
-      Serial.println("[Running State] Attempting to upload current run while logging...");
+  // static unsigned long lastUploadAttemptMillis = 0;
+  // const unsigned long UPLOAD_ATTEMPT_INTERVAL_MS = 30000; // Try upload every 30s
 
-      UploaderComponent::Options tempOptions;
-      tempOptions.deleteAfterUpload = false;
-      tempOptions.markAfterUpload = false;
-      
-      // Create a temporary uploader instance for the current run
-      UploaderComponent tempUploader(SD, "/", UPLOAD_HOST, UPLOAD_PORT, tempOptions);
-      
-      // The logger stores runs in the root directory with a specific naming convention
-      // We need to find the current run directory
-      File root = SD.open("/");
-      if (root) {
-        File runDir;
-        String currentRunPath;
-        
-        // Find the most recent run directory (which should be our current run)
-        // Run directories don't have the lockfile when complete, but our current run
-        // should still have it
-        while (runDir = root.openNextFile()) {
-          if (runDir.isDirectory() && runDir.name()[0] != '.' &&
-              strcmp(runDir.name(), "System Volume Information") != 0) {
-            
-            // Check if this directory has a lockfile (indicating active run)
-            File lockCheck = SD.open(String("/") + runDir.name() + "/" + LOCKFILE_NAME);
-            if (lockCheck) {
-
-              lockCheck.close();
-              currentRunPath = String("/") + runDir.name();
-              Serial.printf("[Running State] Found active run: %s\n", runDir.name());
-
-              Serial.println("[Running State] Flushing data and finalizing headers for upload...");
-              logger.flush(runHandle); 
-
-              // Upload this run
-              String uploadPath = String("/api/upload/") + runDir.name();
-              bool uploadSuccess = tempUploader.uploadRun(runDir, uploadPath);
-
-              if (uploadSuccess) {
-                Serial.println("[Running State] Successfully uploaded current run data");
-                // Note: We don't mark or delete the run since it's still active
-              } else {
-                Serial.println("[Running State] Failed to upload current run data");
-              }
-              
-              break; // We found and processed the current run
-            }
-          }
-        }
-        root.close();
-      }
-    }
-  }
+  // if (WiFi.status() == WL_CONNECTED &&
+  //     millis() - lastUploadAttemptMillis > UPLOAD_ATTEMPT_INTERVAL_MS) {
+  //   lastUploadAttemptMillis = millis();
+  //
+  //   if (runHandle) {
+  //     // Get the current run directory name
+  //     // The run name format appears to be based on when start_run was called
+  //     // We need to access the logger's current run directory
+  //
+  //     Serial.println("[Running State] Attempting to upload current run while logging...");
+  //
+  //     UploaderComponent::Options tempOptions;
+  //     tempOptions.deleteAfterUpload = false;
+  //     tempOptions.markAfterUpload = false;
+  //
+  //     // Create a temporary uploader instance for the current run
+  //     UploaderComponent tempUploader(SD_MMC, "/", UPLOAD_HOST, UPLOAD_PORT, tempOptions);
+  //
+  //     // The logger stores runs in the root directory with a specific naming convention
+  //     // We need to find the current run directory
+  //     File root = SD_MMC.open("/");
+  //     if (root) {
+  //       File runDir;
+  //       String currentRunPath;
+  //
+  //       // Find the most recent run directory (which should be our current run)
+  //       // Run directories don't have the lockfile when complete, but our current run
+  //       // should still have it
+  //       while (runDir = root.openNextFile()) {
+  //         if (runDir.isDirectory() && runDir.name()[0] != '.' &&
+  //             strcmp(runDir.name(), "System Volume Information") != 0) {
+  //
+  //           // Check if this directory has a lockfile (indicating active run)
+  //           File lockCheck = SD_MMC.open(String("/") + runDir.name() + "/" + LOCKFILE_NAME);
+  //           if (lockCheck) {
+  //
+  //             lockCheck.close();
+  //             currentRunPath = String("/") + runDir.name();
+  //             Serial.printf("[Running State] Found active run: %s\n", runDir.name());
+  //
+  //             Serial.println("[Running State] Flushing data and finalizing headers for upload...");
+  //             logger.flush(runHandle);
+  //
+  //             // Upload this run
+  //             String uploadPath = String("/api/upload/") + runDir.name();
+  //             bool uploadSuccess = tempUploader.uploadRun(runDir, uploadPath);
+  //
+  //             if (uploadSuccess) {
+  //               Serial.println("[Running State] Successfully uploaded current run data");
+  //               // Note: We don't mark or delete the run since it's still active
+  //             } else {
+  //               Serial.println("[Running State] Failed to upload current run data");
+  //             }
+  //
+  //             break; // We found and processed the current run
+  //           }
+  //         }
+  //       }
+  //       root.close();
+  //     }
+  //   }
+  // }
   
   // Run interval logic - only if LOGGER_RUN_INTERVAL_S > 0
   if (runHandle && LOGGER_RUN_INTERVAL_S > 0 &&
@@ -704,11 +604,11 @@ void enableGps() {
   Serial.println("Enabling GPS...");
 
   // Power cycle the GPS module (TESTED AND WORKING)
-  digitalWrite(PIN_GPS_ENABLE, LOW);
+  // Note: PIN_GPS_ENABLE is already HIGH from setup() (shared with SD card)
+  // We only need to cycle the WAKE signal
   digitalWrite(PIN_GPS_WAKE, LOW);
   vTaskDelay(pdMS_TO_TICKS(100));
   digitalWrite(PIN_GPS_WAKE, HIGH);  // Wake signal must be HIGH
-  digitalWrite(PIN_GPS_ENABLE, HIGH); // Power enable HIGH
   vTaskDelay(pdMS_TO_TICKS(1000));    // GPS needs time to boot
 
   // Bind UART to the selected pins
@@ -743,37 +643,37 @@ void enableGps() {
 
 void gpsTask(void* args) {
   Serial.println("[GPS Task] Started");
-  
+
   while (true) {
     // Request PVT data - returns true when new data is available
     if (myGNSS.getPVT()) {
       // Get fix type and satellite count (not protected by mutex)
       gpsFixType = myGNSS.getFixType();
-      
+
       // Update GPS data with mutex protection
       if (xSemaphoreTake(gpsDataMutex, portMAX_DELAY) == pdTRUE) {
         // Get satellite count
         gpsData.satellites = myGNSS.getSIV();
-        
+
         // Only update position if we have a valid fix
         if (gpsFixType >= 2 && !myGNSS.getInvalidLlh()) {
           gpsData.lat = myGNSS.getLatitude() / 10000000.0;  // Convert from degrees * 10^7
           gpsData.lng = myGNSS.getLongitude() / 10000000.0; // Convert from degrees * 10^7
           gpsData.alt = myGNSS.getAltitudeMSL() / 1000.0;   // Convert from mm to meters
         }
-        
+
         xSemaphoreGive(gpsDataMutex);
       }
-      
+
       // Check time validity more strictly (outside mutex protection)
       // Only consider time valid if we have a fix AND valid date/time
-      if (gpsFixType >= 2 && 
-          myGNSS.getDateValid() && 
-          myGNSS.getTimeValid() && 
+      if (gpsFixType >= 2 &&
+          myGNSS.getDateValid() &&
+          myGNSS.getTimeValid() &&
           myGNSS.getYear() >= 2025 &&
           myGNSS.getMonth() >= 1 && myGNSS.getMonth() <= 12 &&
           myGNSS.getDay() >= 1 && myGNSS.getDay() <= 31) {
-        
+
         struct tm t = {};
         t.tm_year = myGNSS.getYear() - 1900;
         t.tm_mon = myGNSS.getMonth() - 1;
@@ -781,9 +681,9 @@ void gpsTask(void* args) {
         t.tm_hour = myGNSS.getHour();
         t.tm_min = myGNSS.getMinute();
         t.tm_sec = myGNSS.getSecond();
-        
+
         time_t newEpoch = mktime(&t);
-        
+
         // Additional sanity check
         if (newEpoch >= 1735689600) { // 2025-01-01 UTC
           gpsEpoch = newEpoch;
@@ -791,7 +691,7 @@ void gpsTask(void* args) {
         }
       }
     }
-    
+
     vTaskDelay(pdMS_TO_TICKS(GPS_UPDATE_RATE_MS));
   }
 }
@@ -800,23 +700,24 @@ void disableGps() {
   if (!gpsEnabled) {
     return;
   }
-  
+
   Serial.println("Disabling GPS...");
-  
+
   // Delete GPS task if it exists
   if (xGPS_Handle != NULL) {
     Serial.println("[GPS] Deleting GPS task...");
     vTaskDelete(xGPS_Handle);
     xGPS_Handle = NULL;
   }
-  
-  // Turn off power to GPS module
-  digitalWrite(PIN_GPS_ENABLE, LOW);
+
+  // Turn off GPS wake signal
+  // NOTE: We do NOT turn off PIN_GPS_ENABLE because it's shared with SD card!
+  // SD card needs to remain powered for data logging
   digitalWrite(PIN_GPS_WAKE, LOW);
-  
+
   // Close UART
   mySerial.end();
-  
+
   gpsEnabled = false;
   Serial.println("GPS disabled");
 }
@@ -862,13 +763,21 @@ void sleepMonitorTask(void* args) {
       bool sleepButtonPressed = !digitalRead(PIN_SLEEP_BUTTON);
       if (sleepButtonPressed) {
         Serial.println("[Sleep Monitor] Sleep button pressed. Starting offload before sleep");
-        
+
+        // CRITICAL: Disable GPS FIRST to stop data updates before stopping the run
+        // This prevents GPS task from modifying gpsData while logger is flushing
+        Serial.println("[Sleep Monitor] Disabling GPS to freeze data");
+        disableGps();
+
+        // Small delay to ensure GPS task has stopped
+        vTaskDelay(pdMS_TO_TICKS(100));
+
         // Stop current run before transitioning to offload
         if (runHandle) {
           logger.stop_run(runHandle);
           runHandle = 0;
         }
-        
+
         transitionToState(SystemState::OFFLOAD);
         break;
       }
@@ -877,13 +786,20 @@ void sleepMonitorTask(void* args) {
       bool usbSleep = !offloadMode && !hasUsbPower();
       if (usbSleep && usbSleepTriggered) {
         Serial.println("[Sleep Monitor] USB power disconnected. Starting offload before sleep");
-        
+
+        // CRITICAL: Disable GPS FIRST to stop data updates before stopping the run
+        Serial.println("[Sleep Monitor] Disabling GPS to freeze data");
+        disableGps();
+
+        // Small delay to ensure GPS task has stopped
+        vTaskDelay(pdMS_TO_TICKS(100));
+
         // Stop current run before transitioning to offload
         if (runHandle) {
           logger.stop_run(runHandle);
           runHandle = 0;
         }
-        
+
         transitionToState(SystemState::OFFLOAD);
         break;
       } else if (usbSleep) {
@@ -928,5 +844,3 @@ void testNetworkConnectivity() {
   client.stop();
   Serial.println("HTTPS test complete");
 }
-
-*/
