@@ -1,6 +1,7 @@
 #include "uploader_component.h"
 
 #include <WiFiClientSecure.h>
+#include <WiFiClient.h>
 
 #include "dlf_cfg.h"
 #include "dlf_logger.h"
@@ -48,24 +49,47 @@ void UploaderComponent::onWifiConnected(arduino_event_id_t event,
 }
 
 bool UploaderComponent::uploadRun(File runDir, String path) {
+  //WiFiClient client; 
   WiFiClientSecure client;
   client.setInsecure();
+  
+  Serial.println("\n=== UPLOAD DEBUG INFO ===");
+  Serial.printf("Host: %s\n", host_.c_str());
+  Serial.printf("Port: %d\n", port_);
+  Serial.printf("Path: %s\n", path.c_str());
+  Serial.printf("URL: http://%s:%d%s\n", host_.c_str(), port_, path.c_str());
 
   if (!runDir) {
     Serial.println("[UploaderComponent] No file to upload");
     return false;
   }
 
-  // Try to init client
-  for (int retries = 0;
-       retries++ < 3 && !client.connect(host_.c_str(), port_);) {
-    Serial.println("[UploaderComponent] Failed to connect. Retrying in 1s...");
-    vTaskDelay(pdMS_TO_TICKS(1000));
+  // List files to be uploaded
+  Serial.println("Files to upload:");
+  runDir.rewindDirectory();
+  File tempFile;
+  while (tempFile = runDir.openNextFile()) {
+    Serial.printf("  - %s (%d bytes)\n", tempFile.name(), tempFile.size());
+    tempFile.close();
+  }
+
+  // Try to connect
+  Serial.printf("Attempting connection to %s:%d...\n", host_.c_str(), port_);
+  
+  for (int retries = 0; retries < 3; retries++) {
+    if (client.connect(host_.c_str(), port_)) {
+      Serial.println("Connected successfully!");
+      break;
+    }
+    Serial.printf("Connection attempt %d failed. ", retries + 1);
+    if (retries < 2) {
+      Serial.println("Retrying in 1s...");
+      vTaskDelay(pdMS_TO_TICKS(1000));
+    }
   }
 
   if (!client.connected()) {
-    Serial.println(
-        "[UploaderComponent] Failed to connect. Terminating attempt.");
+    Serial.println("[UploaderComponent] Failed to connect after 3 attempts.");
     return false;
   }
 
@@ -93,14 +117,23 @@ bool UploaderComponent::uploadRun(File runDir, String path) {
   }
   contentLength += strlen(endBoundary);
 
+  // Debug print out header information.
+  Serial.println("\n=== HTTP REQUEST ===");
+  Serial.printf("POST %s HTTP/1.1\r\n", path.c_str());
+  Serial.printf("Host: %s\r\n", host_.c_str());
+  Serial.printf("Content-Type: multipart/form-data; boundary=dlfboundary\r\n");
+  Serial.printf("Content-Length: %zu\r\n", contentLength);
+  Serial.println("Connection: close\r\n");
+  Serial.println("===================\n");
+
   // Send POST request header
   Serial.println("[UploaderComponent] Sending upload request...");
 
   client.printf("POST %s HTTP/1.1\r\n", path.c_str());
   client.printf("Host: %s\r\n", host_.c_str());
   client.printf("Content-Type: multipart/form-data; boundary=%s\r\n", boundary);
-  client.printf("Content-Length: %d\r\n", contentLength);
-  client.println("Connection: close");
+  client.printf("Content-Length: %zu\r\n", contentLength);
+  client.println("Connection: close\r\n");
   client.println();  // end of headers
 
   // Send boundaries and file data
@@ -227,7 +260,9 @@ void UploaderComponent::syncTask(void *arg) {
       // Upload run
       Serial.printf("[UploaderComponent][syncTask] Syncing: %s\n",
                     runDir.name());
+                    
       runDir.rewindDirectory();
+
       String path = String("/api/upload/") + runDir.name();
       bool uploadSuccess = uploaderComponent->uploadRun(runDir, path);
       numFailures += !uploadSuccess;

@@ -9,10 +9,10 @@ const MapComponent = dynamic(() => import("./map"), {
   loading: () => <LoadingMap />,
 });
 
-const STREAM_ID_SATELLITES = "pos.satellites";
-const STREAM_ID_LATITUDE = "pos.lat";
-const STREAM_ID_LONGITUDE = "pos.lng";
-const STREAM_ID_ALTITUDE = "pos.alt";
+const STREAM_ID_SATELLITES = "gpsData.satellites";
+const STREAM_ID_LATITUDE = "gpsData.lat";
+const STREAM_ID_LONGITUDE = "gpsData.lng";
+const STREAM_ID_ALTITUDE = "gpsData.alt";
 
 type DataPoint = {
   streamId: string;
@@ -112,7 +112,6 @@ export default function GpsPositionVisualization({
     )
       .then((res) => res.json())
       .then((data) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const dataPoints: DataPoint[] = data.map((p: any) => {
           return {
             streamId: p.streamId,

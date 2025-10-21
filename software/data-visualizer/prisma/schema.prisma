@@ -4,17 +4,23 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "postgresql"  
   url      = env("DATABASE_URL")
 }
+
+
 
 model Run {
   id         Int       @id @default(autoincrement())
   uuid       String    @unique
-  epochTimeS Int
-  tickBaseUs Int
+  epochTimeS BigInt
+  tickBaseUs BigInt
   metadata   Json
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @default(now()) @updatedAt
+  
   runData    RunData[]
+  files      RunFile[]  // Add this line
 }
 
 model RunData {
@@ -25,6 +31,20 @@ model RunData {
   streamId   String
   tick       BigInt
   data       String
+}
+
+model RunFile {
+  id        Int      @id @default(autoincrement())
+  runId     Int
+  fileName  String
+  data      Bytes
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  
+  @@unique([runId, fileName])
+  @@index([runId])
 }
 
 enum StreamType {

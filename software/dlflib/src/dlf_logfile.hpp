@@ -1,3 +1,4 @@
+
 #pragma once
 #include <Arduino.h>
 #include <freertos/stream_buffer.h>
@@ -44,7 +45,9 @@ namespace dlf
         StreamBufferHandle_t _stream;
         dlf_file_state_e _state;
         SemaphoreHandle_t _sync;
+        SemaphoreHandle_t _file_mutex;  // Protects file operations from race conditions
         dlf_tick_t _last_tick;
+        size_t _file_end_position;  // Track file end position to prevent truncation on close
 
         /**
          * @brief Writes a complete header into this logfile.
@@ -52,6 +55,8 @@ namespace dlf
          * Uses existing streambuffer architecture because why not.
          */
         void _write_header(dlf_stream_type_e stream_type);
+
+        
 
         /**
          * Updates and closes the underlying file. Does not flush internal
@@ -79,5 +84,8 @@ namespace dlf
          * Flushes and closes this logfile
          */
         void close();
+
+        void flush();
+
     };
 } // namespace dlf
