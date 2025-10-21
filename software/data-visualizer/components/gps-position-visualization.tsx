@@ -112,7 +112,6 @@ export default function GpsPositionVisualization({
     )
       .then((res) => res.json())
       .then((data) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const dataPoints: DataPoint[] = data.map((p: any) => {
           return {
             streamId: p.streamId,

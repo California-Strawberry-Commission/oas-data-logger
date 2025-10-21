@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { FSAdapter } from "dlflib-js/dist/fsadapter.js";
+import { FSAdapter } from "dlflib-js";
 import { mkdirSync, rmSync, writeFileSync, existsSync } from "fs";
 import { NextRequest, NextResponse } from "next/server";
 import { resolve } from "path";
@@ -257,13 +257,13 @@ export async function POST(
       }
     }
 
-    const message = existingRun 
-      ? "Partial upload successful - data appended" 
+    const message = existingRun
+      ? "Partial upload successful - data appended"
       : "Initial upload successful - run created";
-    
+
     console.log(message);
     return NextResponse.json({ message });
-    
+
   } catch (err) {
     console.error(`ERROR in upload handler:`, err);
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });
@@ -272,63 +272,4 @@ export async function POST(
       rmSync(uploadDir, { recursive: true, force: true });
     } catch {}
   }
-}
-
-
-async function ingestRun(runUuid: string): Promise<boolean> {
-  const alreadyIngested = await prisma.run.count({ where: { uuid: runUuid } });
-  if (alreadyIngested > 0) {
-    console.log("Run " + runUuid + " already ingested. Ignoring");
-    return false;
-  }
-
-  console.log("Ingesting run " + runUuid);
-  const run = new FSAdapter(getRunUploadDir(runUuid));
-  const metaHeader = await run.meta_header();
-
-  const runInstance = await prisma.run.create({
-    data: {
-      uuid: runUuid,
-      epochTimeS: metaHeader.epoch_time_s,
-      tickBaseUs: metaHeader.tick_base_us,
-      metadata: {},
-    },
-  });
-
-  const eventsData = await run.events_data();
-  await prisma.runData.createMany({
-    data: eventsData.map((d) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data = d.data as any;
-      const dataStr =
-        typeof data === "object" ? JSON.stringify(data) : data.toString();
-      return {
-        streamType: "EVENT",
-        streamId: d.stream.id,
-        tick: BigInt(d.tick),
-        data: dataStr,
-        runId: runInstance.id,
-      };
-    }),
-  });
-
-  const polledData = await run.polled_data();
-  await prisma.runData.createMany({
-    data: polledData.map((d) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data = d.data as any;
-      const dataStr =
-        typeof data === "object" ? JSON.stringify(data) : data.toString();
-      return {
-        streamType: "POLLED",
-        streamId: d.stream.id,
-        tick: BigInt(d.tick),
-        data: dataStr,
-        runId: runInstance.id,
-      };
-    }),
-  });
-
-  console.log("Ingested data for run " + runUuid);
-  return true;
 }
