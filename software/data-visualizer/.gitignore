@@ -48,5 +48,9 @@ next-env.d.ts
 
 # app specific
 uploads
-*.sqlite
 .env*.local
+
+# local test SQLite DB files
+*.sqlite
+*.db
+*.db-journal
