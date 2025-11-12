@@ -55,6 +55,20 @@ Run Prisma Studio for viewing data:
 $ npm run db:studio
 ```
 
+### Clear data
+
+Reset the DB
+
+```
+$ npm run db:reset
+```
+
+Apply migrations to the DB
+
+```
+$ npm run db:deploy
+```
+
 ## Creating DB schema changes
 
 When making any change to the Prisma schema in `schema.prisma`, first create a migration:
@@ -64,4 +78,3 @@ $ npm run db:migrate my_migration_name
 ```
 
 Make sure to check in the generated files under the `prisma/migrations` directory to source control. Note that when Vercel picks up the commit, it will automatically apply the newly created migration (via `npm run vercel-build`).
-
