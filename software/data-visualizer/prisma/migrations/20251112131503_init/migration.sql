@@ -5,9 +5,12 @@ CREATE TYPE "StreamType" AS ENUM ('POLLED', 'EVENT');
 CREATE TABLE "Run" (
     "id" SERIAL NOT NULL,
     "uuid" TEXT NOT NULL,
-    "epochTimeS" INTEGER NOT NULL,
-    "tickBaseUs" INTEGER NOT NULL,
+    "epochTimeS" BIGINT NOT NULL,
+    "tickBaseUs" BIGINT NOT NULL,
     "metadata" JSONB NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "isActive" BOOLEAN NOT NULL DEFAULT false,
 
     CONSTRAINT "Run_pkey" PRIMARY KEY ("id")
 );

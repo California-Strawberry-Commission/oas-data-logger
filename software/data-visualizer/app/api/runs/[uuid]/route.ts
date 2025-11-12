@@ -24,8 +24,8 @@ export async function GET(
 
     return NextResponse.json({
       uuid: run.uuid,
-      epochTimeS: Number(run.epochTimeS),
-      tickBaseUs: Number(run.tickBaseUs),
+      epochTimeS: run.epochTimeS.toString(), // convert BigInt to string for JSON serialization
+      tickBaseUs: run.tickBaseUs.toString(), // convert BigInt to string for JSON serialization
       metadata: run.metadata,
       streams: streams.map((s) => ({
         streamId: s.streamId,
