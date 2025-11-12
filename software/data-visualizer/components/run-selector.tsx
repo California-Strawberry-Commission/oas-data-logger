@@ -6,8 +6,7 @@ import { useEffect, useState } from "react";
 type Run = {
   uuid: string;
   epochTimeS: number;
-  lastDataTime: number;
-  updatedAt: string;
+  lastDataTimeS: number;
   isActive: boolean;
 };
 
@@ -57,29 +56,33 @@ export default function RunSelector({
 
   const runItems = runs.map((run: Run) => {
     const startTime = new Date(run.epochTimeS * 1000);
-    const lastDataTimeDate = new Date(run.lastDataTime * 1000);
+    const lastDataTimeDate = new Date(run.lastDataTimeS * 1000);
     const now = new Date();
-    
+
     // Calculate time since last data
-    const timeSinceLastData = (now.getTime() - lastDataTimeDate.getTime()) / 1000;
+    const timeSinceLastData =
+      (now.getTime() - lastDataTimeDate.getTime()) / 1000;
     const timeAgoStr = formatTimeDiff(timeSinceLastData);
-    
+
     // Format the label
-    let label = `${truncate(run.uuid, 12)} - Started ${startTime.toLocaleString()}`;
-    
+    let label = `${truncate(
+      run.uuid,
+      12
+    )} - Started ${startTime.toLocaleString()}`;
+
     if (run.isActive) {
       label = `🟢 ${label} (Active - ${timeAgoStr})`;
     } else {
-      const duration = run.lastDataTime - run.epochTimeS;
+      const duration = run.lastDataTimeS - run.epochTimeS;
       const durationMinutes = Math.floor(duration / 60);
       const durationSeconds = duration % 60;
       label = `${label} (${durationMinutes}m ${durationSeconds}s)`;
     }
-    
-    return { 
-      value: run.uuid, 
+
+    return {
+      value: run.uuid,
       label,
-      isActive: run.isActive
+      isActive: run.isActive,
     };
   });
 

@@ -6,193 +6,144 @@ import { resolve } from "path";
 
 export const dynamic = "force-dynamic";
 
+// Vercel Serverless Functions only allow writes to /tmp
 const UPLOAD_DIR = "/tmp/oas/uploads";
+
+const ACCEPTED_FILES = new Set<string>(["meta.dlf", "event.dlf", "polled.dlf"]);
 
 function getRunUploadDir(runUuid: string) {
   return resolve(UPLOAD_DIR, runUuid);
 }
 
-// Store file data in the database for persistence across requests
-async function persistFileData(runId: number, fileName: string, data: Buffer) {
-  await prisma.runFile.upsert({
-    where: {
-      runId_fileName: {
-        runId,
-        fileName
-      }
-    },
-    update: {
-      data,
-      updatedAt: new Date()
-    },
-    create: {
-      runId,
-      fileName,
-      data
-    }
-  });
-}
-
-// Retrieve persisted file data from database
-async function getPersistedFiles(runId: number): Promise<Map<string, Buffer>> {
-  const files = await prisma.runFile.findMany({
-    where: { runId },
-    select: {
-      fileName: true,
-      data: true
-    }
-  });
-  
-  const fileMap = new Map<string, Buffer>();
-  files.forEach(file => {
-    fileMap.set(file.fileName, Buffer.from(file.data));
-  });
-  
-  return fileMap;
-}
-
+// Each run is associated with 3 files (meta.dlf, event.dlf, polled.dlf).
+// Handles incremental uploads - if uploading a new run, meta.dlf is required.
+// If updating an existing run, we ignore any data logged earlier than what is
+// already in the DB.
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ uuid: string }> }
 ) {
   const { uuid } = await params;
-  console.log(`\n=== UPLOAD REQUEST RECEIVED ===`);
-  console.log(`UUID: ${uuid}`);
-  console.log(`Time: ${new Date().toISOString()}`);
-  console.log(`Headers:`, Object.fromEntries(request.headers.entries()));
-  
   const uploadDir = getRunUploadDir(uuid);
+
+  // Check if this run already exists
+  const existingRun = await prisma.run.findUnique({
+    where: { uuid },
+    select: { id: true },
+  });
+  const runExists = !!existingRun;
+  if (runExists) {
+    console.log(`Existing run found for uuid ${uuid}`);
+  } else {
+    console.log(`Run with uuid ${uuid} not found`);
+  }
 
   try {
     mkdirSync(uploadDir, { recursive: true });
 
+    // Parse form data (files + isActive)
     const formData = await request.formData();
-    console.log(`FormData entries:`, Array.from(formData.keys()));
-    
-    const files = formData.getAll("files");
-    console.log(`Number of files received: ${files.length}`);
 
-    // Check if this run exists
-    const existingRun = await prisma.run.findUnique({
-      where: { uuid },
-      select: { id: true }
-    });
-
-    let runId: number;
-    const uploadedFiles = new Map<string, Buffer>();
-
-    // Process uploaded files
-    for (const file of files) {
-      if (!(file instanceof File)) {
-        console.log(`Non-file entry found:`, file);
-        continue;
+    // Process isActive field
+    const isActiveField = formData.get("isActive");
+    let isActive = false;
+    if (isActiveField !== null) {
+      const s = String(isActiveField).trim().toLowerCase();
+      if (["true", "1", "on", "yes"].includes(s)) {
+        isActive = true;
+      } else if (["false", "0", "off", "no"].includes(s)) {
+        isActive = false;
+      } else {
+        return NextResponse.json(
+          {
+            error:
+              "Invalid isActive value. Use true/false (or 1/0, on/off, yes/no).",
+          },
+          { status: 400 }
+        );
       }
-
-      // Skip LOCK file - it's just a marker
-      if (file.name === "LOCK") {
-        console.log(`Skipping LOCK file`);
-        continue;
-      }
-
-      console.log(`Processing file: ${file.name}, size: ${file.size} bytes`);
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      uploadedFiles.set(file.name, buffer);
     }
 
-    // For incremental uploads, we need to handle state differently
-    if (!existingRun) {
-      // New run - requires meta.dlf
+    // Process uploaded files
+    const files = formData.getAll("files");
+    const uploadedFiles = new Set<string>();
+    for (const file of files) {
+      if (!(file instanceof File) || !ACCEPTED_FILES.has(file.name)) {
+        continue;
+      }
+
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const filePath = resolve(uploadDir, file.name);
+      console.log(`Writing ${filePath}`);
+      writeFileSync(filePath, buffer);
+      uploadedFiles.add(file.name);
+    }
+
+    const runData = new FSAdapter(uploadDir);
+
+    // Create new run if it does not exist yet
+    let runId: number;
+    if (!runExists) {
       if (!uploadedFiles.has("meta.dlf")) {
-        console.error(`ERROR: New run requires meta.dlf file`);
+        console.log(
+          `Attempting to create a new run with uuid ${uuid} but request is missing meta.dlf`
+        );
         return NextResponse.json(
-          { error: "New run requires meta.dlf file" },
+          { error: "Cannot create a new run without meta.dlf" },
           { status: 400 }
         );
       }
 
-      // Write all files to temp directory for initial processing
-      for (const [fileName, buffer] of uploadedFiles) {
-        const filePath = resolve(uploadDir, fileName);
-        writeFileSync(filePath, buffer);
-      }
-
-      // Create the run
       console.log(`Creating new run ${uuid}`);
-      const run = new FSAdapter(uploadDir);
-      const metaHeader = await run.meta_header();
-
+      const metaHeader = await runData.meta_header();
       const runInstance = await prisma.run.create({
         data: {
           uuid: uuid,
           epochTimeS: metaHeader.epoch_time_s,
           tickBaseUs: metaHeader.tick_base_us,
           metadata: {},
+          isActive: isActive,
         },
       });
       runId = runInstance.id;
-
-      // Persist all files to database
-      for (const [fileName, buffer] of uploadedFiles) {
-        await persistFileData(runId, fileName, buffer);
-      }
     } else {
-      // Existing run - retrieve persisted files and merge with new uploads
       runId = existingRun.id;
-      console.log(`Updating existing run ${uuid}`);
-
-      // Get previously uploaded files from database
-      const persistedFiles = await getPersistedFiles(runId);
-      
-      // Merge persisted files with new uploads (new uploads overwrite)
-      const allFiles = new Map(persistedFiles);
-      for (const [fileName, buffer] of uploadedFiles) {
-        allFiles.set(fileName, buffer);
-        // Update persisted file data
-        await persistFileData(runId, fileName, buffer);
-      }
-
-      // Write all files to temp directory for processing
-      for (const [fileName, buffer] of allFiles) {
-        const filePath = resolve(uploadDir, fileName);
-        writeFileSync(filePath, buffer);
-      }
+      await prisma.run.update({
+        where: { id: runId },
+        data: { isActive: isActive },
+      });
+      console.log(`isActive updated to ${isActive}`);
     }
 
-    // Now process the data with all files available
-    const run = new FSAdapter(uploadDir);
-    
-    // Process event data if event.dlf exists
-    if (existsSync(resolve(uploadDir, "event.dlf"))) {
+    // Event data
+    if (uploadedFiles.has("event.dlf")) {
       try {
-        const eventsData = await run.events_data();
-        
-        // Get the last tick we have for this run to only insert new data
-        const lastEventTick = await prisma.runData.findFirst({
+        const eventsData = await runData.events_data();
+
+        // Find the greatest tick already in RunData for this run
+        const latestTickRow = await prisma.runData.findFirst({
           where: {
             runId: runId,
-            streamType: "EVENT"
+            streamType: "EVENT",
           },
-          orderBy: {
-            tick: 'desc'
-          },
-          select: {
-            tick: true
-          }
+          orderBy: { tick: "desc" },
+          select: { tick: true },
         });
+        const latestTick = latestTickRow?.tick ?? BigInt(-1);
 
-        const lastTick = lastEventTick ? BigInt(lastEventTick.tick) : BigInt(-1);
-        
-        // Filter to only new events
-        const newEvents = eventsData.filter(d => BigInt(d.tick) > lastTick);
-        
+        // Filter out items in eventsData whose tick <= latestTick
+        const newEvents = eventsData.filter((d) => BigInt(d.tick) > latestTick);
+
         if (newEvents.length > 0) {
-          console.log(`Inserting ${newEvents.length} new event records`);
           await prisma.runData.createMany({
             data: newEvents.map((d) => {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const data = d.data as any;
               const dataStr =
-                typeof data === "object" ? JSON.stringify(data) : data.toString();
+                typeof data === "object"
+                  ? JSON.stringify(data)
+                  : data.toString();
               return {
                 streamType: "EVENT",
                 streamId: d.stream.id,
@@ -202,46 +153,53 @@ export async function POST(
               };
             }),
           });
+          console.log(`Created ${newEvents.length} new EVENT records`);
+        } else {
+          console.log("No new EVENT data created");
         }
       } catch (err) {
-        console.log(`Event data processing skipped:`, err);
+        console.error("Event data processing skipped due to error:", err);
       }
     }
 
-    // Process polled data if polled.dlf exists
-    if (existsSync(resolve(uploadDir, "polled.dlf"))) {
+    // Polled data
+    if (uploadedFiles.has("polled.dlf")) {
       try {
-        const polledData = await run.polled_data();
-        
+        const polledData = await runData.polled_data();
+
         // Get the last tick for each stream
-        const lastPolledTicks = await prisma.runData.groupBy({
-          by: ['streamId'],
+        const latestTicksByStream = await prisma.runData.groupBy({
+          by: ["streamId"],
           where: {
             runId: runId,
-            streamType: "POLLED"
+            streamType: "POLLED",
           },
           _max: {
-            tick: true
-          }
+            tick: true,
+          },
+        });
+        const latestTickMap = new Map<string, bigint>(
+          latestTicksByStream.map((item) => [
+            item.streamId,
+            item._max.tick ? item._max.tick : BigInt(-1),
+          ])
+        );
+
+        // Filter to only new polled data
+        const newPolled = polledData.filter((d) => {
+          const latestTick = latestTickMap.get(d.stream.id) || BigInt(-1);
+          return BigInt(d.tick) > latestTick;
         });
 
-        const lastTickMap = new Map(
-          lastPolledTicks.map(item => [item.streamId, item._max.tick ? BigInt(item._max.tick) : BigInt(-1)])
-        );
-        
-        // Filter to only new polled data
-        const newPolled = polledData.filter(d => {
-          const lastTick = lastTickMap.get(d.stream.id) || BigInt(-1);
-          return BigInt(d.tick) > lastTick;
-        });
-        
         if (newPolled.length > 0) {
-          console.log(`Inserting ${newPolled.length} new polled records`);
           await prisma.runData.createMany({
             data: newPolled.map((d) => {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const data = d.data as any;
               const dataStr =
-                typeof data === "object" ? JSON.stringify(data) : data.toString();
+                typeof data === "object"
+                  ? JSON.stringify(data)
+                  : data.toString();
               return {
                 streamType: "POLLED",
                 streamId: d.stream.id,
@@ -251,23 +209,25 @@ export async function POST(
               };
             }),
           });
+          console.log(`Created ${newPolled.length} new POLLED records`);
+        } else {
+          console.log("No new POLLED data created");
         }
       } catch (err) {
-        console.log(`Polled data processing skipped:`, err);
+        console.error("Polled data processing skipped due to error:", err);
       }
     }
 
-    const message = existingRun
-      ? "Partial upload successful - data appended"
-      : "Initial upload successful - run created";
-
+    const message = runExists
+      ? "Upload successful - data appended to existing run"
+      : "Upload successful - new run created";
     console.log(message);
     return NextResponse.json({ message });
-
   } catch (err) {
     console.error(`ERROR in upload handler:`, err);
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });
   } finally {
+    // Clean up tmp files
     try {
       rmSync(uploadDir, { recursive: true, force: true });
     } catch {}

@@ -5,53 +5,42 @@ export async function GET() {
   try {
     const runs = await prisma.run.findMany({
       select: {
-        id: true,
         uuid: true,
         epochTimeS: true,
         tickBaseUs: true,
         updatedAt: true,
-        files: {
-          where: {
-            fileName: "LOCK"
-          },
-          select: {
-            id: true
-          }
-        },
+        isActive: true,
         runData: {
+          // get the latest tick available
           select: {
-            tick: true
+            tick: true,
           },
           orderBy: {
-            tick: 'desc'
+            tick: "desc",
           },
-          take: 1
-        }
+          take: 1,
+        },
       },
     });
 
-    // Transform the data to include active status and last data time
-    const runsWithStatus = runs.map(run => {
-      const isActive = run.files.length > 0; // Has LOCK file
-
+    // Transform the data to include last data time
+    const runsWithStatus = runs.map((run) => {
       // Calculate last data time based on the highest tick
-      let lastDataTime = run.epochTimeS; // Default to start time
+      let lastDataTimeS: bigint = run.epochTimeS; // default to start time
       if (run.runData.length > 0) {
-        const lastTick = run.runData[0].tick;
-        const tickUs = run.tickBaseUs || 100000; // Default 100ms if not set
+        const lastTick: bigint = run.runData[0].tick;
+        const tickUs: bigint = run.tickBaseUs ?? 100_000n; // default 100ms if not set
 
-        // Perform the entire calculation with BigInt to avoid precision loss
-        const elapsedSeconds = (lastTick * BigInt(tickUs)) / 1000000n;
-        
-        lastDataTime = run.epochTimeS + elapsedSeconds;
+        // Perform calculation with bigint to avoid precision loss
+        const elapsedSeconds = (lastTick * tickUs) / 1_000_000n;
+        lastDataTimeS = run.epochTimeS + elapsedSeconds;
       }
 
       return {
         uuid: run.uuid,
-        epochTimeS: run.epochTimeS.toString(), // Convert BigInt to string for JSON serialization
-        lastDataTime: lastDataTime.toString(), // Convert BigInt to string for JSON serialization
-        updatedAt: run.updatedAt,
-        isActive
+        epochTimeS: run.epochTimeS.toString(), // convert BigInt to string for JSON serialization
+        lastDataTimeS: lastDataTimeS.toString(), // convert BigInt to string for JSON serialization
+        isActive: run.isActive,
       };
     });
 
