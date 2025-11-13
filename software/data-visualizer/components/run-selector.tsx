@@ -29,7 +29,6 @@ export default function RunSelector({
   const [runs, setRuns] = useState<Run[]>([]);
 
   useEffect(() => {
-    // Initial fetch
     fetch("/api/runs")
       .then((res) => res.json())
       .then((data: Run[]) => {
