@@ -26,25 +26,30 @@ export async function POST(
   const { uuid } = await params;
   const uploadDir = getRunUploadDir(uuid);
 
-  // Check if this run already exists
-  const existingRun = await prisma.run.findUnique({
-    where: { uuid },
-    select: { id: true },
-  });
-  const runExists = !!existingRun;
-  if (runExists) {
-    console.log(`Existing run found for uuid ${uuid}`);
-  } else {
-    console.log(`Run with uuid ${uuid} not found`);
-  }
-
   try {
     mkdirSync(uploadDir, { recursive: true });
 
-    // Parse form data (files + isActive)
+    // Parse form data
     const formData = await request.formData();
 
-    // Process isActive field
+    // Process deviceUid field (REQUIRED)
+    const deviceUid = formData.get("deviceUid");
+    if (typeof deviceUid !== "string" || deviceUid.trim() === "") {
+      return NextResponse.json(
+        { error: "Missing or invalid deviceUid" },
+        { status: 400 }
+      );
+    }
+
+    // Ensure device exists (create if missing)
+    const device = await prisma.device.upsert({
+      where: { deviceUid },
+      update: {},
+      create: { deviceUid },
+      select: { id: true },
+    });
+
+    // Process isActive field (OPTIONAL)
     const isActiveField = formData.get("isActive");
     let isActive = false;
     if (isActiveField !== null) {
@@ -64,7 +69,7 @@ export async function POST(
       }
     }
 
-    // Process uploaded files
+    // Save uploaded files
     const files = formData.getAll("files");
     const uploadedFiles = new Set<string>();
     for (const file of files) {
@@ -78,6 +83,26 @@ export async function POST(
       console.log(`Writing ${filePath}`);
       writeFileSync(filePath, buffer);
       uploadedFiles.add(file.name);
+    }
+
+    // Check if this run already exists and upload is from the same device
+    const existingRun = await prisma.run.findUnique({
+      where: { uuid },
+      select: { id: true, deviceId: true },
+    });
+    const runExists = !!existingRun;
+    if (runExists) {
+      console.log(`Existing run found for uuid ${uuid}`);
+      if (existingRun!.deviceId !== device.id) {
+        return NextResponse.json(
+          {
+            error: `Run with uuid ${uuid} already associated with a different device`,
+          },
+          { status: 409 }
+        );
+      }
+    } else {
+      console.log(`Run with uuid ${uuid} not found`);
     }
 
     const runData = new FSAdapter(uploadDir);
@@ -100,15 +125,18 @@ export async function POST(
       const runInstance = await prisma.run.create({
         data: {
           uuid: uuid,
+          deviceId: device.id,
           epochTimeS: metaHeader.epoch_time_s,
           tickBaseUs: metaHeader.tick_base_us,
           metadata: {},
           isActive: isActive,
         },
+        select: { id: true },
       });
       runId = runInstance.id;
     } else {
       runId = existingRun.id;
+      // Update isActive on existing run
       await prisma.run.update({
         where: { id: runId },
         data: { isActive: isActive },

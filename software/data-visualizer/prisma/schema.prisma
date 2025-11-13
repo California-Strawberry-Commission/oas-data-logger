@@ -8,9 +8,64 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum AppRole {
+  ADMIN
+  USER
+}
+
+enum DeviceRole {
+  VIEWER
+  // Will add more in the future
+}
+
+enum StreamType {
+  POLLED
+  EVENT
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+  role         AppRole  @default(USER)
+
+  userDevices UserDevice[]
+}
+
+model Device {
+  id        Int      @id @default(autoincrement())
+  deviceUid String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+  name      String?
+
+  userDevices UserDevice[]
+  runs        Run[]
+}
+
+model UserDevice {
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId   Int // relation field
+  device   Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  deviceId Int // relation field
+
+  role DeviceRole @default(VIEWER)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@id([userId, deviceId]) // each user-device pair is unique
+  @@index([deviceId, role])
+  @@index([userId, role])
+}
+
 model Run {
   id         Int      @id @default(autoincrement())
   uuid       String   @unique
+  device     Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  deviceId   Int // relation field
   epochTimeS BigInt
   tickBaseUs BigInt
   metadata   Json
@@ -24,14 +79,11 @@ model Run {
 model RunData {
   id         Int        @id @default(autoincrement())
   run        Run        @relation(fields: [runId], references: [id])
-  runId      Int // relation scalar field
+  runId      Int // relation field
   streamType StreamType
   streamId   String
   tick       BigInt
   data       String
-}
 
-enum StreamType {
-  POLLED
-  EVENT
+  @@index([runId, streamType, streamId, tick])
 }

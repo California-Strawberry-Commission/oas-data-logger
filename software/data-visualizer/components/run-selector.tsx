@@ -38,20 +38,6 @@ export default function RunSelector({
         );
         setRuns(sorted);
       });
-
-    // Set up polling for active runs
-    const pollInterval = setInterval(() => {
-      fetch("/api/runs")
-        .then((res) => res.json())
-        .then((data: Run[]) => {
-          const sorted = data.sort(
-            (a: Run, b: Run) => b.epochTimeS - a.epochTimeS
-          );
-          setRuns(sorted);
-        });
-    }, 5000); // Poll every 5 seconds
-
-    return () => clearInterval(pollInterval);
   }, []);
 
   const runItems = runs.map((run: Run) => {
