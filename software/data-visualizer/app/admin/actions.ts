@@ -72,7 +72,7 @@ export async function createUserAction(
     }
 
     const email = (formData.get("email") as string | null)?.trim();
-    const password = formData.get("password") as string | null;
+    const password = (formData.get("password") as string | null)?.trim();
     const deviceIdsRaw = formData.getAll("deviceIds") as string[];
 
     if (!email || !password) {
@@ -128,6 +128,7 @@ export async function updateUserAction(
 
     const userId = Number(formData.get("userId"));
     const role = formData.get("role") as string | null;
+    const password = (formData.get("password") as string | null)?.trim();
     const deviceIdsRaw = formData.getAll("deviceIds") as string[];
 
     if (!userId || !role) {
@@ -140,11 +141,16 @@ export async function updateUserAction(
 
     // Update user & their device associations
     await prisma.$transaction(async (tx) => {
+      const data: any = {
+        role: role as any,
+      };
+      if (password) {
+        data.passwordHash = await hashPassword(password);
+      }
+
       await tx.user.update({
         where: { id: userId },
-        data: {
-          role: role as any,
-        },
+        data,
       });
 
       // Reset userDevices and recreate from submitted list

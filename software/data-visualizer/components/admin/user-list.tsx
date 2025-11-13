@@ -99,6 +99,18 @@ function UpdateUserForm({
       </div>
 
       <div className="space-y-2">
+        <Label htmlFor="password">New password (optional)</Label>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          className="w-full border rounded-md px-2 py-1 text-sm"
+          placeholder="Leave blank to keep current password"
+          autoComplete="new-password"
+        />
+      </div>
+
+      <div className="space-y-2">
         <Label>Devices</Label>
         <div className="flex flex-col gap-2 max-h-40 overflow-y-auto border rounded-md p-2">
           {devices.length === 0 && (
