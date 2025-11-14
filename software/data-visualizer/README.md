@@ -81,6 +81,12 @@ Apply migrations to the DB
 $ npm run db:deploy
 ```
 
+### Example upload request
+
+```
+curl -X POST http://localhost:3000/api/upload/example_run_20251107 -F "files=@/path/to/meta.dlf" -F "files=@/path/to/polled.dlf" -F "files=@/path/to/event.dlf" -F "isActive=false" -F "deviceUid=example-device-123"
+```
+
 ## Creating DB schema changes
 
 When making any change to the Prisma schema in `schema.prisma`, first create a migration:
