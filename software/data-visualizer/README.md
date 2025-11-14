@@ -49,6 +49,10 @@ $ vercel env pull .env.local --environment=development
 
         $ npm run db:deploy
 
+6.  (Optional) Seed the DB with an ADMIN user:
+
+        $ npm run db:seed:local
+
 ### Run the app
 
 ```
