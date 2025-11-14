@@ -69,6 +69,10 @@ export async function POST(
       }
     }
 
+    console.log(
+      `[api/upload] Handling upload request for run: ${uuid}, deviceUid: ${deviceUid}, isActive: ${isActive}`
+    );
+
     // Save uploaded files
     const files = formData.getAll("files");
     const uploadedFiles = new Set<string>();
@@ -80,7 +84,7 @@ export async function POST(
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
       const filePath = resolve(uploadDir, file.name);
-      console.log(`Writing ${filePath}`);
+      console.log(`[api/upload] Writing ${filePath}`);
       writeFileSync(filePath, buffer);
       uploadedFiles.add(file.name);
     }
@@ -92,7 +96,7 @@ export async function POST(
     });
     const runExists = !!existingRun;
     if (runExists) {
-      console.log(`Existing run found for uuid ${uuid}`);
+      console.log(`[api/upload] Existing run found for uuid ${uuid}`);
       if (existingRun!.deviceId !== device.id) {
         return NextResponse.json(
           {
@@ -101,8 +105,6 @@ export async function POST(
           { status: 409 }
         );
       }
-    } else {
-      console.log(`Run with uuid ${uuid} not found`);
     }
 
     const runData = new FSAdapter(uploadDir);
@@ -112,7 +114,7 @@ export async function POST(
     if (!runExists) {
       if (!uploadedFiles.has("meta.dlf")) {
         console.log(
-          `Attempting to create a new run with uuid ${uuid} but request is missing meta.dlf`
+          `[api/upload] Attempting to create a new run with uuid ${uuid} but request is missing meta.dlf`
         );
         return NextResponse.json(
           { error: "Cannot create a new run without meta.dlf" },
@@ -120,7 +122,7 @@ export async function POST(
         );
       }
 
-      console.log(`Creating new run ${uuid}`);
+      console.log(`[api/upload] Creating new run ${uuid}`);
       const metaHeader = await runData.meta_header();
       const runInstance = await prisma.run.create({
         data: {
@@ -129,19 +131,21 @@ export async function POST(
           epochTimeS: metaHeader.epoch_time_s,
           tickBaseUs: metaHeader.tick_base_us,
           metadata: {},
-          isActive: isActive,
+          isActive,
         },
         select: { id: true },
       });
       runId = runInstance.id;
     } else {
+      console.log(
+        `[api/upload] Appending to existing run ${uuid}. Updating isActive to ${isActive}`
+      );
       runId = existingRun.id;
       // Update isActive on existing run
       await prisma.run.update({
         where: { id: runId },
-        data: { isActive: isActive },
+        data: { isActive },
       });
-      console.log(`isActive updated to ${isActive}`);
     }
 
     // Event data
@@ -177,16 +181,21 @@ export async function POST(
                 streamId: d.stream.id,
                 tick: BigInt(d.tick),
                 data: dataStr,
-                runId: runId,
+                runId,
               };
             }),
           });
-          console.log(`Created ${newEvents.length} new EVENT records`);
+          console.log(
+            `[api/upload] Created ${newEvents.length} new EVENT records`
+          );
         } else {
-          console.log("No new EVENT data created");
+          console.log("[api/upload] No new EVENT data created");
         }
       } catch (err) {
-        console.error("Event data processing skipped due to error:", err);
+        console.error(
+          "[api/upload] Event data processing skipped due to error:",
+          err
+        );
       }
     }
 
@@ -237,12 +246,17 @@ export async function POST(
               };
             }),
           });
-          console.log(`Created ${newPolled.length} new POLLED records`);
+          console.log(
+            `[api/upload] Created ${newPolled.length} new POLLED records`
+          );
         } else {
-          console.log("No new POLLED data created");
+          console.log("[api/upload] No new POLLED data created");
         }
       } catch (err) {
-        console.error("Polled data processing skipped due to error:", err);
+        console.error(
+          "[api/upload] Polled data processing skipped due to error:",
+          err
+        );
       }
     }
 
