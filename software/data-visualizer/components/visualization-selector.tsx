@@ -1,8 +1,8 @@
 "use client";
 
+import GpsPositionVisualization from "@/components/gps-position-visualization";
 import Combobox from "@/components/ui/combobox";
 import { useEffect, useState } from "react";
-import GpsPositionVisualization from "@/components/gps-position-visualization";
 
 type Run = {
   uuid: string;
@@ -21,13 +21,15 @@ type Stream = {
 function hasGpsData(run: Run): boolean {
   const streamIds = new Set(run.streams.map((s) => s.streamId));
   // Check for both old and new stream ID formats
-  return (streamIds.has("pos.lat") && streamIds.has("pos.lng")) || 
-         (streamIds.has("gpsData.lat") && streamIds.has("gpsData.lng"));
+  return (
+    (streamIds.has("pos.lat") && streamIds.has("pos.lng")) ||
+    (streamIds.has("gpsData.lat") && streamIds.has("gpsData.lng"))
+  );
 }
 
 function renderVisualization(
-  run: Run, 
-  visualization: string, 
+  run: Run,
+  visualization: string,
   refreshKey: number
 ) {
   switch (visualization) {
@@ -51,7 +53,8 @@ export default function VisualizationSelector({
   runUuid: string;
 }) {
   const [run, setRun] = useState<Run>();
-  const [selectedVisualization, setSelectedVisualization] = useState<string>("");
+  const [selectedVisualization, setSelectedVisualization] =
+    useState<string>("");
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
@@ -61,7 +64,7 @@ export default function VisualizationSelector({
 
     // Function to check if run is active
     const checkRunStatus = async () => {
-      const runsRes = await fetch('/api/runs');
+      const runsRes = await fetch("/api/runs");
       const runs = await runsRes.json();
       const currentRun = runs.find((r: any) => r.uuid === runUuid);
       return currentRun?.isActive || false;
@@ -71,15 +74,15 @@ export default function VisualizationSelector({
     const fetchRunData = async () => {
       const res = await fetch(`/api/runs/${runUuid}`);
       const data: Run = await res.json();
-      
+
       // Check if this run is active
       const isActive = await checkRunStatus();
-      
+
       setRun({ ...data, isActive });
-      
+
       // If active, trigger a refresh of the visualization
       if (isActive) {
-        setRefreshKey(prev => prev + 1);
+        setRefreshKey((prev) => prev + 1);
       }
     };
 

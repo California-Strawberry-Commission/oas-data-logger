@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
 import { FSAdapter } from "dlflib-js";
-import { mkdirSync, rmSync, writeFileSync, existsSync } from "fs";
+import { mkdirSync, rmSync, writeFileSync } from "fs";
 import { NextRequest, NextResponse } from "next/server";
 import { resolve } from "path";
 
@@ -26,25 +26,30 @@ export async function POST(
   const { uuid } = await params;
   const uploadDir = getRunUploadDir(uuid);
 
-  // Check if this run already exists
-  const existingRun = await prisma.run.findUnique({
-    where: { uuid },
-    select: { id: true },
-  });
-  const runExists = !!existingRun;
-  if (runExists) {
-    console.log(`Existing run found for uuid ${uuid}`);
-  } else {
-    console.log(`Run with uuid ${uuid} not found`);
-  }
-
   try {
     mkdirSync(uploadDir, { recursive: true });
 
-    // Parse form data (files + isActive)
+    // Parse form data
     const formData = await request.formData();
 
-    // Process isActive field
+    // Process deviceUid field (REQUIRED)
+    const deviceUid = formData.get("deviceUid");
+    if (typeof deviceUid !== "string" || deviceUid.trim() === "") {
+      return NextResponse.json(
+        { error: "Missing or invalid deviceUid" },
+        { status: 400 }
+      );
+    }
+
+    // Ensure device exists (create if missing)
+    const device = await prisma.device.upsert({
+      where: { deviceUid },
+      update: {},
+      create: { deviceUid },
+      select: { id: true },
+    });
+
+    // Process isActive field (OPTIONAL)
     const isActiveField = formData.get("isActive");
     let isActive = false;
     if (isActiveField !== null) {
@@ -64,7 +69,11 @@ export async function POST(
       }
     }
 
-    // Process uploaded files
+    console.log(
+      `[api/upload] Handling upload request for run: ${uuid}, deviceUid: ${deviceUid}, isActive: ${isActive}`
+    );
+
+    // Save uploaded files
     const files = formData.getAll("files");
     const uploadedFiles = new Set<string>();
     for (const file of files) {
@@ -75,9 +84,27 @@ export async function POST(
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
       const filePath = resolve(uploadDir, file.name);
-      console.log(`Writing ${filePath}`);
+      console.log(`[api/upload] Writing ${filePath}`);
       writeFileSync(filePath, buffer);
       uploadedFiles.add(file.name);
+    }
+
+    // Check if this run already exists and upload is from the same device
+    const existingRun = await prisma.run.findUnique({
+      where: { uuid },
+      select: { id: true, deviceId: true },
+    });
+    const runExists = !!existingRun;
+    if (runExists) {
+      console.log(`[api/upload] Existing run found for uuid ${uuid}`);
+      if (existingRun!.deviceId !== device.id) {
+        return NextResponse.json(
+          {
+            error: `Run with uuid ${uuid} already associated with a different device`,
+          },
+          { status: 409 }
+        );
+      }
     }
 
     const runData = new FSAdapter(uploadDir);
@@ -87,7 +114,7 @@ export async function POST(
     if (!runExists) {
       if (!uploadedFiles.has("meta.dlf")) {
         console.log(
-          `Attempting to create a new run with uuid ${uuid} but request is missing meta.dlf`
+          `[api/upload] Attempting to create a new run with uuid ${uuid} but request is missing meta.dlf`
         );
         return NextResponse.json(
           { error: "Cannot create a new run without meta.dlf" },
@@ -95,25 +122,30 @@ export async function POST(
         );
       }
 
-      console.log(`Creating new run ${uuid}`);
+      console.log(`[api/upload] Creating new run ${uuid}`);
       const metaHeader = await runData.meta_header();
       const runInstance = await prisma.run.create({
         data: {
           uuid: uuid,
+          deviceId: device.id,
           epochTimeS: metaHeader.epoch_time_s,
           tickBaseUs: metaHeader.tick_base_us,
           metadata: {},
-          isActive: isActive,
+          isActive,
         },
+        select: { id: true },
       });
       runId = runInstance.id;
     } else {
+      console.log(
+        `[api/upload] Appending to existing run ${uuid}. Updating isActive to ${isActive}`
+      );
       runId = existingRun.id;
+      // Update isActive on existing run
       await prisma.run.update({
         where: { id: runId },
-        data: { isActive: isActive },
+        data: { isActive },
       });
-      console.log(`isActive updated to ${isActive}`);
     }
 
     // Event data
@@ -149,16 +181,21 @@ export async function POST(
                 streamId: d.stream.id,
                 tick: BigInt(d.tick),
                 data: dataStr,
-                runId: runId,
+                runId,
               };
             }),
           });
-          console.log(`Created ${newEvents.length} new EVENT records`);
+          console.log(
+            `[api/upload] Created ${newEvents.length} new EVENT records`
+          );
         } else {
-          console.log("No new EVENT data created");
+          console.log("[api/upload] No new EVENT data created");
         }
       } catch (err) {
-        console.error("Event data processing skipped due to error:", err);
+        console.error(
+          "[api/upload] Event data processing skipped due to error:",
+          err
+        );
       }
     }
 
@@ -209,12 +246,17 @@ export async function POST(
               };
             }),
           });
-          console.log(`Created ${newPolled.length} new POLLED records`);
+          console.log(
+            `[api/upload] Created ${newPolled.length} new POLLED records`
+          );
         } else {
-          console.log("No new POLLED data created");
+          console.log("[api/upload] No new POLLED data created");
         }
       } catch (err) {
-        console.error("Polled data processing skipped due to error:", err);
+        console.error(
+          "[api/upload] Polled data processing skipped due to error:",
+          err
+        );
       }
     }
 

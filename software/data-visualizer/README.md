@@ -14,6 +14,14 @@ $ npm install
 
 ## Run locally
 
+### Pull env variables
+
+```
+$ cd <repo root>/software/data-visualizer
+$ vercel link
+$ vercel env pull .env.local --environment=development
+```
+
 ### Set up local PostgreSQL
 
 1.  Install the PostgreSQL package:

@@ -2,7 +2,7 @@
 
 #include "components/uploader_component.h"
 
-CSCLogger::CSCLogger(FS &fs, String fs_dir) : _fs(fs), fs_dir(fs_dir) {
+CSCLogger::CSCLogger(FS& fs, String fs_dir) : _fs(fs), fs_dir(fs_dir) {
   ev = xEventGroupCreate();
   this->setup(&components);
   addComponent(this);
@@ -16,7 +16,7 @@ run_handle_t CSCLogger::get_available_handle() {
   return 0;
 }
 
-bool CSCLogger::run_is_active(const char *uuid) {
+bool CSCLogger::run_is_active(const char* uuid) {
   for (size_t i = 0; i < MAX_RUNS; i++) {
     if (runs[i] && !strcmp(runs[i]->uuid(), uuid)) {
       return true;
@@ -37,7 +37,7 @@ run_handle_t CSCLogger::start_run(Encodable meta,
   Serial.printf("Starting logging with a cycle time-base of %dus\n", tick_rate);
 
   // Initialize new run
-  dlf::Run *run = new dlf::Run(_fs, fs_dir, data_streams, tick_rate, meta);
+  dlf::Run* run = new dlf::Run(_fs, fs_dir, data_streams, tick_rate, meta);
 
   if (run == NULL) {
     return 0;
@@ -58,31 +58,32 @@ void CSCLogger::stop_run(run_handle_t h) {
   xEventGroupSetBits(ev, NEW_RUN);
 }
 
-CSCLogger &CSCLogger::_watch(Encodable value, String id, const char *notes) {
+CSCLogger& CSCLogger::_watch(Encodable value, String id, const char* notes) {
   using namespace dlf::datastream;
 
-  AbstractStream *s = new EventStream(value, id, notes);
+  AbstractStream* s = new EventStream(value, id, notes);
   data_streams.push_back(s);
 
   return *this;
 }
 
-CSCLogger &CSCLogger::_poll(Encodable value, String id,
+CSCLogger& CSCLogger::_poll(Encodable value, String id,
                             microseconds sample_interval, microseconds phase,
-                            const char *notes) {
+                            const char* notes) {
   using namespace dlf::datastream;
 
-  AbstractStream *s =
+  AbstractStream* s =
       new PolledStream(value, id, sample_interval, phase, notes);
   data_streams.push_back(s);
 
   return *this;
 }
 
-CSCLogger &CSCLogger::syncTo(String host, uint16_t port,
-                             const UploaderComponent::Options &options) {
+CSCLogger& CSCLogger::syncTo(const String& endpoint, const String& deviceUid,
+                             const UploaderComponent::Options& options) {
   if (!hasComponent<UploaderComponent>()) {
-    addComponent(new UploaderComponent(_fs, fs_dir, host, port, options));
+    addComponent(
+        new UploaderComponent(_fs, fs_dir, endpoint, deviceUid, options));
   }
 
   return *this;
@@ -99,12 +100,12 @@ bool CSCLogger::begin() {
   prune();
 
   // Set subcomponent stores to enable component communication
-  for (DlfComponent *&comp : components) {
+  for (DlfComponent*& comp : components) {
     comp->setup(&components);
   }
 
   // begin subcomponents
-  for (DlfComponent *&comp : components) {
+  for (DlfComponent*& comp : components) {
     // Break recursion
     if (comp == this) {
       continue;
@@ -148,8 +149,8 @@ void CSCLogger::prune() {
 }
 
 void CSCLogger::flush(run_handle_t h) {
-    if (!runs[h - 1]) {
-        return;
-    }
-    runs[h - 1]->flush();
+  if (!runs[h - 1]) {
+    return;
+  }
+  runs[h - 1]->flush();
 }

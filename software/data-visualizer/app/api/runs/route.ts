@@ -1,17 +1,38 @@
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { getCurrentUser } from "@/lib/auth";
 
 export async function GET() {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // ADMINs can view everything
+    // USERs can only view runs for devices they are associated with
+    const where =
+      user.role === "ADMIN"
+        ? {}
+        : {
+            device: {
+              userDevices: {
+                some: {
+                  userId: user.id,
+                },
+              },
+            },
+          };
     const runs = await prisma.run.findMany({
+      where,
       select: {
         uuid: true,
         epochTimeS: true,
         tickBaseUs: true,
         updatedAt: true,
         isActive: true,
+        // get the latest tick available
         runData: {
-          // get the latest tick available
           select: {
             tick: true,
           },
@@ -46,7 +67,7 @@ export async function GET() {
 
     return NextResponse.json(runsWithStatus);
   } catch (err) {
-    console.error(err);
+    console.error("GET /api/runs error:", err);
     return NextResponse.json(
       { error: "Failed to fetch runs" },
       { status: 500 }

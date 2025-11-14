@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
+import { getCurrentUser } from "@/lib/auth";
 
 export async function GET(
   req: NextRequest,
@@ -8,12 +9,33 @@ export async function GET(
   const { uuid, stream_id } = await params;
 
   try {
-    const run = await prisma.run.findUnique({
-      where: { uuid },
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // ADMINs can view everything
+    // USERs can only view runs for devices they are associated with
+    const runWhere =
+      user.role === "ADMIN"
+        ? { uuid }
+        : {
+            uuid,
+            device: {
+              userDevices: {
+                some: {
+                  userId: user.id,
+                },
+              },
+            },
+          };
+    const run = await prisma.run.findFirst({
+      where: runWhere,
       select: { id: true },
     });
 
     if (!run) {
+      // Either run doesn't exist, or user has no access to it
       return NextResponse.json({ error: "Run not found" }, { status: 404 });
     }
 
@@ -39,7 +61,7 @@ export async function GET(
       }))
     );
   } catch (err) {
-    console.error(err);
+    console.error("GET /api/runs/[uuid]/streams/[stream_id] error:", err);
     return NextResponse.json(
       { error: "Error retrieving run data" },
       { status: 500 }

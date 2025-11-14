@@ -13,20 +13,20 @@
 #include "dlf_types.h"
 
 #define POLL(type_name)                                                      \
-  CSCLogger &poll(type_name &value, String id, microseconds sample_interval, \
+  CSCLogger& poll(type_name& value, String id, microseconds sample_interval, \
                   microseconds phase = microseconds::zero(),                 \
-                  const char *notes = nullptr) {                             \
+                  const char* notes = nullptr) {                             \
     return _poll(Encodable(value, #type_name), id, sample_interval, phase,   \
                  notes);                                                     \
   }                                                                          \
-  inline CSCLogger &poll(type_name &value, String id,                        \
-                         microseconds sample_interval, const char *notes) {  \
+  inline CSCLogger& poll(type_name& value, String id,                        \
+                         microseconds sample_interval, const char* notes) {  \
     return _poll(Encodable(value, #type_name), id, sample_interval,          \
                  microseconds::zero(), notes);                               \
   }
 
 #define WATCH(type_name)                                                       \
-  CSCLogger &watch(type_name &value, String id, const char *notes = nullptr) { \
+  CSCLogger& watch(type_name& value, String id, const char* notes = nullptr) { \
     return _watch(Encodable(value, #type_name), id, notes);                    \
   }
 
@@ -48,17 +48,17 @@ class CSCLogger : public DlfComponent {
   // Todo: Figure out how to do this with unique_ptrs
   dlf::datastream::streams_t data_streams;
 
-  FS &_fs;
+  FS& _fs;
   String fs_dir;
 
-  std::vector<DlfComponent *> components;
+  std::vector<DlfComponent*> components;
 
  public:
   enum LoggerEvents : uint32_t { NEW_RUN = 1 };
 
   EventGroupHandle_t ev;
 
-  CSCLogger(FS &fs, String fs_dir = "/");
+  CSCLogger(FS& fs, String fs_dir = "/");
 
   bool begin();
 
@@ -68,12 +68,12 @@ class CSCLogger : public DlfComponent {
                          microseconds tick_rate = milliseconds(100));
 
   void stop_run(run_handle_t h);
-  
+
   void flush(run_handle_t h);
 
-  bool run_is_active(const char *uuid);
+  bool run_is_active(const char* uuid);
 
-  CSCLogger &_watch(Encodable value, String id, const char *notes);
+  CSCLogger& _watch(Encodable value, String id, const char* notes);
   WATCH(uint8_t)
   WATCH(uint16_t)
   WATCH(uint32_t)
@@ -86,8 +86,8 @@ class CSCLogger : public DlfComponent {
   WATCH(double)
   WATCH(float)
 
-  CSCLogger &_poll(Encodable value, String id, microseconds sample_interval,
-                   microseconds phase, const char *notes);
+  CSCLogger& _poll(Encodable value, String id, microseconds sample_interval,
+                   microseconds phase, const char* notes);
   POLL(uint8_t)
   POLL(uint16_t)
   POLL(uint32_t)
@@ -100,8 +100,8 @@ class CSCLogger : public DlfComponent {
   POLL(double)
   POLL(float)
 
-  CSCLogger &syncTo(String host, uint16_t port,
-                    const UploaderComponent::Options &options);
+  CSCLogger& syncTo(const String& endpoint, const String& deviceUid,
+                    const UploaderComponent::Options& options);
   void waitForSyncCompletion();
 
   void prune();
