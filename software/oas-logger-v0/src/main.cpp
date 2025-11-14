@@ -68,13 +68,13 @@ const char* WIFI_CONFIG_AP_NAME{"OASDataLogger"};
 const int WIFI_RECONNECT_ATTEMPT_INTERVAL_MS{5000};
 
 // TODO: Configure upload endpoint in Access Point mode
-const char* UPLOAD_HOST{"oas-data-logger.vercel.app"};
-const uint16_t UPLOAD_PORT{443};
+const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
 
 void waitForValidTime();
 void waitForSd();
 void initializeWifi();
 bool wifiCredentialsExist();
+String getDeviceUid();
 void initializeLogger();
 void startLoggerRun();
 void enableGps();
@@ -255,6 +255,13 @@ bool wifiCredentialsExist() {
   return strlen((const char*)conf.sta.ssid) > 0;
 }
 
+String getDeviceUid() {
+  uint64_t raw = ESP.getEfuseMac();
+  char id[13];
+  sprintf(id, "%012llX", raw);
+  return id;
+}
+
 void initializeLogger() {
   auto satellitesLogInterval{std::chrono::seconds(5)};
   POLL(logger, pos.satellites, satellitesLogInterval);
@@ -264,10 +271,15 @@ void initializeLogger() {
   POLL(logger, pos.lng, gpsDataLogInterval);
   POLL(logger, pos.alt, gpsDataLogInterval);
 
+  uint64_t raw = ESP.getEfuseMac();
+  char id[13];
+  sprintf(id, "%012llX", raw);
+  String deviceUid = id;
+
   UploaderComponent::Options options;
   options.markAfterUpload = LOGGER_MARK_AFTER_UPLOAD;
   options.deleteAfterUpload = LOGGER_DELETE_AFTER_UPLOAD;
-  logger.syncTo(UPLOAD_HOST, UPLOAD_PORT, options).begin();
+  logger.syncTo(UPLOAD_ENDPOINT, getDeviceUid(), options).begin();
 }
 
 void startLoggerRun() {

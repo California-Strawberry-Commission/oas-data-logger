@@ -61,9 +61,8 @@ const int WIFI_MAX_BACKOFF_MS{30000};
 static volatile bool wifiConnecting = false;
 static uint32_t wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;
 
-// For server hosting
-const char* UPLOAD_HOST{"oas-data-logger.vercel.app"};
-const uint16_t UPLOAD_PORT{443};
+// TODO: Be able to configure upload endpoint in Access Point mode
+const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
 
 // State Machine States
 enum class SystemState {
@@ -141,11 +140,11 @@ bool hasUsbPower();
 bool wifiCredentialsExist();
 void enableGps();
 void disableGps();
+String getDeviceUid();
 void initializeLogger();
 void startLoggerRun();
 void gpsTask(void* args);
 void sleepMonitorTask(void* args);
-void testNetworkConnectivity();
 void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info);
 
 void setup() {
@@ -414,7 +413,6 @@ void handleWaitWifiState() {
 
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("WiFi connected successfully");
-    testNetworkConnectivity();
   } else {
     Serial.println("WiFi not connected; continuing without network.");
   }
@@ -743,6 +741,13 @@ void disableGps() {
   Serial.println("GPS disabled");
 }
 
+String getDeviceUid() {
+  uint64_t raw = ESP.getEfuseMac();
+  char id[13];
+  sprintf(id, "%012llX", raw);
+  return id;
+}
+
 void initializeLogger() {
   Serial.println("Initializing logger...");
 
@@ -757,7 +762,7 @@ void initializeLogger() {
   UploaderComponent::Options options;
   options.markAfterUpload = LOGGER_MARK_AFTER_UPLOAD;
   options.deleteAfterUpload = LOGGER_DELETE_AFTER_UPLOAD;
-  logger.syncTo(UPLOAD_HOST, UPLOAD_PORT, options).begin();
+  logger.syncTo(UPLOAD_ENDPOINT, getDeviceUid(), options).begin();
 
   Serial.println("Logger initialized");
 }
@@ -841,35 +846,4 @@ void sleepMonitorTask(void* args) {
 
   // Task will be deleted when system enters sleep
   vTaskDelete(NULL);
-}
-
-void testNetworkConnectivity() {
-  Serial.println("Testing HTTPS connectivity...");
-
-  WiFiClientSecure client;
-  client.setInsecure();  // For debugging - replace with setCACert() for
-                         // production
-  client.setTimeout(12000);
-
-  if (!client.connect(UPLOAD_HOST, UPLOAD_PORT)) {
-    Serial.println("HTTPS connect failed");
-    return;
-  }
-
-  // Send a simple HTTP request
-  client.printf("GET / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n",
-                UPLOAD_HOST);
-
-  // Read response
-  unsigned long timeout = millis();
-  while (client.connected() && (millis() - timeout < 5000)) {
-    if (client.available()) {
-      String line = client.readStringUntil('\n');
-      Serial.printf("HTTPS response: %s\n", line.c_str());
-      break;
-    }
-  }
-
-  client.stop();
-  Serial.println("HTTPS test complete");
 }
