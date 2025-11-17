@@ -5,8 +5,8 @@ import { useEffect, useState } from "react";
 
 type Run = {
   uuid: string;
-  epochTimeS: number;
-  lastDataTimeS: number;
+  epochTimeS: bigint;
+  lastDataTimeS: bigint;
   isActive: boolean;
 };
 
@@ -15,9 +15,15 @@ function truncate(str: string, maxLength: number) {
 }
 
 function formatTimeDiff(seconds: number): string {
-  if (seconds < 60) return `${Math.floor(seconds)}s ago`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 60) {
+    return `${Math.floor(seconds)}s ago`;
+  }
+  if (seconds < 3600) {
+    return `${Math.floor(seconds / 60)}m ago`;
+  }
+  if (seconds < 86400) {
+    return `${Math.floor(seconds / 3600)}h ago`;
+  }
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
@@ -31,17 +37,23 @@ export default function RunSelector({
   useEffect(() => {
     fetch("/api/runs")
       .then((res) => res.json())
-      .then((data: Run[]) => {
-        const sorted = data.sort(
-          (a: Run, b: Run) => b.epochTimeS - a.epochTimeS
+      .then((data) => {
+        const runs: Run[] = data.map((r: any) => ({
+          uuid: r.uuid,
+          epochTimeS: BigInt(r.epochTimeS),
+          lastDataTimeS: BigInt(r.lastDataTimeS),
+          isActive: r.isActive,
+        }));
+        const sorted = runs.sort((a: Run, b: Run) =>
+          Number(b.epochTimeS - a.epochTimeS)
         );
         setRuns(sorted);
       });
   }, []);
 
   const runItems = runs.map((run: Run) => {
-    const startTime = new Date(run.epochTimeS * 1000);
-    const lastDataTimeDate = new Date(run.lastDataTimeS * 1000);
+    const startTime = new Date(Number(run.epochTimeS) * 1000);
+    const lastDataTimeDate = new Date(Number(run.lastDataTimeS) * 1000);
     const now = new Date();
 
     // Calculate time since last data
@@ -58,7 +70,7 @@ export default function RunSelector({
     if (run.isActive) {
       label = `🟢 ${label} (Active - ${timeAgoStr})`;
     } else {
-      const duration = run.lastDataTimeS - run.epochTimeS;
+      const duration = Number(run.lastDataTimeS - run.epochTimeS);
       const durationMinutes = Math.floor(duration / 60);
       const durationSeconds = duration % 60;
       label = `${label} (${durationMinutes}m ${durationSeconds}s)`;

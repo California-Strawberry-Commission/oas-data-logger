@@ -2,12 +2,12 @@
 
 import GpsPositionVisualization from "@/components/gps-position-visualization";
 import Combobox from "@/components/ui/combobox";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type Run = {
   uuid: string;
-  epochTimeS: number;
-  tickBaseUs: number;
+  epochTimeS: bigint;
+  tickBaseUs: bigint;
   streams: Stream[];
   isActive?: boolean;
 };
@@ -57,48 +57,46 @@ export default function VisualizationSelector({
     useState<string>("");
   const [refreshKey, setRefreshKey] = useState(0);
 
+  const fetchRunData = useCallback(async () => {
+    const res = await fetch(`/api/runs/${runUuid}`);
+    const data = await res.json();
+
+    const nextRun: Run = {
+      uuid: data.uuid,
+      epochTimeS: BigInt(data.epochTimeS),
+      tickBaseUs: BigInt(data.tickBaseUs),
+      streams: data.streams,
+      isActive: data.isActive,
+    };
+
+    setRun(nextRun);
+
+    // If active, trigger a refresh of the visualization
+    if (nextRun.isActive) {
+      setRefreshKey((prev) => prev + 1);
+    }
+  }, [runUuid]);
+
+  // Initial fetch when runUuid changes
   useEffect(() => {
     if (!runUuid) {
       return;
     }
-
-    // Function to check if run is active
-    const checkRunStatus = async () => {
-      const runsRes = await fetch("/api/runs");
-      const runs = await runsRes.json();
-      const currentRun = runs.find((r: any) => r.uuid === runUuid);
-      return currentRun?.isActive || false;
-    };
-
-    // Function to fetch run data
-    const fetchRunData = async () => {
-      const res = await fetch(`/api/runs/${runUuid}`);
-      const data: Run = await res.json();
-
-      // Check if this run is active
-      const isActive = await checkRunStatus();
-
-      setRun({ ...data, isActive });
-
-      // If active, trigger a refresh of the visualization
-      if (isActive) {
-        setRefreshKey((prev) => prev + 1);
-      }
-    };
-
-    // Initial fetch
     fetchRunData();
+  }, [runUuid, fetchRunData]);
 
-    // Set up polling if needed
-    const pollInterval = setInterval(async () => {
-      const isActive = await checkRunStatus();
-      if (isActive) {
-        fetchRunData();
-      }
-    }, 5000); // Poll every 5 seconds for active runs
+  // Set up polling for new data if the current run is active
+  useEffect(() => {
+    if (!runUuid || !run?.isActive) {
+      return;
+    }
+
+    const pollInterval = setInterval(() => {
+      fetchRunData();
+    }, 5000);
 
     return () => clearInterval(pollInterval);
-  }, [runUuid]);
+  }, [runUuid, run?.isActive, fetchRunData]);
 
   // Auto-select the first available visualization when run data is loaded
   useEffect(() => {
