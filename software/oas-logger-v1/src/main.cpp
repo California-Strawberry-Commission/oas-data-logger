@@ -752,12 +752,12 @@ void initializeLogger() {
   Serial.println("Initializing logger...");
 
   auto satellitesLogInterval{std::chrono::seconds(5)};
-  POLL(logger, gpsData.satellites, satellitesLogInterval);
+  POLL(logger, gpsData.satellites, satellitesLogInterval, gpsDataMutex);
 
   auto gpsDataLogInterval{std::chrono::seconds(1)};
-  POLL(logger, gpsData.lat, gpsDataLogInterval);
-  POLL(logger, gpsData.lng, gpsDataLogInterval);
-  POLL(logger, gpsData.alt, gpsDataLogInterval);
+  POLL(logger, gpsData.lat, gpsDataLogInterval, gpsDataMutex);
+  POLL(logger, gpsData.lng, gpsDataLogInterval, gpsDataMutex);
+  POLL(logger, gpsData.alt, gpsDataLogInterval, gpsDataMutex);
 
   UploaderComponent::Options options;
   options.markAfterUpload = LOGGER_MARK_AFTER_UPLOAD;
