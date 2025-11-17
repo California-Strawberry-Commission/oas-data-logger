@@ -1,9 +1,11 @@
 "use client";
 
+import type { MapPoint } from "@/components/map";
 import { LatLngExpression } from "leaflet";
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 
+// Lazy load Map
 const MapComponent = dynamic(() => import("./map"), {
   ssr: false,
   loading: () => <LoadingMap />,
@@ -18,12 +20,6 @@ type DataPoint = {
   streamId: string;
   tick: number;
   data: number;
-};
-
-type GpsPoints = {
-  latLngs: LatLngExpression[];
-  minTick: number;
-  maxTick: number;
 };
 
 function LoadingMap() {
@@ -42,7 +38,11 @@ function NoData() {
   );
 }
 
-export function toGpsPoints(dataPoints: DataPoint[]): GpsPoints {
+export function toMapPoints(
+  dataPoints: DataPoint[],
+  epochTimeS: bigint,
+  tickBaseUs: bigint
+): MapPoint[] {
   // Split out datapoints into lat, lng, and alt
   const satellitesMap = new Map<number, number>();
   const latMap = new Map<number, number>();
@@ -65,31 +65,49 @@ export function toGpsPoints(dataPoints: DataPoint[]): GpsPoints {
     }
   }
 
-  // Combine lat, lng, and alt based on tick
-  const combined: { tick: number; lat: number; lng: number; alt?: number }[] =
-    [];
-  for (const [tick, satellites] of satellitesMap.entries()) {
+  // Assume that lat/lng share the same ticks, and satellites data may be sampled
+  // at a different rate than for lat/lng.
+  // For each lat/lng tick, we want the satellites value from the most recent
+  // satellites tick that is less than or equal to the lat/lng tick.
+  const latTicks = Array.from(latMap.keys()).sort((a, b) => a - b);
+  const satTicks = Array.from(satellitesMap.keys()).sort((a, b) => a - b);
+
+  const mapPoints: MapPoint[] = [];
+  let satIdx = -1;
+
+  for (const tick of latTicks) {
     const lat = latMap.get(tick);
     const lng = lngMap.get(tick);
     const alt = altMap.get(tick);
 
-    if (satellites === 0 || lat === undefined || lng === undefined) {
+    // lat/lng are required. alt is optional
+    if (lat === undefined || lng === undefined) {
       continue;
     }
 
-    combined.push({ tick, lat, lng, alt });
+    // Get the satellites data for this tick
+    let satellites: number | undefined = undefined;
+    while (satIdx + 1 < satTicks.length && satTicks[satIdx + 1] <= tick) {
+      satIdx++;
+    }
+    if (satIdx >= 0) {
+      const satTick = satTicks[satIdx];
+      satellites = satellitesMap.get(satTick);
+    }
+
+    // Filter out lat/lng where num satellites is 0
+    if (!satellites || satellites === 0) {
+      continue;
+    }
+
+    const timestampS = Number(epochTimeS) + Number(tickBaseUs) * 1e-6 * tick;
+    const position: LatLngExpression =
+      alt !== undefined ? [lat, lng, alt] : [lat, lng];
+
+    mapPoints.push({ position, timestampS });
   }
 
-  // Sort by ascending tick
-  combined.sort((a, b) => a.tick - b.tick);
-
-  const latLngs: LatLngExpression[] = combined.map((p) =>
-    p.alt !== undefined ? [p.lat, p.lng, p.alt] : [p.lat, p.lng]
-  );
-  const minTick = combined.length > 0 ? combined[0].tick : 0;
-  const maxTick = combined.length > 0 ? combined[combined.length - 1].tick : 0;
-
-  return { latLngs, minTick, maxTick };
+  return mapPoints;
 }
 
 export default function GpsPositionVisualization({
@@ -98,10 +116,10 @@ export default function GpsPositionVisualization({
   tickBaseUs,
 }: {
   runUuid: string;
-  epochTimeS?: number;
-  tickBaseUs?: number;
+  epochTimeS: bigint;
+  tickBaseUs: bigint;
 }) {
-  const [gpsPoints, setGpsPoints] = useState<GpsPoints>();
+  const [mapPoints, setMapPoints] = useState<MapPoint[]>();
 
   useEffect(() => {
     if (!runUuid) {
@@ -119,33 +137,22 @@ export default function GpsPositionVisualization({
             data: Number(p.data),
           };
         });
-        setGpsPoints(toGpsPoints(dataPoints));
+        setMapPoints(toMapPoints(dataPoints, epochTimeS, tickBaseUs));
       });
-  }, [runUuid]);
+  }, [runUuid, epochTimeS, tickBaseUs]);
 
-  const startTimestampS =
-    epochTimeS && tickBaseUs && gpsPoints
-      ? epochTimeS + tickBaseUs * 1e-6 * gpsPoints.minTick
-      : undefined;
-
-  const endTimestampS =
-    epochTimeS && tickBaseUs && gpsPoints
-      ? epochTimeS + tickBaseUs * 1e-6 * gpsPoints.maxTick
-      : undefined;
+  let content = null;
+  if (!mapPoints) {
+    content = <LoadingMap />;
+  } else if (mapPoints.length > 0) {
+    content = <MapComponent points={mapPoints} />;
+  } else {
+    content = <NoData />;
+  }
 
   return (
     <div className="w-full h-[60vh] max-h-[600px] sm:h-[500px] sm:max-w-[800px] mx-auto">
-      {!gpsPoints ? (
-        <LoadingMap />
-      ) : gpsPoints.latLngs.length > 0 ? (
-        <MapComponent
-          points={gpsPoints.latLngs}
-          startTimestampS={startTimestampS}
-          endTimestampS={endTimestampS}
-        />
-      ) : (
-        <NoData />
-      )}
+      {content}
     </div>
   );
 }

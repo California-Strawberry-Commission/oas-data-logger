@@ -48,6 +48,7 @@ export async function GET(
       uuid: run.uuid,
       epochTimeS: run.epochTimeS.toString(), // convert BigInt to string for JSON serialization
       tickBaseUs: run.tickBaseUs.toString(), // convert BigInt to string for JSON serialization
+      isActive: run.isActive,
       metadata: run.metadata,
       streams: streams.map((s) => ({
         streamId: s.streamId,
