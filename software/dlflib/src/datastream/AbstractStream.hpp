@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <string.h>
+#include "freertos/semphr.h"
 
 #include <chrono>
 #include <memory>
@@ -39,10 +40,11 @@ class AbstractStream {
     const String _id;
 
    protected:
-    AbstractStream(Encodable &dat, String id, const char *notes) : _notes(notes), _id(id), src(dat) {
+    AbstractStream(Encodable &dat, String id, const char *notes, SemaphoreHandle_t mutex) : _notes(notes), _id(id), src(dat), _mutex(mutex) {
     }
 
    public:
+    SemaphoreHandle_t _mutex;
     const Encodable src;
 
     /**

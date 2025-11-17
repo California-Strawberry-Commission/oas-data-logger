@@ -3,8 +3,8 @@
 
 using namespace dlf::datastream;
 
-PolledStream::PolledStream(Encodable &src, String id, microseconds sample_interval, microseconds phase, const char* notes)
-    : AbstractStream(src, id, notes), _sample_interval_us(sample_interval), _phase_us(phase)
+PolledStream::PolledStream(Encodable &src, String id, microseconds sample_interval, microseconds phase, const char* notes, SemaphoreHandle_t mutex)
+    : AbstractStream(src, id, notes, mutex), _sample_interval_us(sample_interval), _phase_us(phase)
 {
 }
 

@@ -50,5 +50,18 @@ size_t PolledStreamHandle::encode_into(StreamBufferHandle_t buf, dlf_tick_t tick
         stream->id());
 #endif
     // Sample data
-    return xStreamBufferSend(buf, stream->data_source(), stream->data_size(), 0);
+    size_t written = 0;
+
+    if(stream->_mutex){
+        if (xSemaphoreTake(stream->_mutex, (TickType_t)10) != pdTRUE){
+            return 0;
+        }
+    }
+
+    written = xStreamBufferSend(buf, stream->data_source(), stream->data_size(), 0);
+
+    if(stream->_mutex){
+        xSemaphoreGive(stream->_mutex);
+    }
+    return written;
 }

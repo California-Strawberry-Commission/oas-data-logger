@@ -3,7 +3,7 @@
 
 using namespace dlf::datastream;
 
-EventStream::EventStream(Encodable &dat, String id, const char* notes) : AbstractStream(dat, id, notes) {
+EventStream::EventStream(Encodable &dat, String id, const char* notes, SemaphoreHandle_t mutex) : AbstractStream(dat, id, notes, mutex) {
 }
 
 stream_handle_t EventStream::handle(microseconds tick_interval, dlf_stream_idx_t idx) {

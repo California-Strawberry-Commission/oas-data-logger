@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Arduino.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 #include <chrono>
 #include <vector>
@@ -15,19 +17,28 @@
 #define POLL(type_name)                                                      \
   CSCLogger& poll(type_name& value, String id, microseconds sample_interval, \
                   microseconds phase = microseconds::zero(),                 \
-                  const char* notes = nullptr) {                             \
+                  const char* notes = nullptr,                               \
+                  SemaphoreHandle_t mutex = NULL) {                          \
     return _poll(Encodable(value, #type_name), id, sample_interval, phase,   \
-                 notes);                                                     \
+                 notes, mutex);                                              \
   }                                                                          \
   inline CSCLogger& poll(type_name& value, String id,                        \
-                         microseconds sample_interval, const char* notes) {  \
+                         microseconds sample_interval, const char* notes,    \
+                        SemaphoreHandle_t mutex = NULL) {                    \
     return _poll(Encodable(value, #type_name), id, sample_interval,          \
-                 microseconds::zero(), notes);                               \
-  }
+                 microseconds::zero(), notes, mutex);                        \
+  }                                                                          \
+  inline CSCLogger& poll(type_name& value, String id,                        \
+                         microseconds sample_interval,                       \
+                         SemaphoreHandle_t mutex) {                          \
+    return _poll(Encodable(value, #type_name), id, sample_interval,          \
+                 microseconds::zero(), nullptr, mutex);                      \
+  }                                                                          
 
-#define WATCH(type_name)                                                       \
-  CSCLogger& watch(type_name& value, String id, const char* notes = nullptr) { \
-    return _watch(Encodable(value, #type_name), id, notes);                    \
+#define WATCH(type_name)                                                     \
+  CSCLogger& watch(type_name& value, String id, const char* notes = nullptr, \
+                   SemaphoreHandle_t mutex = NULL) {                         \
+    return _watch(Encodable(value, #type_name), id, notes, mutex);           \
   }
 
 #define INDEX_FILE_PATH "/__INDEX"
@@ -73,7 +84,7 @@ class CSCLogger : public DlfComponent {
 
   bool run_is_active(const char* uuid);
 
-  CSCLogger& _watch(Encodable value, String id, const char* notes);
+  CSCLogger& _watch(Encodable value, String id, const char* notes, SemaphoreHandle_t mutex = NULL);
   WATCH(uint8_t)
   WATCH(uint16_t)
   WATCH(uint32_t)
@@ -87,7 +98,7 @@ class CSCLogger : public DlfComponent {
   WATCH(float)
 
   CSCLogger& _poll(Encodable value, String id, microseconds sample_interval,
-                   microseconds phase, const char* notes);
+                   microseconds phase, const char* notes, SemaphoreHandle_t mutex = NULL);
   POLL(uint8_t)
   POLL(uint16_t)
   POLL(uint32_t)

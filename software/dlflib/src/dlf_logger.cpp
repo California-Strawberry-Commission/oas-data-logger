@@ -58,10 +58,10 @@ void CSCLogger::stop_run(run_handle_t h) {
   xEventGroupSetBits(ev, NEW_RUN);
 }
 
-CSCLogger& CSCLogger::_watch(Encodable value, String id, const char* notes) {
+CSCLogger& CSCLogger::_watch(Encodable value, String id, const char* notes, SemaphoreHandle_t mutex) {
   using namespace dlf::datastream;
 
-  AbstractStream* s = new EventStream(value, id, notes);
+  AbstractStream* s = new EventStream(value, id, notes, mutex);
   data_streams.push_back(s);
 
   return *this;
@@ -69,11 +69,11 @@ CSCLogger& CSCLogger::_watch(Encodable value, String id, const char* notes) {
 
 CSCLogger& CSCLogger::_poll(Encodable value, String id,
                             microseconds sample_interval, microseconds phase,
-                            const char* notes) {
+                            const char* notes, SemaphoreHandle_t mutex) {
   using namespace dlf::datastream;
 
   AbstractStream* s =
-      new PolledStream(value, id, sample_interval, phase, notes);
+      new PolledStream(value, id, sample_interval, phase, notes, mutex);
   data_streams.push_back(s);
 
   return *this;
