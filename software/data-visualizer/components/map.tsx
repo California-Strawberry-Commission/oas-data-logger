@@ -14,6 +14,7 @@ import {
 export type MapPoint = {
   timestampS: number;
   position: LatLngExpression;
+  numSatellites: number;
 };
 
 const ColorIcon = Icon.extend({
