@@ -1,2 +1,6 @@
 .pio
-.vscode
+
+# VS Code project specific settings
+!.vscode
+.vscode/*
+!.vscode/settings.json
