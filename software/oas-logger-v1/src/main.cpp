@@ -62,7 +62,9 @@ static volatile bool wifiConnecting = false;
 static uint32_t wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;
 
 // TODO: Be able to configure upload endpoint in Access Point mode
-const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
+// const char
+// *UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
+const char* UPLOAD_ENDPOINT{"http://129.65.121.145:3000/api/upload/%s"};
 
 // State Machine States
 enum class SystemState {
@@ -752,12 +754,12 @@ void initializeLogger() {
   Serial.println("Initializing logger...");
 
   auto satellitesLogInterval{std::chrono::seconds(5)};
-  POLL(logger, gpsData.satellites, satellitesLogInterval);
+  POLL(logger, gpsData.satellites, satellitesLogInterval, gpsDataMutex);
 
   auto gpsDataLogInterval{std::chrono::seconds(1)};
-  POLL(logger, gpsData.lat, gpsDataLogInterval);
-  POLL(logger, gpsData.lng, gpsDataLogInterval);
-  POLL(logger, gpsData.alt, gpsDataLogInterval);
+  POLL(logger, gpsData.lat, gpsDataLogInterval, gpsDataMutex);
+  POLL(logger, gpsData.lng, gpsDataLogInterval, gpsDataMutex);
+  POLL(logger, gpsData.alt, gpsDataLogInterval, gpsDataMutex);
 
   UploaderComponent::Options options;
   options.markAfterUpload = LOGGER_MARK_AFTER_UPLOAD;

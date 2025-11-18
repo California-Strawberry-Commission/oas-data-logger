@@ -14,11 +14,11 @@ namespace dlf::datastream {
  * stream of data that should be polled at some interval.
  */
 class EventStream : public AbstractStream {
-   public:
-    EventStream(Encodable &dat, String id, const char* notes);
+ public:
+  EventStream(Encodable& dat, String id, const char* notes,
+              SemaphoreHandle_t mutex = NULL);
+  stream_handle_t handle(microseconds tick_interval, dlf_stream_idx_t idx);
 
-    stream_handle_t handle(microseconds tick_interval, dlf_stream_idx_t idx);
-
-    dlf_stream_type_e type();
+  dlf_stream_type_e type();
 };
 }  // namespace dlf::datastream
