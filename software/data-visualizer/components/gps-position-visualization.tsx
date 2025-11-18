@@ -15,6 +15,8 @@ const STREAM_ID_SATELLITES = "gpsData.satellites";
 const STREAM_ID_LATITUDE = "gpsData.lat";
 const STREAM_ID_LONGITUDE = "gpsData.lng";
 const STREAM_ID_ALTITUDE = "gpsData.alt";
+const MIN_NUM_SATELLITES = 1; // filter out GPS points that were logged with less than X satellites
+const MAX_JUMP_METERS = 100; // filter out GPS points that jump more than X meters from the previous point
 
 type DataPoint = {
   streamId: string;
@@ -38,7 +40,29 @@ function NoData() {
   );
 }
 
-export function toMapPoints(
+function haversineMeters(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): number {
+  const R = 6371000; // earth radius in meters
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
+}
+
+function toMapPoints(
   dataPoints: DataPoint[],
   epochTimeS: bigint,
   tickBaseUs: bigint
@@ -86,25 +110,32 @@ export function toMapPoints(
     }
 
     // Get the satellites data for this tick
-    let satellites: number | undefined = undefined;
     while (satIdx + 1 < satTicks.length && satTicks[satIdx + 1] <= tick) {
       satIdx++;
     }
-    if (satIdx >= 0) {
-      const satTick = satTicks[satIdx];
-      satellites = satellitesMap.get(satTick);
+    const numSatellites =
+      satIdx >= 0 ? satellitesMap.get(satTicks[satIdx]) : undefined;
+
+    // Filter out lat/lng where num satellites is below min threshold
+    if (!numSatellites || numSatellites < MIN_NUM_SATELLITES) {
+      continue;
     }
 
-    // Filter out lat/lng where num satellites is 0
-    if (!satellites || satellites === 0) {
-      continue;
+    // Filter out lat/lng that jump too far from last accepted point
+    if (mapPoints.length > 0) {
+      const last = mapPoints[mapPoints.length - 1];
+      const [lastLat, lastLng] = last.position as [number, number];
+      const jump = haversineMeters(lastLat, lastLng, lat, lng);
+      if (jump > MAX_JUMP_METERS) {
+        continue;
+      }
     }
 
     const timestampS = Number(epochTimeS) + Number(tickBaseUs) * 1e-6 * tick;
     const position: LatLngExpression =
       alt !== undefined ? [lat, lng, alt] : [lat, lng];
 
-    mapPoints.push({ position, timestampS });
+    mapPoints.push({ position, timestampS, numSatellites });
   }
 
   return mapPoints;
