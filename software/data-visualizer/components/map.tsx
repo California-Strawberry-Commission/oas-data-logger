@@ -10,6 +10,7 @@ import {
   Popup,
   TileLayer,
 } from "react-leaflet";
+import HeatmapLayer, { HeatmapPoint } from "@/components/heatmap-layer";
 
 const MIN_NUM_SATELLITES = 1; // filter out GPS points that were logged with less than X satellites
 const MAX_JUMP_METERS = 100; // filter out GPS points that jump more than X meters from the previous point
@@ -80,6 +81,7 @@ function distanceMeters(a: LatLngExpression, b: LatLngExpression): number {
 
 export default function Map({ points }: { points: MapPoint[] }) {
   const [filterEnabled, setFilterEnabled] = useState(true);
+  const [heatmapEnabled, setHeatmapEnabled] = useState(false);
 
   const sortedPoints = useMemo(
     // Create a copy of the points array before sorting in place
@@ -119,6 +121,36 @@ export default function Map({ points }: { points: MapPoint[] }) {
 
     return result;
   }, [sortedPoints, filterEnabled]);
+
+  // Create data for heatmap rendering
+  const heatmapPoints: HeatmapPoint[] = useMemo(() => {
+    const n = displayPoints.length;
+    if (n === 0) {
+      return [];
+    }
+
+    const dwellTimesSecs: number[] = new Array(n).fill(0);
+    for (let i = 0; i < n - 1; i++) {
+      const dt = displayPoints[i + 1].timestampS - displayPoints[i].timestampS;
+      dwellTimesSecs[i] = Math.max(0, Math.min(dt, 60)); // clamp to 60s to avoid outliers ruining the visualization
+    }
+
+    // Set the dwell time of the last point to be the same as the second-to-last point
+    if (n > 1) {
+      dwellTimesSecs[n - 1] = dwellTimesSecs[n - 2];
+    }
+
+    const maxDwellTimeSecs =
+      dwellTimesSecs.reduce((prev, curr) => (curr > prev ? curr : prev), 0) ||
+      1;
+
+    return displayPoints.map((p, idx) => {
+      const { lat, lng } = toLatLng(p.position);
+      // Set the weight to be the dwell time normalized to [0, 1]
+      const weight = dwellTimesSecs[idx] / maxDwellTimeSecs;
+      return [lat, lng, weight] as HeatmapPoint;
+    });
+  }, [displayPoints]);
 
   const startTimestampS = displayPoints[0]?.timestampS ?? 0;
   const endTimestampS =
@@ -178,6 +210,16 @@ export default function Map({ points }: { points: MapPoint[] }) {
           url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
           maxZoom={22}
         />
+
+        {/* Dwell-time heatmap overlay */}
+        {heatmapEnabled && (
+          <HeatmapLayer
+            points={heatmapPoints}
+            radius={10}
+            blur={20}
+            maxIntensity={1}
+          />
+        )}
 
         {/* Full track */}
         <Polyline positions={polylinePositions} color="blue" />
@@ -241,6 +283,18 @@ export default function Map({ points }: { points: MapPoint[] }) {
               onChange={(e) => setFilterEnabled(e.target.checked)}
             />
             Filter outliers
+          </label>
+        </div>
+
+        {/* Heatmap toggle */}
+        <div className="mt-2 flex items-center justify-center gap-2">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={heatmapEnabled}
+              onChange={(e) => setHeatmapEnabled(e.target.checked)}
+            />
+            Show dwell time heatmap
           </label>
         </div>
       </div>
