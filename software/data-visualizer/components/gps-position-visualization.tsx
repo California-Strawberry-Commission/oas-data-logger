@@ -146,7 +146,7 @@ export default function GpsPositionVisualization({
   }
 
   return (
-    <div className="w-full h-[60vh] max-h-[600px] sm:h-[500px] sm:max-w-[800px] mx-auto">
+    <div className="w-full h-[500px] max-h-[800px] sm:h-[500px] sm:max-w-[800px] mx-auto">
       {content}
     </div>
   );
