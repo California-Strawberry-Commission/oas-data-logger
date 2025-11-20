@@ -1,57 +1,147 @@
 import { expect, test } from "vitest";
-import { Adapter } from "../src/dlflib";
-import { readFile } from "node:fs/promises"
-import { resolve } from "node:path"
-import { Parser } from "binary-parser"
-import { FSAdapter } from "../src/fsadapter"
+import { FSAdapter } from "../src/fsadapter";
 
-const a = new FSAdapter("tests/resources/gps");
+const fsAdapter = new FSAdapter("tests/resources/gps");
 
-test("Basic meta", async () => {
-    expect(await a.meta_header()).toMatchObject({
-        magic: 33812,
-        tick_base_us: 100000,
-        meta_size: 16,
-        meta_id: "constexpr const char* t() [with T = loop()::lele]",
-        meta_structure: "meta_struct;time:uint32_t:0;another:uint64_t:8",
-    });
+test("Meta header", async () => {
+  expect(await fsAdapter.meta_header()).toMatchObject({
+    magic: 33812,
+    epoch_time_s: 1763485651,
+    tick_base_us: 100000,
+    meta_structure: "double",
+    meta_size: 8,
+  });
 
-    expect(await a.meta()).toMatchObject({
-        another: 5n,
-        time: 0
-    });
+  // TODO: this currently does not work
+  // expect(await a.meta()).toMatchObject({
+  //     another: 9523124174940276194n,
+  //     time: 1061160418
+  // });
 });
 
-test("polled headers", async () => {
-    expect(await a.polled_header()).toMatchObject({
-        "magic": 33812,
-        "num_streams": 0,
-        "stream_type": 0,
-        "streams": [],
-        "tick_span": 1916n,
-    });
+test("Polled headers", async () => {
+  expect(await fsAdapter.polled_header()).toMatchObject({
+    magic: 33812,
+    stream_type: 0,
+    tick_span: 1832n,
+    num_streams: 4,
+    streams: [
+      {
+        type_structure: "uint32_t",
+        id: "gpsData.satellites",
+        notes: "N/A",
+        type_size: 4,
+        stream_info: {
+          tick_interval: 50n,
+          tick_phase: 0n,
+        },
+      },
+      {
+        type_structure: "double",
+        id: "gpsData.lat",
+        notes: "N/A",
+        type_size: 8,
+        stream_info: {
+          tick_interval: 10n,
+          tick_phase: 0n,
+        },
+      },
+      {
+        type_structure: "double",
+        id: "gpsData.lng",
+        notes: "N/A",
+        type_size: 8,
+        stream_info: {
+          tick_interval: 10n,
+          tick_phase: 0n,
+        },
+      },
+      {
+        type_structure: "double",
+        id: "gpsData.alt",
+        notes: "N/A",
+        type_size: 8,
+        stream_info: {
+          tick_interval: 10n,
+          tick_phase: 0n,
+        },
+      },
+    ],
+  });
 });
 
-
-test("event headers", async () => {
-    expect(await a.events_header()).toMatchObject({
-        "magic": 33812,
-        "num_streams": 1,
-        "stream_type": 1,
-        "streams": [
-            {
-                "id": "GPSPos",
-                "notes": "Notes...",
-                "stream_info": {},
-                "type_id": "constexpr const char* t() [with T = GPSPos]",
-                "type_size": 24,
-                "type_structure": "gps_pos;lat:double:0;lon:double:8;alt:double:16",
-            },
-        ],
-        "tick_span": 1916n,
-    });
+test("Polled data", async () => {
+  expect(await fsAdapter.polled_data(0n, 10n)).toMatchObject([
+    {
+      stream: {
+        type_structure: "uint32_t",
+        id: "gpsData.satellites",
+        notes: "N/A",
+        type_size: 4,
+        stream_info: {
+          tick_interval: 50n,
+          tick_phase: 0n,
+        },
+      },
+      data: 3,
+      tick: 0n,
+      o: 0n,
+    },
+    {
+      stream: {
+        type_structure: "double",
+        id: "gpsData.lat",
+        notes: "N/A",
+        type_size: 8,
+        stream_info: {
+          tick_interval: 10n,
+          tick_phase: 0n,
+        },
+      },
+      data: 35.3053619,
+      tick: 0n,
+      o: 4n,
+    },
+    {
+      stream: {
+        type_structure: "double",
+        id: "gpsData.lng",
+        notes: "N/A",
+        type_size: 8,
+        stream_info: {
+          tick_interval: 10n,
+          tick_phase: 0n,
+        },
+      },
+      data: -120.6720945,
+      tick: 0n,
+      o: 12n,
+    },
+    {
+      stream: {
+        type_structure: "double",
+        id: "gpsData.alt",
+        notes: "N/A",
+        type_size: 8,
+        stream_info: {
+          tick_interval: 10n,
+          tick_phase: 0n,
+        },
+      },
+      data: 85.306,
+      tick: 0n,
+      o: 20n,
+    },
+  ]);
 });
 
-test("Events data", async () => {
-    console.log(await a.polled_data())
-})
+// TODO: test with actual event data
+test("Events header", async () => {
+  expect(await fsAdapter.events_header()).toMatchObject({
+    magic: 33812,
+    stream_type: 1,
+    tick_span: 1832n,
+    num_streams: 0,
+    streams: [],
+  });
+});

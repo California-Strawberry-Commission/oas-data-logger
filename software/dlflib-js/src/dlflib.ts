@@ -88,8 +88,11 @@ export abstract class Adapter {
   // name;member_1_name:member_1_type:offset;...member_n_name:member_n_type:offset
   create_parser(structure: string, structure_size?: number): Parser {
     // No contained structure
-    if (structure.startsWith("!")) return null;
+    if (structure.startsWith("!")) {
+      return null;
+    }
 
+    // TODO: this returns a string, not a Parser
     if (binary_parsers_primitives[structure]) {
       return binary_parsers_primitives[structure];
     }
