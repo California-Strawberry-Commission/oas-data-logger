@@ -23,7 +23,7 @@
   "type": "module",
   "dependencies": {
     "@types/binary-parser": "^1.5.5",
-    "@types/node": "^20.12.7",
-    "binary-parser": "github:DominicChm/binary-parser#master"
+    "@types/node": "^20",
+    "binary-parser": "github:keichi/binary-parser#master"
   }
 }

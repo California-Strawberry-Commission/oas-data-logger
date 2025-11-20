@@ -12,11 +12,7 @@ test("Meta header", async () => {
     meta_size: 8,
   });
 
-  // TODO: this currently does not work
-  // expect(await a.meta()).toMatchObject({
-  //     another: 9523124174940276194n,
-  //     time: 1061160418
-  // });
+  // TODO: check fsAdapter.meta()
 });
 
 test("Polled headers", async () => {

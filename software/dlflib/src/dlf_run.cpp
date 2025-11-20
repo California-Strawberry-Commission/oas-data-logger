@@ -5,8 +5,8 @@
 #include "dlf_util.h"
 
 namespace dlf {
-Run::Run(FS &fs, String fs_dir, streams_t all_streams,
-         chrono::microseconds tick_interval, Encodable &meta)
+Run::Run(FS& fs, String fs_dir, streams_t all_streams,
+         chrono::microseconds tick_interval, Encodable& meta)
     : _fs(fs), _streams(all_streams), _tick_interval(tick_interval) {
   assert(tick_interval.count() > 0);
 
@@ -39,7 +39,7 @@ Run::Run(FS &fs, String fs_dir, streams_t all_streams,
   xTaskCreate(task_sampler, "Sampler", 4096 * 2, this, 5, NULL);
 }
 
-void Run::create_metafile(Encodable &meta) {
+void Run::create_metafile(Encodable& meta) {
   dlf_meta_header_t h;
   time_t now = time(NULL);
   h.epoch_time_s = now;
@@ -57,15 +57,12 @@ void Run::create_metafile(Encodable &meta) {
 #endif
   File f = _fs.open(resolvePath({_run_dir, "meta.dlf"}), "w", true);
 
-  // Directly write metadata into the file. No need to
-  // use a streambuffer like in Logfile metadata writes
-  // TODO: clean this up
-  f.write(reinterpret_cast<uint8_t *>(&h.magic), sizeof(h.magic));
-  f.write(reinterpret_cast<uint8_t *>(&h.epoch_time_s), sizeof(h.epoch_time_s));
-  f.write(reinterpret_cast<uint8_t *>(&h.tick_base_us), sizeof(h.tick_base_us));
-  f.write((uint8_t *)h.meta_structure, strlen(h.meta_structure) + 1);
-  f.write(reinterpret_cast<uint8_t *>(&h.meta_size), sizeof(h.meta_size));
-  f.write(reinterpret_cast<uint8_t *>(&meta), h.meta_size);
+  f.write(reinterpret_cast<uint8_t*>(&h.magic), sizeof(h.magic));
+  f.write(reinterpret_cast<uint8_t*>(&h.epoch_time_s), sizeof(h.epoch_time_s));
+  f.write(reinterpret_cast<uint8_t*>(&h.tick_base_us), sizeof(h.tick_base_us));
+  f.write((uint8_t*)h.meta_structure, strlen(h.meta_structure) + 1);
+  f.write(reinterpret_cast<uint8_t*>(&h.meta_size), sizeof(h.meta_size));
+  f.write(meta.data, h.meta_size);
 
   f.close();
 }
@@ -77,7 +74,7 @@ void Run::create_logfile(dlf_stream_type_e t) {
   stream_handles_t handles;
 
   size_t idx = 0;
-  for (auto &stream : _streams) {
+  for (auto& stream : _streams) {
     if (stream->type() == t) {
       handles.push_back(move(stream->handle(_tick_interval, idx++)));
     }
@@ -86,9 +83,9 @@ void Run::create_logfile(dlf_stream_type_e t) {
       unique_ptr<LogFile>(new LogFile(move(handles), t, _run_dir, _fs)));
 }
 
-void Run::task_sampler(void *arg) {
+void Run::task_sampler(void* arg) {
   Serial.println("Sampler inited");
-  auto self = static_cast<Run *>(arg);
+  auto self = static_cast<Run*>(arg);
 
   const TickType_t interval =
       chrono::duration_cast<DLF_FREERTOS_DURATION>(self->_tick_interval)
@@ -102,7 +99,7 @@ void Run::task_sampler(void *arg) {
 #if defined(DEBUG) && defined(SILLY)
     DEBUG.printf("Sample\n\ttick: %d\n", tick);
 #endif
-    for (auto &lf : self->_log_files) {
+    for (auto& lf : self->_log_files) {
       lf->sample(tick);
     }
     xTaskDelayUntil(&prev_run, interval);
@@ -123,7 +120,7 @@ void Run::close() {
   xSemaphoreTake(_sync, portMAX_DELAY);
   vSemaphoreDelete(_sync);
 
-  for (auto &lf : _log_files) {
+  for (auto& lf : _log_files) {
     lf->close();
   }
 
@@ -138,7 +135,8 @@ void Run::close() {
   }
 
   // Verify lockfile was actually deleted by listing directory contents
-  Serial.printf("[RUN] Verifying run directory contents for %s:\n", _run_dir.c_str());
+  Serial.printf("[RUN] Verifying run directory contents for %s:\n",
+                _run_dir.c_str());
   File runDir = _fs.open(_run_dir);
   if (runDir && runDir.isDirectory()) {
     File file;
@@ -148,13 +146,14 @@ void Run::close() {
     }
     runDir.close();
   } else {
-    Serial.println("[RUN] WARNING: Could not open run directory for verification!");
+    Serial.println(
+        "[RUN] WARNING: Could not open run directory for verification!");
   }
 
   Serial.println("Run closed cleanly!");
 }
 
-const char *Run::uuid() { return _uuid.c_str(); }
+const char* Run::uuid() { return _uuid.c_str(); }
 
 void Run::create_lockfile() {
 #ifdef DEBUG
@@ -167,10 +166,10 @@ void Run::create_lockfile() {
 }
 
 void Run::flush() {
-    if (_status != LOGGING) return;
-    for (auto &lf : _log_files) {
-        lf->flush();
-    }
+  if (_status != LOGGING) return;
+  for (auto& lf : _log_files) {
+    lf->flush();
+  }
 }
 
 }  // namespace dlf
