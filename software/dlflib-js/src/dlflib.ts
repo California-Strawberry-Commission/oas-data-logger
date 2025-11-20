@@ -7,7 +7,7 @@ export class LogClient {
   constructor(adapter: Adapter) {}
 }
 
-let binary_parsers_primitives = {
+const BINARY_PARSERS_PRIMITIVES = {
   uint8_t: "uint8",
   bool: "uint8",
   uint16_t: "uint16le",
@@ -19,7 +19,7 @@ let binary_parsers_primitives = {
   int64_t: "int64le",
   float: "floatle",
   double: "doublele",
-};
+} as const;
 
 const meta_header_t = new Parser()
   .endianness("little")
@@ -85,20 +85,31 @@ export abstract class Adapter {
   abstract get events_dlf(): Promise<Uint8Array>;
   abstract get meta_dlf(): Promise<Uint8Array>;
 
-  // name;member_1_name:member_1_type:offset;...member_n_name:member_n_type:offset
-  create_parser(structure: string, structure_size?: number): Parser {
+  // `structure` describing a multi-field buffer is formatted like:
+  //    "name;member_1_name:member_1_type:offset;...member_n_name:member_n_type:offset"
+  // and `create_parser` will return a Parser. Otherwise, `structure` describing
+  // a single primitive is like:
+  //    "double"
+  // and `create_parser` will return a string that contains the binary-parser method.
+  create_parser(
+    structure: string,
+    structure_size?: number
+  ): Parser | string | null {
     // No contained structure
-    if (structure.startsWith("!")) return null;
-
-    if (binary_parsers_primitives[structure]) {
-      return binary_parsers_primitives[structure];
+    if (structure.startsWith("!")) {
+      return null;
     }
 
-    // Create parser
+    // To indicate a buffer that contains a single primitive value, return a string
+    if (structure in BINARY_PARSERS_PRIMITIVES) {
+      return BINARY_PARSERS_PRIMITIVES[structure];
+    }
+
+    // Create parser for multi-field buffer
     // name;member_1:primitive_type:offset;...
     const [name, ...members] = structure.split(";");
 
-    let member_parser = new Parser()
+    let parser = new Parser()
       .endianness("little")
       // @ts-ignore
       .saveOffset("_____off");
@@ -107,25 +118,23 @@ export abstract class Adapter {
       const [name, type_name, offset] = m.split(":");
 
       const relOff = parseInt(offset);
-      const bin_parse_type = binary_parsers_primitives[type_name];
+      const parserType = BINARY_PARSERS_PRIMITIVES[type_name];
 
-      console.log("Member parser", name, bin_parse_type, relOff);
+      console.log("Member parser", name, parserType, relOff);
 
-      member_parser = member_parser.pointer(name, {
-        type: bin_parse_type,
+      parser = parser.pointer(name, {
+        type: parserType,
         offset: function () {
           return this.off + relOff;
         },
       });
-
-      // member_parser = member_parser.pointer(name, { type: bin_parse_type, offset: off });
     }
 
     if (structure_size != null) {
-      member_parser = member_parser.seek(structure_size);
+      parser = parser.seek(structure_size);
     }
 
-    return member_parser;
+    return parser;
   }
 
   /** From metafile **/
@@ -135,16 +144,20 @@ export abstract class Adapter {
 
   async meta() {
     const mh = await this.meta_header();
-    const meta_structure = mh.meta_structure;
-    const metadata = mh.meta;
 
-    let parser = this.create_parser(meta_structure, mh.meta_size);
-    // TOOD: properly handle primitive types
-    if (!parser || typeof parser == "string") {
+    const parser = this.create_parser(mh.meta_structure, mh.meta_size);
+    if (!parser) {
       return null;
     }
 
-    return parser.parse(metadata);
+    if (typeof parser === "string") {
+      // metadata is a single primitive. We must manually create a Parser and
+      // parse the buffer.
+      // @ts-ignore
+      return new Parser()[parser]("value").parse(mh.meta).value;
+    } else {
+      return parser.parse(mh.meta);
+    }
   }
 
   async polled_header(): Promise<Tlogfile_header_t> {
@@ -193,17 +206,22 @@ export abstract class Adapter {
   async polled_data(start = 0n, stop: null | bigint = null, downsample = 1n) {
     start = BigInt(start);
 
-    if (stop != null) stop = BigInt(stop);
+    if (stop != null) {
+      stop = BigInt(stop);
+    }
 
     downsample = BigInt(downsample) || 1n;
 
     let header = await this.polled_header();
 
-    const createParser = (s) => {
-      let t = this.create_parser(s.type_structure, s.type_size);
-      if (typeof t == "string") {
+    const createParser = (stream) => {
+      const parser = this.create_parser(
+        stream.type_structure,
+        stream.type_size
+      );
+      if (typeof parser === "string") {
         // @ts-ignore
-        return new Parser()[t]("data");
+        return new Parser()[parser]("data");
       } else {
         return new Parser().nest("data", {
           // @ts-ignore
@@ -230,8 +248,6 @@ export abstract class Adapter {
         return null;
       }
 
-      //tick = (tick / interval) * interval;
-
       // Formula: sum (ceil((tick+phase) / interval) * size)
       let block_start = 0n;
       let target_found = false;
@@ -256,7 +272,6 @@ export abstract class Adapter {
       return block_start;
     }
 
-    let abuf = header.data;
     let data = []; // tick: {values}
 
     for (
