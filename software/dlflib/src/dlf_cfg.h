@@ -5,8 +5,8 @@
  * Slow SD cards might need a larger queue
  */
 
-#define DLF_SD_BLOCK_WRITE_SIZE 32
-#define DLF_LOGFILE_BUFFER_SIZE DLF_SD_BLOCK_WRITE_SIZE * 10
+#define DLF_SD_BLOCK_WRITE_SIZE 512
+#define DLF_LOGFILE_BUFFER_SIZE DLF_SD_BLOCK_WRITE_SIZE * 20
 #define DLF_FREERTOS_DURATION \
   chrono::duration<TickType_t, ratio<1, configTICK_RATE_HZ>>
 #define LOCKFILE_NAME "LOCK"
