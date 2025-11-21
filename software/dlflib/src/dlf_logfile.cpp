@@ -21,8 +21,6 @@ void LogFile::task_flusher(void* arg) {
 
   uint8_t buf[DLF_SD_BLOCK_WRITE_SIZE];
   size_t totalBytesWritten = 0;
-  // uint32_t writesSinceSync = 0;
-  // const uint32_t WRITES_BEFORE_SYNC = 10;  // Force SD sync every 10 writes
   const uint32_t SYNC_INTERVAL_MS = 60000;
   const size_t SYNC_THRESHOLD_BYTES = 4096;
   uint32_t lastSyncTime = millis();
@@ -41,13 +39,13 @@ void LogFile::task_flusher(void* arg) {
         self->_f.write(buf, received);
         totalBytesWritten += received;
         bytesSinceLastSync += received;
-        // writesSinceSync++;
 
         // Track the file end position for proper close
         self->_file_end_position = totalBytesWritten;
 
-        // CRITICAL: Periodically close and reopen file to force SD card sync
-        // This ensures data actually reaches the physical SD card
+        // Force SD card sync after 60 seconds or 4KB written
+        // .flush() commits data the SD card
+        // only on .close() will directory entry be updated (e.g. 9MB to 10MB)
         if ((bytesSinceLastSync >= SYNC_THRESHOLD_BYTES ||
              (millis() - lastSyncTime) >= SYNC_INTERVAL_MS) &&
             bytesSinceLastSync > 0) {
@@ -68,7 +66,6 @@ void LogFile::task_flusher(void* arg) {
                           self->_filename.c_str());
           }
 
-          // writesSinceSync = 0;
           lastSyncTime = millis();
           bytesSinceLastSync = 0;
         } else {
