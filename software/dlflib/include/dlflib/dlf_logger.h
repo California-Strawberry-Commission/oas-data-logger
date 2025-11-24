@@ -15,70 +15,55 @@
 #include "dlflib/dlf_run.h"
 #include "dlflib/dlf_types.h"
 
-#define POLL(type_name)                                                      \
-  CSCLogger& poll(type_name& value, String id, microseconds sample_interval, \
-                  microseconds phase = microseconds::zero(),                 \
-                  const char* notes = nullptr,                               \
-                  SemaphoreHandle_t mutex = NULL) {                          \
-    return _poll(Encodable(value, #type_name), id, sample_interval, phase,   \
-                 notes, mutex);                                              \
-  }                                                                          \
-  inline CSCLogger& poll(type_name& value, String id,                        \
-                         microseconds sample_interval, const char* notes,    \
-                         SemaphoreHandle_t mutex = NULL) {                   \
-    return _poll(Encodable(value, #type_name), id, sample_interval,          \
-                 microseconds::zero(), notes, mutex);                        \
-  }                                                                          \
-  inline CSCLogger& poll(type_name& value, String id,                        \
-                         microseconds sample_interval,                       \
-                         SemaphoreHandle_t mutex) {                          \
-    return _poll(Encodable(value, #type_name), id, sample_interval,          \
-                 microseconds::zero(), nullptr, mutex);                      \
+#define POLL(type_name)                                                       \
+  CSCLogger& poll(                                                            \
+      type_name& value, String id, std::chrono::microseconds sampleInterval,  \
+      std::chrono::microseconds phase = std::chrono::microseconds::zero(),    \
+      const char* notes = nullptr, SemaphoreHandle_t mutex = NULL) {          \
+    return pollInternal(Encodable(value, #type_name), id, sampleInterval,     \
+                        phase, notes, mutex);                                 \
+  }                                                                           \
+  inline CSCLogger& poll(type_name& value, String id,                         \
+                         std::chrono::microseconds sampleInterval,            \
+                         const char* notes, SemaphoreHandle_t mutex = NULL) { \
+    return pollInternal(Encodable(value, #type_name), id, sampleInterval,     \
+                        std::chrono::microseconds::zero(), notes, mutex);     \
+  }                                                                           \
+  inline CSCLogger& poll(type_name& value, String id,                         \
+                         std::chrono::microseconds sampleInterval,            \
+                         SemaphoreHandle_t mutex) {                           \
+    return pollInternal(Encodable(value, #type_name), id, sampleInterval,     \
+                        std::chrono::microseconds::zero(), nullptr, mutex);   \
   }
 
 #define WATCH(type_name)                                                     \
   CSCLogger& watch(type_name& value, String id, const char* notes = nullptr, \
                    SemaphoreHandle_t mutex = NULL) {                         \
-    return _watch(Encodable(value, #type_name), id, notes, mutex);           \
+    return watchInternal(Encodable(value, #type_name), id, notes, mutex);    \
   }
 
 #define MAX_RUNS 1
 
+namespace dlf {
+
 // 0 is error, > 0 is valid handle
-typedef int run_handle_t;
+using run_handle_t = int;
 
-class CSCLogger : public DlfComponent {
-  typedef std::chrono::microseconds microseconds;
-  typedef std::chrono::milliseconds milliseconds;
-
-  std::unique_ptr<dlf::Run> runs[MAX_RUNS];
-
-  // Todo: Figure out how to do this with unique_ptrs
-  dlf::datastream::streams_t data_streams;
-
-  fs::FS& _fs;
-  String fs_dir;
-
-  std::vector<DlfComponent*> components;
-
+class CSCLogger : public dlf::components::DlfComponent {
  public:
   enum LoggerEvents : uint32_t { NEW_RUN = 1 };
 
-  EventGroupHandle_t ev;
-
-  CSCLogger(fs::FS& fs, String fs_dir = "/");
+  CSCLogger(fs::FS& fs, String fsDir = "/");
 
   bool begin();
 
-  run_handle_t start_run(Encodable meta,
-                         microseconds tick_rate = milliseconds(100));
+  run_handle_t startRun(Encodable meta, std::chrono::microseconds tickRate =
+                                            std::chrono::milliseconds(100));
 
-  void stop_run(run_handle_t h);
+  void stopRun(run_handle_t h);
 
-  bool run_is_active(const char* uuid);
+  bool runIsActive(const char* uuid);
 
-  CSCLogger& _watch(Encodable value, String id, const char* notes,
-                    SemaphoreHandle_t mutex = NULL);
   WATCH(uint8_t)
   WATCH(uint16_t)
   WATCH(uint32_t)
@@ -91,9 +76,6 @@ class CSCLogger : public DlfComponent {
   WATCH(double)
   WATCH(float)
 
-  CSCLogger& _poll(Encodable value, String id, microseconds sample_interval,
-                   microseconds phase, const char* notes,
-                   SemaphoreHandle_t mutex = NULL);
   POLL(uint8_t)
   POLL(uint16_t)
   POLL(uint32_t)
@@ -107,14 +89,39 @@ class CSCLogger : public DlfComponent {
   POLL(float)
 
   CSCLogger& syncTo(const String& endpoint, const String& deviceUid,
-                    const UploaderComponent::Options& options);
+                    const dlf::components::UploaderComponent::Options& options);
+
   void waitForSyncCompletion();
+
+  EventBits_t waitForNewRun(TickType_t ticksToWait = portMAX_DELAY) {
+    return xEventGroupWaitBits(loggerEventGroup_, NEW_RUN, pdTRUE, pdTRUE,
+                               ticksToWait);
+  }
+
+ private:
+  CSCLogger& watchInternal(Encodable value, String id, const char* notes,
+                           SemaphoreHandle_t mutex = NULL);
+
+  CSCLogger& pollInternal(Encodable value, String id,
+                          std::chrono::microseconds sampleInterval,
+                          std::chrono::microseconds phase, const char* notes,
+                          SemaphoreHandle_t mutex = NULL);
+
+  run_handle_t getAvailableHandle();
 
   void prune();
 
- private:
-  run_handle_t get_available_handle();
+  std::unique_ptr<dlf::Run> runs_[MAX_RUNS];
+  // Todo: Figure out how to do this with unique_ptrs
+  dlf::datastream::streams_t streams_;
+  fs::FS& fs_;
+  String fsDir_;
+  std::vector<dlf::components::DlfComponent*> components_;
+  // Used to signal that a new run is available
+  EventGroupHandle_t loggerEventGroup_{nullptr};
 };
+
+}  // namespace dlf
 
 #undef POLL
 #undef WATCH

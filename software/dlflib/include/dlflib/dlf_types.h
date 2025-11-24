@@ -1,20 +1,15 @@
 #pragma once
 
-#include <Arduino.h>
-#include <FS.h>
-
-#include <vector>
-
-#include "dlflib/utils/dlf_util.h"
-
-#define HEADER_VERSION 0
+#include "dlflib/util/util.h"
 
 #define DLF_MAGIC 0x8414
 
-typedef uint64_t dlf_tick_t;
-typedef uint32_t dlf_time_t;
-typedef uint32_t dlf_time_us_t;
-typedef uint16_t dlf_stream_idx_t;
+namespace dlf {
+
+using dlf_tick_t = uint64_t;
+using dlf_time_t = uint32_t;
+using dlf_time_us_t = uint32_t;
+using dlf_stream_idx_t = uint16_t;
 
 enum dlf_file_state_e : int8_t {
   // Errors are (-)
@@ -83,3 +78,5 @@ struct dlf_event_stream_sample_t {
   dlf_tick_t sample_tick;
   // Next: raw data
 } __attribute__((packed));
+
+}  // namespace dlf

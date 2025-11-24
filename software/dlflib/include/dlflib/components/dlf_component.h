@@ -2,7 +2,9 @@
 
 #include <vector>
 
-#include "dlflib/utils/dlf_util.h"
+#include "dlflib/util/util.h"
+
+namespace dlf::components {
 
 class DlfComponent {
  public:
@@ -22,7 +24,7 @@ class DlfComponent {
     }
 
     DlfComponent* dlfComponent = static_cast<DlfComponent*>(component);
-    dlfComponent->id_ = hash_type<T>();
+    dlfComponent->id_ = dlf::util::hashType<T>();
     componentStore_->push_back(dlfComponent);
   }
 
@@ -33,7 +35,7 @@ class DlfComponent {
 
   template <typename T>
   T* getComponent() {
-    size_t h = hash_type<T>();
+    size_t h = dlf::util::hashType<T>();
     for (auto component : *componentStore_) {
       if (component->id_ == h) {
         return static_cast<T*>(component);
@@ -47,3 +49,5 @@ class DlfComponent {
   std::vector<DlfComponent*>* componentStore_;
   size_t id_;
 };
+
+}  // namespace dlf::components

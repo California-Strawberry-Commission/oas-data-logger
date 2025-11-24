@@ -2,50 +2,53 @@
 
 #include <time.h>
 
-#include "dlflib/utils/dlf_util.h"
+#include "dlflib/dlf_cfg.h"
+#include "dlflib/util/util.h"
+#include "dlflib/util/uuid.h"
 
 namespace dlf {
-Run::Run(FS& fs, String fs_dir, streams_t all_streams,
-         chrono::microseconds tick_interval, Encodable& meta)
-    : _fs(fs), _streams(all_streams), _tick_interval(tick_interval) {
-  assert(tick_interval.count() > 0);
 
-  _uuid = StringUUIDGen();
-  _run_dir = resolvePath({fs_dir, _uuid});
-  _lockfile_path = resolvePath({_run_dir, LOCKFILE_NAME});
-  _sync = xSemaphoreCreateCounting(1, 0);
+Run::Run(fs::FS& fs, String fsDir, dlf::datastream::streams_t streams,
+         std::chrono::microseconds tickInterval, Encodable& meta)
+    : fs_(fs), streams_(streams), tickInterval_(tickInterval) {
+  assert(tickInterval.count() > 0);
 
-  Serial.printf("Starting run %s\n", _uuid.c_str());
+  uuid_ = dlf::util::stringUuidGen();
+  runDir_ = dlf::util::resolvePath({fsDir, uuid_});
+  lockfilePath_ = dlf::util::resolvePath({runDir_, LOCKFILE_NAME});
+  syncSemaphore_ = xSemaphoreCreateCounting(1, 0);
+
+  Serial.printf("Starting run %s\n", uuid_.c_str());
 
   // Make directory to contain run files
-  _fs.mkdir(_run_dir);
+  fs_.mkdir(runDir_);
 
   // Create the lockfile first, as the presence of the lockfile indicates that
   // the run is incomplete and should not be uploaded
-  create_lockfile();
+  createLockfile();
 
   // Writes metafile for this log
-  create_metafile(meta);
+  createMetafile(meta);
 
   // Create logfile instances
-  create_logfile(POLLED);
-  create_logfile(EVENT);
+  createLogfile(POLLED);
+  createLogfile(EVENT);
 
   Serial.println("Logfiles inited");
 
-  _status = LOGGING;
+  status_ = LOGGING;
 
   // Setup ticks
-  xTaskCreate(task_sampler, "Sampler", 4096 * 2, this, 5, NULL);
+  xTaskCreate(taskSampler, "Sampler", 4096 * 2, this, 5, NULL);
 }
 
-void Run::create_metafile(Encodable& meta) {
+void Run::createMetafile(Encodable& meta) {
   dlf_meta_header_t h;
   time_t now = time(NULL);
   h.epoch_time_s = now;
-  h.tick_base_us = _tick_interval.count();
-  h.meta_structure = meta.type_structure;
-  h.meta_size = meta.data_size;
+  h.tick_base_us = tickInterval_.count();
+  h.meta_structure = meta.typeStructure;
+  h.meta_size = meta.dataSize;
 
 #ifdef DEBUG
   DEBUG.printf(
@@ -53,9 +56,10 @@ void Run::create_metafile(Encodable& meta) {
       "\tepoch_time_s: %lu\n"
       "\ttick_base_us: %lu\n"
       "\tmeta_structure: %s (hash: %x)\n",
-      h.epoch_time_s, h.tick_base_us, h.meta_structure, meta.type_hash);
+      h.epoch_time_s, h.tick_base_us, h.meta_structure, meta.typeHash);
 #endif
-  File f = _fs.open(resolvePath({_run_dir, "meta.dlf"}), "w", true);
+  fs::File f =
+      fs_.open(dlf::util::resolvePath({runDir_, "meta.dlf"}), "w", true);
 
   f.write(reinterpret_cast<uint8_t*>(&h.magic), sizeof(h.magic));
   f.write(reinterpret_cast<uint8_t*>(&h.epoch_time_s), sizeof(h.epoch_time_s));
@@ -67,39 +71,39 @@ void Run::create_metafile(Encodable& meta) {
   f.close();
 }
 
-void Run::create_logfile(dlf_stream_type_e t) {
+void Run::createLogfile(dlf_stream_type_e t) {
 #ifdef DEBUG
-  DEBUG.printf("Creating %s logfile\n", stream_type_to_string(t));
+  DEBUG.printf("Creating %s logfile\n", dlf::datastream::streamTypeToString(t));
 #endif
-  stream_handles_t handles;
+  dlf::datastream::stream_handles_t handles;
 
   size_t idx = 0;
-  for (auto& stream : _streams) {
+  for (auto& stream : streams_) {
     if (stream->type() == t) {
-      handles.push_back(move(stream->handle(_tick_interval, idx++)));
+      handles.push_back(std::move(stream->handle(tickInterval_, idx++)));
     }
   }
-  _log_files.push_back(
-      unique_ptr<LogFile>(new LogFile(move(handles), t, _run_dir, _fs)));
+  logFiles_.push_back(std::unique_ptr<LogFile>(
+      new LogFile(std::move(handles), t, runDir_, fs_)));
 }
 
-void Run::task_sampler(void* arg) {
+void Run::taskSampler(void* arg) {
   Serial.println("Sampler inited");
   auto self = static_cast<Run*>(arg);
 
   const TickType_t interval =
-      chrono::duration_cast<DLF_FREERTOS_DURATION>(self->_tick_interval)
+      std::chrono::duration_cast<DLF_FREERTOS_DURATION>(self->tickInterval_)
           .count();
   Serial.printf("Interval %d\n", interval);
 
   TickType_t prev_run = xTaskGetTickCount();
 
   // Run at constant tick interval
-  for (dlf_tick_t tick = 0; self->_status == LOGGING; tick++) {
+  for (dlf_tick_t tick = 0; self->status_ == LOGGING; tick++) {
 #if defined(DEBUG) && defined(SILLY)
     DEBUG.printf("Sample\n\ttick: %d\n", tick);
 #endif
-    for (auto& lf : self->_log_files) {
+    for (auto& lf : self->logFiles_) {
       lf->sample(tick);
     }
     xTaskDelayUntil(&prev_run, interval);
@@ -108,26 +112,26 @@ void Run::task_sampler(void* arg) {
   DEBUG.println("Sampler exiting cleanly");
 #endif
 
-  xSemaphoreGive(self->_sync);
+  xSemaphoreGive(self->syncSemaphore_);
   vTaskDelete(NULL);
 }
 
 void Run::close() {
   Serial.println("Closing run!");
-  _status = FLUSHING;
+  status_ = FLUSHING;
 
   // Wait for sampling task to cleanly exit.
-  xSemaphoreTake(_sync, portMAX_DELAY);
-  vSemaphoreDelete(_sync);
+  xSemaphoreTake(syncSemaphore_, portMAX_DELAY);
+  vSemaphoreDelete(syncSemaphore_);
 
-  for (auto& lf : _log_files) {
+  for (auto& lf : logFiles_) {
     lf->close();
   }
 
   // Remove the lockfile last, as the presence of the lockfile indicates that
   // the run is incomplete and should not be uploaded
-  Serial.printf("[RUN] Removing lockfile: %s\n", _lockfile_path.c_str());
-  bool lockfileRemoved = _fs.remove(_lockfile_path);
+  Serial.printf("[RUN] Removing lockfile: %s\n", lockfilePath_.c_str());
+  bool lockfileRemoved = fs_.remove(lockfilePath_);
   if (lockfileRemoved) {
     Serial.println("[RUN] Lockfile successfully removed");
   } else {
@@ -136,10 +140,10 @@ void Run::close() {
 
   // Verify lockfile was actually deleted by listing directory contents
   Serial.printf("[RUN] Verifying run directory contents for %s:\n",
-                _run_dir.c_str());
-  File runDir = _fs.open(_run_dir);
+                runDir_.c_str());
+  fs::File runDir = fs_.open(runDir_);
   if (runDir && runDir.isDirectory()) {
-    File file;
+    fs::File file;
     while (file = runDir.openNextFile()) {
       Serial.printf("[RUN]   - %s (%d bytes)\n", file.name(), file.size());
       file.close();
@@ -153,14 +157,12 @@ void Run::close() {
   Serial.println("Run closed cleanly!");
 }
 
-const char* Run::uuid() { return _uuid.c_str(); }
-
-void Run::create_lockfile() {
+void Run::createLockfile() {
 #ifdef DEBUG
   Serial.println("Creating lockfile");
 #endif
 
-  File f = _fs.open(_lockfile_path, "w", true);
+  fs::File f = fs_.open(lockfilePath_, "w", true);
   f.write(0);
   f.close();
 }

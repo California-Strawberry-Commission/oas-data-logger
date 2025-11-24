@@ -90,7 +90,7 @@ CRGB leds[NUM_LEDS];
 SFE_UBLOX_GNSS_SERIAL myGNSS;  // u-blox GNSS object
 ESP32Time rtc;
 WiFiManager wifiManager;
-CSCLogger logger{SD_MMC};
+dlf::CSCLogger logger{SD_MMC};
 TaskHandle_t xGPS_Handle = NULL;
 
 // State Machine Variables
@@ -98,7 +98,7 @@ SystemState currentState = SystemState::INIT;
 ErrorType currentError = ErrorType::NONE;
 bool offloadMode = false;
 bool gpsEnabled = false;
-run_handle_t runHandle{0};
+dlf::run_handle_t runHandle{0};
 
 // GPS Time tracking (separate from position data)
 bool gpsTimeValid = false;
@@ -493,7 +493,7 @@ void handleRunningState() {
   //
   //   if (runHandle) {
   //     // Get the current run directory name
-  //     // The run name format appears to be based on when start_run was called
+  //     // The run name format appears to be based on when startRun was called
   //     // We need to access the logger's current run directory
   //
   //     Serial.println("[Running State] Attempting to upload current run while
@@ -758,7 +758,7 @@ void initializeLogger() {
   POLL(logger, gpsData.lng, gpsDataLogInterval, gpsDataMutex);
   POLL(logger, gpsData.alt, gpsDataLogInterval, gpsDataMutex);
 
-  UploaderComponent::Options options;
+  dlf::components::UploaderComponent::Options options;
   options.markAfterUpload = LOGGER_MARK_AFTER_UPLOAD;
   options.deleteAfterUpload = LOGGER_DELETE_AFTER_UPLOAD;
   logger.syncTo(UPLOAD_ENDPOINT, getDeviceUid(), options).begin();
@@ -768,11 +768,11 @@ void initializeLogger() {
 
 void startLoggerRun() {
   if (runHandle) {
-    logger.stop_run(runHandle);
+    logger.stopRun(runHandle);
   }
 
   double m = 0;
-  runHandle = logger.start_run(Encodable(m, "double"));
+  runHandle = logger.startRun(Encodable(m, "double"));
   lastLoggerStartRunMillis = millis();
 }
 
@@ -802,7 +802,7 @@ void sleepMonitorTask(void* args) {
 
         // Stop current run before transitioning to offload
         if (runHandle) {
-          logger.stop_run(runHandle);
+          logger.stopRun(runHandle);
           runHandle = 0;
         }
 
@@ -827,7 +827,7 @@ void sleepMonitorTask(void* args) {
 
         // Stop current run before transitioning to offload
         if (runHandle) {
-          logger.stop_run(runHandle);
+          logger.stopRun(runHandle);
           runHandle = 0;
         }
 

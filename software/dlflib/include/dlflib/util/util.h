@@ -2,9 +2,11 @@
 
 #include <Arduino.h>
 
+namespace dlf::util {
+
 // https://stackoverflow.com/a/59522794/16238567
-inline constexpr size_t hash_str(const char* s, int off = 0) {
-  return !s[off] ? 5381 : (hash_str(s, off + 1) * 33) ^ s[off];
+inline constexpr size_t hashStr(const char* s, int off = 0) {
+  return !s[off] ? 5381 : (hashStr(s, off + 1) * 33) ^ s[off];
 }
 
 template <typename T>
@@ -22,13 +24,13 @@ inline constexpr const char* t() {
  * This string should be parsable to get the actual type's name.
  */
 template <typename T>
-inline constexpr const char* characteristic_type_name() {
+inline constexpr const char* characteristicTypeName() {
   return t<T>();
 }
 
 template <typename T>
-inline constexpr size_t hash_type() {
-  return hash_str(t<T>());
+inline constexpr size_t hashType() {
+  return hashStr(t<T>());
 }
 
 /**
@@ -38,7 +40,9 @@ inline String resolvePath(std::initializer_list<String> parts) {
   String result = "";
 
   for (const String& part : parts) {
-    if (part.length() == 0) continue;
+    if (part.length() == 0) {
+      continue;
+    }
 
     if (result.endsWith("/") && part.startsWith("/")) {
       result += part.substring(1);
@@ -51,3 +55,5 @@ inline String resolvePath(std::initializer_list<String> parts) {
 
   return result.length() == 0 ? "/" : result;
 }
+
+}  // namespace dlf::util

@@ -88,9 +88,9 @@ TinyGPSPlus gps;
 ESP32Time rtc;
 WiFiManager wifiManager;
 unsigned long lastWifiReconnectAttemptMillis{0};
-CSCLogger logger{SD};
+dlf::CSCLogger logger{SD};
 unsigned long lastLoggerStartRunMillis{0};
-run_handle_t runHandle{0};
+dlf::run_handle_t runHandle{0};
 bool offloadMode{false};
 bool gpsEnabled{false};
 
@@ -276,7 +276,7 @@ void initializeLogger() {
   sprintf(id, "%012llX", raw);
   String deviceUid = id;
 
-  UploaderComponent::Options options;
+  dlf::components::UploaderComponent::Options options;
   options.markAfterUpload = LOGGER_MARK_AFTER_UPLOAD;
   options.deleteAfterUpload = LOGGER_DELETE_AFTER_UPLOAD;
   logger.syncTo(UPLOAD_ENDPOINT, getDeviceUid(), options).begin();
@@ -285,10 +285,10 @@ void initializeLogger() {
 void startLoggerRun() {
   // Stop existing run (if any) and start a new run
   if (runHandle) {
-    logger.stop_run(runHandle);
+    logger.stopRun(runHandle);
   }
   double m = 0;
-  runHandle = logger.start_run(Encodable(m, "double"));
+  runHandle = logger.startRun(Encodable(m, "double"));
   lastLoggerStartRunMillis = millis();
 }
 
@@ -416,7 +416,7 @@ void sleepMonitorTask(void* args) {
 
   // If there is an active run, stop it and attempt to upload its data
   if (runHandle) {
-    logger.stop_run(runHandle);
+    logger.stopRun(runHandle);
     runHandle = 0;
     Serial.println("[Sleep Monitor] Stopped active run");
     // Just in case for logger sync/upload to start

@@ -8,12 +8,13 @@
 #include <memory>
 #include <vector>
 
-#include "dlflib/dlf_cfg.h"
 #include "dlflib/dlf_encodable.h"
 #include "dlflib/dlf_types.h"
-#include "dlflib/utils/dlf_util.h"
+#include "dlflib/util/util.h"
 
-inline const char* stream_type_to_string(dlf_stream_type_e t) {
+namespace dlf::datastream {
+
+inline const char* streamTypeToString(dlf_stream_type_e t) {
   switch (t) {
     case POLLED:
       return "polled";
@@ -24,54 +25,53 @@ inline const char* stream_type_to_string(dlf_stream_type_e t) {
   }
 }
 
-namespace dlf::datastream {
-
-using std::chrono::microseconds;
-
+// Forward declare abstract_stream_handle.h
 class AbstractStreamHandle;
-typedef std::unique_ptr<AbstractStreamHandle> stream_handle_t;
+using stream_handle_t = std::unique_ptr<AbstractStreamHandle>;
 
 /**
  * Abstract class representing a source of data as well as some information
  * (name, typeID) about it.
  */
 class AbstractStream {
- private:
-  const char* _notes;
-  const String _id;
-
- protected:
-  AbstractStream(Encodable& dat, String id, const char* notes,
-                 SemaphoreHandle_t mutex)
-      : _notes(notes), _id(id), src(dat), _mutex(mutex) {}
-
  public:
-  SemaphoreHandle_t _mutex;
-  const Encodable src;
-
   /**
    * @brief Creates a new, linked StreamHandle
-   * @param tick_interval
+   * @param tickInterval
    * @param idx
    * @return
    */
   virtual std::unique_ptr<AbstractStreamHandle> handle(
-      microseconds tick_interval, dlf_stream_idx_t idx) = 0;
+      std::chrono::microseconds tickInterval, dlf_stream_idx_t idx) = 0;
 
   virtual dlf_stream_type_e type() = 0;
 
-  inline size_t data_size() { return src.data_size; }
+  inline size_t dataSize() { return src_.dataSize; }
 
-  inline const uint8_t* data_source() { return src.data; }
+  inline const uint8_t* dataSource() { return src_.data; }
 
-  inline const char* notes() {
-    if (_notes != nullptr) return _notes;
-    return "N/A";
-  }
+  inline const char* typeStructure() { return src_.typeStructure; }
 
-  inline const char* id() { return _id.c_str(); }
+  inline size_t typeHash() { return src_.typeHash; }
+
+  inline const char* notes() { return notes_ != nullptr ? notes_ : "N/A"; }
+
+  inline const char* id() { return id_.c_str(); }
+
+  inline SemaphoreHandle_t mutex() const { return mutex_; }
+
+ protected:
+  AbstractStream(Encodable& dat, String id, const char* notes,
+                 SemaphoreHandle_t mutex)
+      : src_(dat), id_(id), notes_(notes), mutex_(mutex) {}
+
+ private:
+  const Encodable src_;
+  const String id_;
+  const char* notes_;
+  SemaphoreHandle_t mutex_;
 };
 
-typedef std::vector<AbstractStream*> streams_t;
+using streams_t = std::vector<AbstractStream*>;
 
 }  // namespace dlf::datastream

@@ -9,49 +9,40 @@
 #include <vector>
 
 #include "dlflib/datastream/abstract_stream.h"
-#include "dlflib/dlf_cfg.h"
 #include "dlflib/dlf_logfile.h"
 #include "dlflib/dlf_types.h"
-#include "dlflib/utils/uuid.h"
 
 namespace dlf {
-using namespace std;
 
 // Todo: Performance timings
 
 class Run {
- private:
-  String _uuid;
-  FS& _fs;
-  String _run_dir;
-  dlf_file_state_e _status;
-  SemaphoreHandle_t _sync;
-  chrono::microseconds _tick_interval;
-  streams_t _streams;
-  vector<unique_ptr<LogFile>> _log_files;
-
-  String _lockfile_path;
-
  public:
-  Run(FS& fs, String fs_dir, streams_t all_streams,
-      chrono::microseconds tick_interval, Encodable& meta);
-
-  void create_lockfile();
-
-  void create_metafile(Encodable& meta);
-
-  void create_logfile(dlf_stream_type_e t);
-
-  /**
-   * NOTE: Has caused canary issues if stack too small (1024 is problematic).
-   * @brief
-   * @param arg
-   */
-  static void task_sampler(void* arg);
+  Run(fs::FS& fs, String fsDir, dlf::datastream::streams_t streams,
+      std::chrono::microseconds tickInterval, Encodable& meta);
 
   void close();
 
-  const char* uuid();
+  const char* uuid() { return uuid_.c_str(); }
+
+ private:
+  static void taskSampler(void* arg);
+
+  void createLockfile();
+
+  void createMetafile(Encodable& meta);
+
+  void createLogfile(dlf_stream_type_e t);
+
+  String uuid_;
+  fs::FS& fs_;
+  String runDir_;
+  dlf_file_state_e status_;
+  SemaphoreHandle_t syncSemaphore_;
+  std::chrono::microseconds tickInterval_;
+  dlf::datastream::streams_t streams_;
+  std::vector<std::unique_ptr<LogFile>> logFiles_;
+  String lockfilePath_;
 };
 
 }  // namespace dlf

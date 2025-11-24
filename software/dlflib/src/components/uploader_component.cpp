@@ -90,7 +90,9 @@ std::unique_ptr<WiFiClient> connectToEndpoint(const String& url,
 
 }  // namespace
 
-UploaderComponent::UploaderComponent(FS& fs, const String& fsDir,
+namespace dlf::components {
+
+UploaderComponent::UploaderComponent(fs::FS& fs, const String& fsDir,
                                      const String& endpoint,
                                      const String& deviceUid,
                                      const Options& options)
@@ -138,7 +140,7 @@ void UploaderComponent::onWifiConnected(arduino_event_id_t event,
   xEventGroupSetBits(wifiEvent_, WLAN_READY);
 }
 
-bool UploaderComponent::uploadRun(File runDir, const String& runUuid,
+bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
                                   bool isActive) {
   if (!runDir) {
     Serial.println("[UploaderComponent] No file to upload");
@@ -148,7 +150,7 @@ bool UploaderComponent::uploadRun(File runDir, const String& runUuid,
   // List files to be uploaded
   Serial.println("[UploaderComponent] Files to upload:");
   runDir.rewindDirectory();
-  File tempFile;
+  fs::File tempFile;
   while (tempFile = runDir.openNextFile()) {
     Serial.printf("  - %s (%d bytes)\n", tempFile.name(), tempFile.size());
     tempFile.close();
@@ -201,7 +203,7 @@ bool UploaderComponent::uploadRun(File runDir, const String& runUuid,
 
   // Files
   runDir.rewindDirectory();
-  File file = runDir.openNextFile();
+  fs::File file = runDir.openNextFile();
   while (file) {
     contentLength += snprintf(NULL, 0, fileTemplate, file.name());
     contentLength += file.size();
@@ -300,7 +302,7 @@ void UploaderComponent::syncTask(void* arg) {
 
   while (true) {
     // Make sure SD is inserted and provided path is a dir
-    File root = uploaderComponent->fs_.open(uploaderComponent->dir_);
+    fs::File root = uploaderComponent->fs_.open(uploaderComponent->dir_);
     if (!root) {
       Serial.println("[UploaderComponent][syncTask] No storage found");
       vTaskDelay(pdMS_TO_TICKS(1000));
@@ -321,7 +323,7 @@ void UploaderComponent::syncTask(void* arg) {
 
     xEventGroupClearBits(uploaderComponent->syncEvent_, SYNC_COMPLETE);
 
-    File runDir;
+    fs::File runDir;
     int numFailures = 0;
     while (xEventGroupGetBits(uploaderComponent->wifiEvent_) & WLAN_READY &&
            (runDir = root.openNextFile()) && numFailures < 3) {
@@ -331,7 +333,8 @@ void UploaderComponent::syncTask(void* arg) {
         continue;
       }
 
-      String runDirPath = resolvePath({uploaderComponent->dir_, runDir.name()});
+      String runDirPath =
+          dlf::util::resolvePath({uploaderComponent->dir_, runDir.name()});
 
       // Skip syncing in-progress runs. We check the presence of the
       // lock file, which indicates that the run is incomplete.
@@ -340,7 +343,7 @@ void UploaderComponent::syncTask(void* arg) {
       // presence of a file with a specific filename, which indicates that the
       // run has already been uploaded.
       bool uploadMarkerFound = false;
-      File file;
+      fs::File file;
       while (file = runDir.openNextFile()) {
         if (!strcmp(file.name(), LOCKFILE_NAME)) {
           lockfileFound = true;
@@ -380,7 +383,7 @@ void UploaderComponent::syncTask(void* arg) {
           runDir.rewindDirectory();
           while (file = runDir.openNextFile()) {
             uploaderComponent->fs_.remove(
-                resolvePath({runDirPath, file.name()}));
+                dlf::util::resolvePath({runDirPath, file.name()}));
           }
           uploaderComponent->fs_.rmdir(runDirPath);
           Serial.printf(
@@ -389,8 +392,8 @@ void UploaderComponent::syncTask(void* arg) {
         } else if (uploaderComponent->options_.markAfterUpload) {
           // Add upload marker
           String markerFilePath =
-              resolvePath({runDirPath, UPLOAD_MARKER_FILE_NAME});
-          File f = uploaderComponent->fs_.open(markerFilePath, "w", true);
+              dlf::util::resolvePath({runDirPath, UPLOAD_MARKER_FILE_NAME});
+          fs::File f = uploaderComponent->fs_.open(markerFilePath, "w", true);
           f.write(0);
           f.close();
           Serial.printf("[UploaderComponent][syncTask] Marked %s as uploaded\n",
@@ -407,7 +410,8 @@ void UploaderComponent::syncTask(void* arg) {
 
     xEventGroupSetBits(uploaderComponent->syncEvent_, SYNC_COMPLETE);
 
-    xEventGroupWaitBits(logger->ev, CSCLogger::NEW_RUN, pdTRUE, pdTRUE,
-                        portMAX_DELAY);
+    logger->waitForNewRun();
   }
 }
+
+}  // namespace dlf::components

@@ -5,10 +5,6 @@
 
 #include "dlflib/datastream/abstract_stream.h"
 
-typedef std::unique_ptr<dlf::datastream::AbstractStreamHandle> stream_handle_t;
-typedef std::vector<std::unique_ptr<dlf::datastream::AbstractStreamHandle>>
-    stream_handles_t;
-
 namespace dlf::datastream {
 
 /**
@@ -18,24 +14,17 @@ namespace dlf::datastream {
  * the formats defined by concrete classes.
  */
 class AbstractStreamHandle {
- protected:
-  AbstractStream* stream;
-  dlf_stream_idx_t idx;
-
-  AbstractStreamHandle(AbstractStream* stream, dlf_stream_idx_t idx)
-      : stream(stream), idx(idx) {}
-
  public:
   virtual bool available(dlf_tick_t tick) = 0;
 
-  virtual size_t encode_into(StreamBufferHandle_t buf, dlf_tick_t tick) = 0;
+  virtual size_t encodeInto(StreamBufferHandle_t buf, dlf_tick_t tick) = 0;
 
-  virtual size_t encode_header_into(StreamBufferHandle_t buf) {
+  virtual size_t encodeHeaderInto(StreamBufferHandle_t buf) {
     dlf_stream_header_t h{
-        stream->src.type_structure,
+        stream->typeStructure(),
         stream->id(),
         stream->notes(),
-        stream->data_size(),
+        stream->dataSize(),
     };
 
     send(buf, h.type_structure);
@@ -58,6 +47,17 @@ class AbstractStreamHandle {
       return xStreamBufferSend(buf, "", strlen(""), portMAX_DELAY);
     }
   }
+
+ protected:
+  AbstractStreamHandle(AbstractStream* stream, dlf_stream_idx_t idx)
+      : stream(stream), idx(idx) {}
+
+  AbstractStream* stream;
+  dlf_stream_idx_t idx;
 };
+
+using stream_handle_t = std::unique_ptr<dlf::datastream::AbstractStreamHandle>;
+using stream_handles_t =
+    std::vector<std::unique_ptr<dlf::datastream::AbstractStreamHandle>>;
 
 }  // namespace dlf::datastream

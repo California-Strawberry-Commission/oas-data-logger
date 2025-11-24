@@ -8,7 +8,7 @@
 #define DLF_SD_BLOCK_WRITE_SIZE 512
 #define DLF_LOGFILE_BUFFER_SIZE DLF_SD_BLOCK_WRITE_SIZE * 16
 #define DLF_FREERTOS_DURATION \
-  chrono::duration<TickType_t, ratio<1, configTICK_RATE_HZ>>
+  std::chrono::duration<TickType_t, std::ratio<1, configTICK_RATE_HZ>>
 #define LOCKFILE_NAME "LOCK"
 #define UPLOAD_MARKER_FILE_NAME "UPLOADED"
 

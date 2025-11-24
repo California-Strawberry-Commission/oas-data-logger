@@ -1,18 +1,18 @@
 #include "dlflib/datastream/polled_stream_handle.h"
 
-using namespace dlf::datastream;
+namespace dlf::datastream {
 
 PolledStreamHandle::PolledStreamHandle(PolledStream* stream,
                                        dlf_stream_idx_t idx,
-                                       dlf_tick_t sample_interval_ticks,
-                                       dlf_tick_t sample_phase)
+                                       dlf_tick_t sampleIntervalTicks,
+                                       dlf_tick_t samplePhase)
     : AbstractStreamHandle(stream, idx),
-      _sample_interval_ticks(sample_interval_ticks),
-      _sample_phase_ticks(sample_phase) {}
+      sampleIntervalTicks_(sampleIntervalTicks),
+      samplePhaseTicks_(samplePhase) {}
 
 bool PolledStreamHandle::available(dlf_tick_t tick) {
-  bool a = _sample_interval_ticks == 0 ||
-           ((tick + _sample_phase_ticks) % _sample_interval_ticks) == 0;
+  bool a = sampleIntervalTicks_ == 0 ||
+           ((tick + samplePhaseTicks_) % sampleIntervalTicks_) == 0;
 
 #if defined(DEBUG) && defined(SILLY)
   DEBUG.printf(
@@ -24,7 +24,7 @@ bool PolledStreamHandle::available(dlf_tick_t tick) {
   return a;
 }
 
-size_t PolledStreamHandle::encode_header_into(StreamBufferHandle_t buf) {
+size_t PolledStreamHandle::encodeHeaderInto(StreamBufferHandle_t buf) {
 #ifdef DEBUG
   DEBUG.printf(
       "\tEncode Polled Header\n"
@@ -34,22 +34,22 @@ size_t PolledStreamHandle::encode_header_into(StreamBufferHandle_t buf) {
       "\t\tnotes: %s\n"
       "\t\ttick_interval: %llu\n"
       "\t\ttick_phase: %llu\n",
-      idx, stream->src.type_structure, stream->src.type_hash, stream->id(),
-      stream->notes(), _sample_interval_ticks, _sample_phase_ticks);
+      idx, stream->typeStructure(), stream->typeHash(), stream->id(),
+      stream->notes(), sampleIntervalTicks_, samplePhaseTicks_);
 #endif
 
-  AbstractStreamHandle::encode_header_into(buf);
+  AbstractStreamHandle::encodeHeaderInto(buf);
 
   dlf_polled_stream_header_segment_t h{
-      _sample_interval_ticks,
-      _sample_phase_ticks,
+      sampleIntervalTicks_,
+      samplePhaseTicks_,
   };
 
   return send(buf, h);
 }
 
-size_t PolledStreamHandle::encode_into(StreamBufferHandle_t buf,
-                                       dlf_tick_t tick) {
+size_t PolledStreamHandle::encodeInto(StreamBufferHandle_t buf,
+                                      dlf_tick_t tick) {
 #ifdef DEBUG
   DEBUG.printf(
       "\tEncode Polled Data\n"
@@ -59,17 +59,18 @@ size_t PolledStreamHandle::encode_into(StreamBufferHandle_t buf,
   // Sample data
   size_t written = 0;
 
-  if (stream->_mutex) {
-    if (xSemaphoreTake(stream->_mutex, (TickType_t)10) != pdTRUE) {
+  if (stream->mutex()) {
+    if (xSemaphoreTake(stream->mutex(), (TickType_t)10) != pdTRUE) {
       return 0;
     }
   }
 
-  written =
-      xStreamBufferSend(buf, stream->data_source(), stream->data_size(), 0);
+  written = xStreamBufferSend(buf, stream->dataSource(), stream->dataSize(), 0);
 
-  if (stream->_mutex) {
-    xSemaphoreGive(stream->_mutex);
+  if (stream->mutex()) {
+    xSemaphoreGive(stream->mutex());
   }
   return written;
 }
+
+}  // namespace dlf::datastream
