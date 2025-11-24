@@ -1,8 +1,8 @@
-#include "dlf_logger.h"
+#include "dlflib/dlf_logger.h"
 
-#include "components/uploader_component.h"
+#include "dlflib/components/uploader_component.h"
 
-CSCLogger::CSCLogger(FS& fs, String fs_dir) : _fs(fs), fs_dir(fs_dir) {
+CSCLogger::CSCLogger(fs::FS& fs, String fs_dir) : _fs(fs), fs_dir(fs_dir) {
   ev = xEventGroupCreate();
   this->setup(&components);
   addComponent(this);
@@ -147,11 +147,4 @@ void CSCLogger::prune() {
     }
   }
   root.close();
-}
-
-void CSCLogger::flush(run_handle_t h) {
-  if (!runs[h - 1]) {
-    return;
-  }
-  runs[h - 1]->flush();
 }

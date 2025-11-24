@@ -1,14 +1,15 @@
-#include "dlf_logfile.hpp"
+#include "dlflib/dlf_logfile.h"
 
-#include "datastream/EventStream.hpp"
-#include "datastream/PolledStream.hpp"
-#include "dlf_cfg.h"
-#include "dlf_util.h"
-#include "uuid.h"
+#include "dlflib/datastream/event_stream.h"
+#include "dlflib/datastream/polled_stream.h"
+#include "dlflib/dlf_cfg.h"
+#include "dlflib/utils/dlf_util.h"
+#include "dlflib/utils/uuid.h"
 
 using std::chrono::microseconds;
 
 namespace dlf {
+
 /**
  * @brief Task responsible for writing data to SD
  * Constantly receives data from _stream streambuffer and writes to SD.
@@ -348,4 +349,5 @@ void LogFile::close() {
   _close_file();
   Serial.println("Logfile closed cleanly");
 }
+
 }  // namespace dlf

@@ -1,15 +1,14 @@
 #include <Arduino.h>
 #include <ESP32Time.h>
 #include <FastLED.h>
+#include <SD_MMC.h>
 #include <SparkFun_u-blox_GNSS_v3.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <WiFiManager.h>
-#include <dlf_logger.h>
-
-#include "SD_MMC.h"
-#include "driver/sdmmc_host.h"
-#include "esp_log.h"
+#include <dlflib/dlf_logger.h>
+#include <driver/sdmmc_host.h>
+#include <esp_log.h>
 
 // Configuration
 const int SERIAL_BAUD_RATE{115200};
@@ -62,8 +61,6 @@ static volatile bool wifiConnecting = false;
 static uint32_t wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;
 
 // TODO: Be able to configure upload endpoint in Access Point mode
-// const char
-// *UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
 const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
 
 // State Machine States

@@ -1,6 +1,6 @@
-#include "EventStream.hpp"
+#include "dlflib/datastream/event_stream.h"
 
-#include "EventStreamHandle.hpp"
+#include "dlflib/datastream/event_stream_handle.h"
 
 using namespace dlf::datastream;
 

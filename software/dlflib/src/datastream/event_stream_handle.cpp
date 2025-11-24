@@ -1,9 +1,6 @@
-#include "EventStreamHandle.hpp"
+#include "dlflib/datastream/event_stream_handle.h"
 
-extern "C" {
-// https://github.com/haipome/fnv/tree/master
 #include <fnv.h>
-}
 
 using namespace dlf::datastream;
 

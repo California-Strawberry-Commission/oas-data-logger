@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include "AbstractStream.hpp"
+#include "dlflib/datastream/abstract_stream.h"
 
 namespace dlf::datastream {
 

@@ -13,6 +13,11 @@
         }
     ],
     "license": "MIT",
+    "build": {
+        "includeDir": "include",
+        "srcDir": "src",
+        "flags": "-Ilib/fnv"
+    },
     "frameworks": "arduino",
     "platforms": "espressif32"
 }

@@ -1,8 +1,8 @@
-#include "dlf_run.h"
+#include "dlflib/dlf_run.h"
 
 #include <time.h>
 
-#include "dlf_util.h"
+#include "dlflib/utils/dlf_util.h"
 
 namespace dlf {
 Run::Run(FS& fs, String fs_dir, streams_t all_streams,
@@ -163,13 +163,6 @@ void Run::create_lockfile() {
   File f = _fs.open(_lockfile_path, "w", true);
   f.write(0);
   f.close();
-}
-
-void Run::flush() {
-  if (_status != LOGGING) return;
-  for (auto& lf : _log_files) {
-    lf->flush();
-  }
 }
 
 }  // namespace dlf
