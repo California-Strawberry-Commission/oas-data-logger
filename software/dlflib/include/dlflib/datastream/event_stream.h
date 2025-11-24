@@ -15,7 +15,8 @@ class EventStream : public AbstractStream {
  public:
   EventStream(Encodable& dat, String id, const char* notes,
               SemaphoreHandle_t mutex = NULL);
-  stream_handle_t handle(std::chrono::microseconds tick_interval,
+
+  stream_handle_t handle(std::chrono::microseconds tickInterval,
                          dlf_stream_idx_t idx);
 
   dlf_stream_type_e type();

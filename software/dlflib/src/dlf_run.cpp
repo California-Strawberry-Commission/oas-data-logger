@@ -72,8 +72,7 @@ void Run::create_metafile(Encodable& meta) {
 
 void Run::create_logfile(dlf_stream_type_e t) {
 #ifdef DEBUG
-  DEBUG.printf("Creating %s logfile\n",
-               dlf::datastream::stream_type_to_string(t));
+  DEBUG.printf("Creating %s logfile\n", dlf::datastream::streamTypeToString(t));
 #endif
   dlf::datastream::stream_handles_t handles;
 

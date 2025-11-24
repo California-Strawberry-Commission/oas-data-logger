@@ -5,25 +5,26 @@
 namespace dlf::datastream {
 
 PolledStream::PolledStream(Encodable& src, String id,
-                           std::chrono::microseconds sample_interval,
+                           std::chrono::microseconds sampleInterval,
                            std::chrono::microseconds phase, const char* notes,
                            SemaphoreHandle_t mutex)
     : AbstractStream(src, id, notes, mutex),
-      _sample_interval_us(sample_interval),
-      _phase_us(phase) {}
+      sampleInterval_(sampleInterval),
+      phase_(phase) {}
 
-stream_handle_t PolledStream::handle(std::chrono::microseconds tick_interval,
+stream_handle_t PolledStream::handle(std::chrono::microseconds tickInterval,
                                      dlf_stream_idx_t idx) {
-  dlf_tick_t sample_interval_ticks = 0, sample_phase_ticks = 0;
+  dlf_tick_t sampleIntervalTicks = 0;
+  dlf_tick_t samplePhaseTicks = 0;
 
   // These will throw div/0 if a 0 sample interval (every tick) is given.
-  if (_sample_interval_us != std::chrono::microseconds::zero()) {
-    sample_interval_ticks = max(_sample_interval_us / tick_interval, 1ll);
-    sample_phase_ticks = _phase_us / tick_interval;
+  if (sampleInterval_ != std::chrono::microseconds::zero()) {
+    sampleIntervalTicks = max(sampleInterval_ / tickInterval, 1ll);
+    samplePhaseTicks = phase_ / tickInterval;
   }
 
-  return std::unique_ptr<AbstractStreamHandle>(new PolledStreamHandle(
-      this, idx, sample_interval_ticks, sample_phase_ticks));
+  return std::unique_ptr<AbstractStreamHandle>(
+      new PolledStreamHandle(this, idx, sampleIntervalTicks, samplePhaseTicks));
 }
 
 dlf_stream_type_e PolledStream::type() { return POLLED; }

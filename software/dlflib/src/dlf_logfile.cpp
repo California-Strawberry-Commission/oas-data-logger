@@ -161,7 +161,7 @@ void LogFile::_write_header(dlf_stream_type_e stream_type) {
   xStreamBufferSend(_stream, &h, sizeof(h), portMAX_DELAY);
 
   for (auto& handle : _handles) {
-    handle->encode_header_into(_stream);
+    handle->encodeHeaderInto(_stream);
   }
 }
 
@@ -219,7 +219,7 @@ LogFile::LogFile(dlf::datastream::stream_handles_t handles,
                  dlf_stream_type_e stream_type, String dir, fs::FS& fs)
     : _fs(fs), _handles(std::move(handles)), _file_end_position(0) {
   _filename =
-      dir + "/" + dlf::datastream::stream_type_to_string(stream_type) + ".dlf";
+      dir + "/" + dlf::datastream::streamTypeToString(stream_type) + ".dlf";
 
   // Set up class internals
   _stream =
@@ -282,7 +282,7 @@ void LogFile::sample(dlf_tick_t tick) {
   for (auto& h : _handles) {
     if (h->available(tick)) {
       size_t beforeBytes = xStreamBufferBytesAvailable(_stream);
-      h->encode_into(_stream, tick);
+      h->encodeInto(_stream, tick);
       size_t afterBytes = xStreamBufferBytesAvailable(_stream);
 
       // Diagnostic: Print when data is added to stream buffer

@@ -11,20 +11,20 @@ namespace dlf::datastream {
  * stream of data that should be polled at some interval.
  */
 class PolledStream : public AbstractStream {
- private:
-  std::chrono::microseconds _sample_interval_us;
-  std::chrono::microseconds _phase_us;
-
  public:
   PolledStream(Encodable& src, String id,
-               std::chrono::microseconds sample_interval,
+               std::chrono::microseconds sampleInterval,
                std::chrono::microseconds phase, const char* notes,
                SemaphoreHandle_t mutex = NULL);
 
-  stream_handle_t handle(std::chrono::microseconds tick_interval,
+  stream_handle_t handle(std::chrono::microseconds tickInterval,
                          dlf_stream_idx_t idx);
 
   dlf_stream_type_e type();
+
+ private:
+  std::chrono::microseconds sampleInterval_;
+  std::chrono::microseconds phase_;
 };
 
 }  // namespace dlf::datastream
