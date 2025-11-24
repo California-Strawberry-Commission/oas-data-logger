@@ -46,13 +46,13 @@ class AbstractStream {
 
   virtual dlf_stream_type_e type() = 0;
 
-  inline size_t dataSize() { return src_.data_size; }
+  inline size_t dataSize() { return src_.dataSize; }
 
   inline const uint8_t* dataSource() { return src_.data; }
 
-  inline const char* typeStructure() { return src_.type_structure; }
+  inline const char* typeStructure() { return src_.typeStructure; }
 
-  inline size_t typeHash() { return src_.type_hash; }
+  inline size_t typeHash() { return src_.typeHash; }
 
   inline const char* notes() { return notes_ != nullptr ? notes_ : "N/A"; }
 

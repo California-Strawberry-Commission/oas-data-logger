@@ -46,8 +46,8 @@ void Run::create_metafile(Encodable& meta) {
   time_t now = time(NULL);
   h.epoch_time_s = now;
   h.tick_base_us = _tick_interval.count();
-  h.meta_structure = meta.type_structure;
-  h.meta_size = meta.data_size;
+  h.meta_structure = meta.typeStructure;
+  h.meta_size = meta.dataSize;
 
 #ifdef DEBUG
   DEBUG.printf(
@@ -55,7 +55,7 @@ void Run::create_metafile(Encodable& meta) {
       "\tepoch_time_s: %lu\n"
       "\ttick_base_us: %lu\n"
       "\tmeta_structure: %s (hash: %x)\n",
-      h.epoch_time_s, h.tick_base_us, h.meta_structure, meta.type_hash);
+      h.epoch_time_s, h.tick_base_us, h.meta_structure, meta.typeHash);
 #endif
   fs::File f =
       _fs.open(dlf::util::resolvePath({_run_dir, "meta.dlf"}), "w", true);

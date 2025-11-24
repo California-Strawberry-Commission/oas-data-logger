@@ -4,18 +4,17 @@
 
 #include "dlflib/util/util.h"
 
-// https://akrzemi1.wordpress.com/2013/10/10/too-perfect-forwarding/
 class Encodable {
  public:
-  const char* type_structure = nullptr;
-  size_t type_hash = 0;
+  const char* typeStructure = nullptr;
+  size_t typeHash = 0;
   uint8_t* data = nullptr;
-  size_t data_size = 0;
+  size_t dataSize = 0;
 
   template <typename T>
-  Encodable(T& v, const char* type_structure)
-      : type_structure(type_structure),
-        type_hash(dlf::util::hashStr(type_structure)),
+  Encodable(T& v, const char* typeStructure)
+      : typeStructure(typeStructure),
+        typeHash(dlf::util::hashStr(typeStructure)),
         data((uint8_t*)(&v)),
-        data_size(sizeof(T)) {}
+        dataSize(sizeof(T)) {}
 };
