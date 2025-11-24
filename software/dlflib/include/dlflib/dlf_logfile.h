@@ -11,9 +11,6 @@
 
 namespace dlf {
 
-using namespace datastream;
-using namespace std;
-
 /**
  * @brief Handles logging of datastreams to files.
  *
@@ -33,11 +30,11 @@ class LogFile {
   /**
    * @brief Data stream handles logged by this logfile
    */
-  stream_handles_t _handles;
+  dlf::datastream::stream_handles_t _handles;
 
-  FS& _fs;
+  fs::FS& _fs;
   String _filename;
-  File _f;
+  fs::File _f;
 
   /**
    * @brief Streambuffer responsible for transferring data from sampler task to
@@ -75,8 +72,8 @@ class LogFile {
   void flush();
 
  public:
-  LogFile(stream_handles_t handles, dlf_stream_type_e stream_type, String dir,
-          FS& fs);
+  LogFile(dlf::datastream::stream_handles_t handles,
+          dlf_stream_type_e stream_type, String dir, fs::FS& fs);
 
   /**
    * Samples data. Intended to be externally called at the tick interval.

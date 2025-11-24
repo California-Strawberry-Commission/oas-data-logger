@@ -60,21 +60,19 @@ void CSCLogger::stop_run(run_handle_t h) {
 
 CSCLogger& CSCLogger::_watch(Encodable value, String id, const char* notes,
                              SemaphoreHandle_t mutex) {
-  using namespace dlf::datastream;
-
-  AbstractStream* s = new EventStream(value, id, notes, mutex);
+  dlf::datastream::AbstractStream* s =
+      new dlf::datastream::EventStream(value, id, notes, mutex);
   data_streams.push_back(s);
 
   return *this;
 }
 
 CSCLogger& CSCLogger::_poll(Encodable value, String id,
-                            microseconds sample_interval, microseconds phase,
-                            const char* notes, SemaphoreHandle_t mutex) {
-  using namespace dlf::datastream;
-
-  AbstractStream* s =
-      new PolledStream(value, id, sample_interval, phase, notes, mutex);
+                            std::chrono::microseconds sample_interval,
+                            std::chrono::microseconds phase, const char* notes,
+                            SemaphoreHandle_t mutex) {
+  dlf::datastream::AbstractStream* s = new dlf::datastream::PolledStream(
+      value, id, sample_interval, phase, notes, mutex);
   data_streams.push_back(s);
 
   return *this;
@@ -120,9 +118,9 @@ bool CSCLogger::begin() {
 }
 
 void CSCLogger::prune() {
-  File root = _fs.open(fs_dir);
+  fs::File root = _fs.open(fs_dir);
 
-  File run_dir;
+  fs::File run_dir;
   while (run_dir = root.openNextFile()) {
     // Skip files and sys vol information dir
     if (!run_dir.isDirectory() ||
@@ -132,7 +130,7 @@ void CSCLogger::prune() {
 
     // Search for lockfiles. Delete run if found (was dirty when closed).
     String run_dir_path = resolvePath({fs_dir, run_dir.name()});
-    File run_file;
+    fs::File run_file;
     while (run_file = run_dir.openNextFile()) {
       if (!strcmp(run_file.name(), LOCKFILE_NAME)) {
         Serial.printf("Pruning %s\n", run_dir_path.c_str());

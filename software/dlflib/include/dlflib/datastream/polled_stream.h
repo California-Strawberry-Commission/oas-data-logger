@@ -12,15 +12,17 @@ namespace dlf::datastream {
  */
 class PolledStream : public AbstractStream {
  private:
-  microseconds _sample_interval_us;
-  microseconds _phase_us;
+  std::chrono::microseconds _sample_interval_us;
+  std::chrono::microseconds _phase_us;
 
  public:
-  PolledStream(Encodable& src, String id, microseconds sample_interval,
-               microseconds phase, const char* notes,
+  PolledStream(Encodable& src, String id,
+               std::chrono::microseconds sample_interval,
+               std::chrono::microseconds phase, const char* notes,
                SemaphoreHandle_t mutex = NULL);
 
-  stream_handle_t handle(microseconds tick_interval, dlf_stream_idx_t idx);
+  stream_handle_t handle(std::chrono::microseconds tick_interval,
+                         dlf_stream_idx_t idx);
 
   dlf_stream_type_e type();
 };

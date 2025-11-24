@@ -13,6 +13,8 @@
 #include "dlflib/dlf_types.h"
 #include "dlflib/utils/dlf_util.h"
 
+namespace dlf::datastream {
+
 inline const char* stream_type_to_string(dlf_stream_type_e t) {
   switch (t) {
     case POLLED:
@@ -24,12 +26,9 @@ inline const char* stream_type_to_string(dlf_stream_type_e t) {
   }
 }
 
-namespace dlf::datastream {
-
-using std::chrono::microseconds;
-
+// Forward declare abstract_stream_handle.h
 class AbstractStreamHandle;
-typedef std::unique_ptr<AbstractStreamHandle> stream_handle_t;
+using stream_handle_t = std::unique_ptr<AbstractStreamHandle>;
 
 /**
  * Abstract class representing a source of data as well as some information
@@ -56,7 +55,7 @@ class AbstractStream {
    * @return
    */
   virtual std::unique_ptr<AbstractStreamHandle> handle(
-      microseconds tick_interval, dlf_stream_idx_t idx) = 0;
+      std::chrono::microseconds tick_interval, dlf_stream_idx_t idx) = 0;
 
   virtual dlf_stream_type_e type() = 0;
 
@@ -72,6 +71,6 @@ class AbstractStream {
   inline const char* id() { return _id.c_str(); }
 };
 
-typedef std::vector<AbstractStream*> streams_t;
+using streams_t = std::vector<AbstractStream*>;
 
 }  // namespace dlf::datastream

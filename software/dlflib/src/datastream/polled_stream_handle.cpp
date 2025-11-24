@@ -1,6 +1,6 @@
 #include "dlflib/datastream/polled_stream_handle.h"
 
-using namespace dlf::datastream;
+namespace dlf::datastream {
 
 PolledStreamHandle::PolledStreamHandle(PolledStream* stream,
                                        dlf_stream_idx_t idx,
@@ -73,3 +73,5 @@ size_t PolledStreamHandle::encode_into(StreamBufferHandle_t buf,
   }
   return written;
 }
+
+}  // namespace dlf::datastream

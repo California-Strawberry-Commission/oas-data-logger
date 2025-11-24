@@ -5,8 +5,9 @@
 #include "dlflib/utils/dlf_util.h"
 
 namespace dlf {
-Run::Run(FS& fs, String fs_dir, streams_t all_streams,
-         chrono::microseconds tick_interval, Encodable& meta)
+
+Run::Run(fs::FS& fs, String fs_dir, dlf::datastream::streams_t all_streams,
+         std::chrono::microseconds tick_interval, Encodable& meta)
     : _fs(fs), _streams(all_streams), _tick_interval(tick_interval) {
   assert(tick_interval.count() > 0);
 
@@ -55,7 +56,7 @@ void Run::create_metafile(Encodable& meta) {
       "\tmeta_structure: %s (hash: %x)\n",
       h.epoch_time_s, h.tick_base_us, h.meta_structure, meta.type_hash);
 #endif
-  File f = _fs.open(resolvePath({_run_dir, "meta.dlf"}), "w", true);
+  fs::File f = _fs.open(resolvePath({_run_dir, "meta.dlf"}), "w", true);
 
   f.write(reinterpret_cast<uint8_t*>(&h.magic), sizeof(h.magic));
   f.write(reinterpret_cast<uint8_t*>(&h.epoch_time_s), sizeof(h.epoch_time_s));
@@ -69,18 +70,19 @@ void Run::create_metafile(Encodable& meta) {
 
 void Run::create_logfile(dlf_stream_type_e t) {
 #ifdef DEBUG
-  DEBUG.printf("Creating %s logfile\n", stream_type_to_string(t));
+  DEBUG.printf("Creating %s logfile\n",
+               dlf::datastream::stream_type_to_string(t));
 #endif
-  stream_handles_t handles;
+  dlf::datastream::stream_handles_t handles;
 
   size_t idx = 0;
   for (auto& stream : _streams) {
     if (stream->type() == t) {
-      handles.push_back(move(stream->handle(_tick_interval, idx++)));
+      handles.push_back(std::move(stream->handle(_tick_interval, idx++)));
     }
   }
-  _log_files.push_back(
-      unique_ptr<LogFile>(new LogFile(move(handles), t, _run_dir, _fs)));
+  _log_files.push_back(std::unique_ptr<LogFile>(
+      new LogFile(std::move(handles), t, _run_dir, _fs)));
 }
 
 void Run::task_sampler(void* arg) {
@@ -88,7 +90,7 @@ void Run::task_sampler(void* arg) {
   auto self = static_cast<Run*>(arg);
 
   const TickType_t interval =
-      chrono::duration_cast<DLF_FREERTOS_DURATION>(self->_tick_interval)
+      std::chrono::duration_cast<DLF_FREERTOS_DURATION>(self->_tick_interval)
           .count();
   Serial.printf("Interval %d\n", interval);
 
@@ -137,9 +139,9 @@ void Run::close() {
   // Verify lockfile was actually deleted by listing directory contents
   Serial.printf("[RUN] Verifying run directory contents for %s:\n",
                 _run_dir.c_str());
-  File runDir = _fs.open(_run_dir);
+  fs::File runDir = _fs.open(_run_dir);
   if (runDir && runDir.isDirectory()) {
-    File file;
+    fs::File file;
     while (file = runDir.openNextFile()) {
       Serial.printf("[RUN]   - %s (%d bytes)\n", file.name(), file.size());
       file.close();
@@ -160,7 +162,7 @@ void Run::create_lockfile() {
   Serial.println("Creating lockfile");
 #endif
 
-  File f = _fs.open(_lockfile_path, "w", true);
+  fs::File f = _fs.open(_lockfile_path, "w", true);
   f.write(0);
   f.close();
 }

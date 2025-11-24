@@ -2,7 +2,7 @@
 
 #include <fnv.h>
 
-using namespace dlf::datastream;
+namespace dlf::datastream {
 
 EventStreamHandle::EventStreamHandle(EventStream* stream, dlf_stream_idx_t idx)
     : AbstractStreamHandle(stream, idx) {}
@@ -75,3 +75,5 @@ size_t EventStreamHandle::encode_into(StreamBufferHandle_t buf,
 
   return written;
 }
+
+}  // namespace dlf::datastream

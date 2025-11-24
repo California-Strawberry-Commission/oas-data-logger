@@ -15,26 +15,25 @@
 #include "dlflib/utils/uuid.h"
 
 namespace dlf {
-using namespace std;
 
 // Todo: Performance timings
 
 class Run {
  private:
   String _uuid;
-  FS& _fs;
+  fs::FS& _fs;
   String _run_dir;
   dlf_file_state_e _status;
   SemaphoreHandle_t _sync;
-  chrono::microseconds _tick_interval;
-  streams_t _streams;
-  vector<unique_ptr<LogFile>> _log_files;
+  std::chrono::microseconds _tick_interval;
+  dlf::datastream::streams_t _streams;
+  std::vector<std::unique_ptr<LogFile>> _log_files;
 
   String _lockfile_path;
 
  public:
-  Run(FS& fs, String fs_dir, streams_t all_streams,
-      chrono::microseconds tick_interval, Encodable& meta);
+  Run(fs::FS& fs, String fs_dir, dlf::datastream::streams_t all_streams,
+      std::chrono::microseconds tick_interval, Encodable& meta);
 
   void create_lockfile();
 

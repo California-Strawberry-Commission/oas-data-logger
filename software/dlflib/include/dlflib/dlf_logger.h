@@ -15,25 +15,25 @@
 #include "dlflib/dlf_run.h"
 #include "dlflib/dlf_types.h"
 
-#define POLL(type_name)                                                      \
-  CSCLogger& poll(type_name& value, String id, microseconds sample_interval, \
-                  microseconds phase = microseconds::zero(),                 \
-                  const char* notes = nullptr,                               \
-                  SemaphoreHandle_t mutex = NULL) {                          \
-    return _poll(Encodable(value, #type_name), id, sample_interval, phase,   \
-                 notes, mutex);                                              \
-  }                                                                          \
-  inline CSCLogger& poll(type_name& value, String id,                        \
-                         microseconds sample_interval, const char* notes,    \
-                         SemaphoreHandle_t mutex = NULL) {                   \
-    return _poll(Encodable(value, #type_name), id, sample_interval,          \
-                 microseconds::zero(), notes, mutex);                        \
-  }                                                                          \
-  inline CSCLogger& poll(type_name& value, String id,                        \
-                         microseconds sample_interval,                       \
-                         SemaphoreHandle_t mutex) {                          \
-    return _poll(Encodable(value, #type_name), id, sample_interval,          \
-                 microseconds::zero(), nullptr, mutex);                      \
+#define POLL(type_name)                                                       \
+  CSCLogger& poll(                                                            \
+      type_name& value, String id, std::chrono::microseconds sample_interval, \
+      std::chrono::microseconds phase = std::chrono::microseconds::zero(),    \
+      const char* notes = nullptr, SemaphoreHandle_t mutex = NULL) {          \
+    return _poll(Encodable(value, #type_name), id, sample_interval, phase,    \
+                 notes, mutex);                                               \
+  }                                                                           \
+  inline CSCLogger& poll(type_name& value, String id,                         \
+                         std::chrono::microseconds sample_interval,           \
+                         const char* notes, SemaphoreHandle_t mutex = NULL) { \
+    return _poll(Encodable(value, #type_name), id, sample_interval,           \
+                 std::chrono::microseconds::zero(), notes, mutex);            \
+  }                                                                           \
+  inline CSCLogger& poll(type_name& value, String id,                         \
+                         std::chrono::microseconds sample_interval,           \
+                         SemaphoreHandle_t mutex) {                           \
+    return _poll(Encodable(value, #type_name), id, sample_interval,           \
+                 std::chrono::microseconds::zero(), nullptr, mutex);          \
   }
 
 #define WATCH(type_name)                                                     \
@@ -48,9 +48,6 @@
 typedef int run_handle_t;
 
 class CSCLogger : public dlf::components::DlfComponent {
-  typedef std::chrono::microseconds microseconds;
-  typedef std::chrono::milliseconds milliseconds;
-
   std::unique_ptr<dlf::Run> runs[MAX_RUNS];
 
   // Todo: Figure out how to do this with unique_ptrs
@@ -70,8 +67,8 @@ class CSCLogger : public dlf::components::DlfComponent {
 
   bool begin();
 
-  run_handle_t start_run(Encodable meta,
-                         microseconds tick_rate = milliseconds(100));
+  run_handle_t start_run(Encodable meta, std::chrono::microseconds tick_rate =
+                                             std::chrono::milliseconds(100));
 
   void stop_run(run_handle_t h);
 
@@ -91,8 +88,9 @@ class CSCLogger : public dlf::components::DlfComponent {
   WATCH(double)
   WATCH(float)
 
-  CSCLogger& _poll(Encodable value, String id, microseconds sample_interval,
-                   microseconds phase, const char* notes,
+  CSCLogger& _poll(Encodable value, String id,
+                   std::chrono::microseconds sample_interval,
+                   std::chrono::microseconds phase, const char* notes,
                    SemaphoreHandle_t mutex = NULL);
   POLL(uint8_t)
   POLL(uint16_t)

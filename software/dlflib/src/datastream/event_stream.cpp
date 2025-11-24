@@ -8,7 +8,7 @@ EventStream::EventStream(Encodable& dat, String id, const char* notes,
                          SemaphoreHandle_t mutex)
     : AbstractStream(dat, id, notes, mutex) {}
 
-stream_handle_t EventStream::handle(microseconds tick_interval,
+stream_handle_t EventStream::handle(std::chrono::microseconds tick_interval,
                                     dlf_stream_idx_t idx) {
   return std::unique_ptr<AbstractStreamHandle>(
       new EventStreamHandle(this, idx));

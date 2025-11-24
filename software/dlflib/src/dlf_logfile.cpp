@@ -6,8 +6,6 @@
 #include "dlflib/utils/dlf_util.h"
 #include "dlflib/utils/uuid.h"
 
-using std::chrono::microseconds;
-
 namespace dlf {
 
 /**
@@ -181,7 +179,7 @@ void LogFile::_close_file() {
   Serial.printf("[CLOSE_FILE] File closed, checking actual size on SD...\n");
 
   // Check file size on SD before header update
-  File checkFile = _fs.open(fname, "r");
+  fs::File checkFile = _fs.open(fname, "r");
   if (checkFile) {
     size_t sizeBeforeUpdate = checkFile.size();
     Serial.printf(
@@ -217,10 +215,11 @@ void LogFile::_close_file() {
   Serial.printf("[CLOSE_FILE] Header update complete\n");
 }
 
-LogFile::LogFile(stream_handles_t handles, dlf_stream_type_e stream_type,
-                 String dir, FS& fs)
+LogFile::LogFile(dlf::datastream::stream_handles_t handles,
+                 dlf_stream_type_e stream_type, String dir, fs::FS& fs)
     : _fs(fs), _handles(std::move(handles)), _file_end_position(0) {
-  _filename = dir + "/" + stream_type_to_string(stream_type) + ".dlf";
+  _filename =
+      dir + "/" + dlf::datastream::stream_type_to_string(stream_type) + ".dlf";
 
   // Set up class internals
   _stream =

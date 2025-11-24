@@ -34,7 +34,7 @@ class UploaderComponent : public DlfComponent {
   void onWifiDisconnected(arduino_event_id_t event, arduino_event_info_t info);
   void onWifiConnected(arduino_event_id_t event, arduino_event_info_t info);
 
-  FS& fs_;
+  fs::FS& fs_;
   String dir_;
   String endpoint_;
   String deviceUid_;

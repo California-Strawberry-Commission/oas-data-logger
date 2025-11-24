@@ -5,13 +5,14 @@
 namespace dlf::datastream {
 
 PolledStream::PolledStream(Encodable& src, String id,
-                           microseconds sample_interval, microseconds phase,
-                           const char* notes, SemaphoreHandle_t mutex)
+                           std::chrono::microseconds sample_interval,
+                           std::chrono::microseconds phase, const char* notes,
+                           SemaphoreHandle_t mutex)
     : AbstractStream(src, id, notes, mutex),
       _sample_interval_us(sample_interval),
       _phase_us(phase) {}
 
-stream_handle_t PolledStream::handle(microseconds tick_interval,
+stream_handle_t PolledStream::handle(std::chrono::microseconds tick_interval,
                                      dlf_stream_idx_t idx) {
   dlf_tick_t sample_interval_ticks = 0, sample_phase_ticks = 0;
 
