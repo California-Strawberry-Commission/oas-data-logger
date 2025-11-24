@@ -7,12 +7,13 @@
 #include <chrono>
 #include <vector>
 
-#include "components/uploader_component.h"
-#include "datastream/EventStream.hpp"
-#include "datastream/PolledStream.hpp"
-#include "dlf_logfile.hpp"
-#include "dlf_run.h"
-#include "dlf_types.h"
+#include "dlflib/components/dlf_component.h"
+#include "dlflib/components/uploader_component.h"
+#include "dlflib/datastream/event_stream.h"
+#include "dlflib/datastream/polled_stream.h"
+#include "dlflib/dlf_logfile.h"
+#include "dlflib/dlf_run.h"
+#include "dlflib/dlf_types.h"
 
 #define POLL(type_name)                                                      \
   CSCLogger& poll(type_name& value, String id, microseconds sample_interval, \
@@ -41,10 +42,6 @@
     return _watch(Encodable(value, #type_name), id, notes, mutex);           \
   }
 
-#define INDEX_FILE_PATH "/__INDEX"
-#define BLOCK_SIZE 512
-#define NUM_BLOCKS 10
-#define BLOCK_OVERHEAD 512
 #define MAX_RUNS 1
 
 // 0 is error, > 0 is valid handle
@@ -59,7 +56,7 @@ class CSCLogger : public DlfComponent {
   // Todo: Figure out how to do this with unique_ptrs
   dlf::datastream::streams_t data_streams;
 
-  FS& _fs;
+  fs::FS& _fs;
   String fs_dir;
 
   std::vector<DlfComponent*> components;
@@ -69,18 +66,14 @@ class CSCLogger : public DlfComponent {
 
   EventGroupHandle_t ev;
 
-  CSCLogger(FS& fs, String fs_dir = "/");
+  CSCLogger(fs::FS& fs, String fs_dir = "/");
 
   bool begin();
-
-  run_handle_t get_available_handle();
 
   run_handle_t start_run(Encodable meta,
                          microseconds tick_rate = milliseconds(100));
 
   void stop_run(run_handle_t h);
-
-  void flush(run_handle_t h);
 
   bool run_is_active(const char* uuid);
 
@@ -118,6 +111,9 @@ class CSCLogger : public DlfComponent {
   void waitForSyncCompletion();
 
   void prune();
+
+ private:
+  run_handle_t get_available_handle();
 };
 
 #undef POLL

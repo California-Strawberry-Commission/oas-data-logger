@@ -8,10 +8,10 @@
 #include <memory>
 #include <vector>
 
-#include "../dlf_cfg.h"
-#include "../dlf_encodable.h"
-#include "../dlf_types.h"
-#include "../dlf_util.h"
+#include "dlflib/dlf_cfg.h"
+#include "dlflib/dlf_encodable.h"
+#include "dlflib/dlf_types.h"
+#include "dlflib/utils/dlf_util.h"
 
 inline const char* stream_type_to_string(dlf_stream_type_e t) {
   switch (t) {

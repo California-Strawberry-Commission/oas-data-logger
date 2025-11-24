@@ -2,11 +2,11 @@
 
 #include <vector>
 
-#include "dlf_util.h"
+#include "dlflib/utils/dlf_util.h"
 
 class DlfComponent {
  public:
-  void setup(std::vector<DlfComponent *> *componentStore) {
+  void setup(std::vector<DlfComponent*>* componentStore) {
     componentStore_ = componentStore;
   }
 
@@ -16,12 +16,12 @@ class DlfComponent {
   virtual ~DlfComponent() = default;
 
   template <typename T>
-  void addComponent(T *component) {
+  void addComponent(T* component) {
     if (!componentStore_) {
       return;
     }
 
-    DlfComponent *dlfComponent = static_cast<DlfComponent *>(component);
+    DlfComponent* dlfComponent = static_cast<DlfComponent*>(component);
     dlfComponent->id_ = hash_type<T>();
     componentStore_->push_back(dlfComponent);
   }
@@ -32,11 +32,11 @@ class DlfComponent {
   }
 
   template <typename T>
-  T *getComponent() {
+  T* getComponent() {
     size_t h = hash_type<T>();
     for (auto component : *componentStore_) {
       if (component->id_ == h) {
-        return static_cast<T *>(component);
+        return static_cast<T*>(component);
       }
     }
 
@@ -44,6 +44,6 @@ class DlfComponent {
   }
 
  private:
-  std::vector<DlfComponent *> *componentStore_;
+  std::vector<DlfComponent*>* componentStore_;
   size_t id_;
 };

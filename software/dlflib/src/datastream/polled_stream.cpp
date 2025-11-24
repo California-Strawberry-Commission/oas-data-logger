@@ -1,6 +1,6 @@
-#include "PolledStream.hpp"
+#include "dlflib/datastream/polled_stream.h"
 
-#include "PolledStreamHandle.hpp"
+#include "dlflib/datastream/polled_stream_handle.h"
 
 using namespace dlf::datastream;
 

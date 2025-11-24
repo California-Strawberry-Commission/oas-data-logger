@@ -2,8 +2,8 @@
 
 #include <memory>
 
-#include "AbstractStream.hpp"
-#include "dlf_encodable.h"
+#include "dlflib/datastream/abstract_stream.h"
+#include "dlflib/dlf_encodable.h"
 
 using std::chrono::microseconds;
 

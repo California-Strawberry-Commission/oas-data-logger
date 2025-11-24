@@ -4,9 +4,7 @@
 #include <FS.h>
 #include <WiFi.h>
 
-#include <functional>
-
-#include "dlf_component.h"
+#include "dlflib/components/dlf_component.h"
 
 class UploaderComponent : public DlfComponent {
  public:

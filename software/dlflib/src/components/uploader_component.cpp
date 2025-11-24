@@ -1,10 +1,10 @@
-#include "uploader_component.h"
+#include "dlflib/components/uploader_component.h"
 
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
 
-#include "dlf_cfg.h"
-#include "dlf_logger.h"
+#include "dlflib/dlf_cfg.h"
+#include "dlflib/dlf_logger.h"
 
 namespace {
 

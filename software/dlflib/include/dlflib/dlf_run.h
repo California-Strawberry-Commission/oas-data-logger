@@ -3,16 +3,16 @@
 #include <Arduino.h>
 #include <FS.h>
 #include <stdint.h>
-#include <uuid.h>
 
 #include <chrono>
 #include <memory>
 #include <vector>
 
-#include "datastream/AbstractStream.hpp"
-#include "dlf_cfg.h"
-#include "dlf_logfile.hpp"
-#include "dlf_types.h"
+#include "dlflib/datastream/abstract_stream.h"
+#include "dlflib/dlf_cfg.h"
+#include "dlflib/dlf_logfile.h"
+#include "dlflib/dlf_types.h"
+#include "dlflib/utils/uuid.h"
 
 namespace dlf {
 using namespace std;
@@ -22,7 +22,7 @@ using namespace std;
 class Run {
  private:
   String _uuid;
-  FS &_fs;
+  FS& _fs;
   String _run_dir;
   dlf_file_state_e _status;
   SemaphoreHandle_t _sync;
@@ -33,12 +33,12 @@ class Run {
   String _lockfile_path;
 
  public:
-  Run(FS &fs, String fs_dir, streams_t all_streams,
-      chrono::microseconds tick_interval, Encodable &meta);
+  Run(FS& fs, String fs_dir, streams_t all_streams,
+      chrono::microseconds tick_interval, Encodable& meta);
 
   void create_lockfile();
 
-  void create_metafile(Encodable &meta);
+  void create_metafile(Encodable& meta);
 
   void create_logfile(dlf_stream_type_e t);
 
@@ -47,13 +47,11 @@ class Run {
    * @brief
    * @param arg
    */
-  static void task_sampler(void *arg);
+  static void task_sampler(void* arg);
 
   void close();
 
-  void flush(); 
-
-  const char *uuid();
+  const char* uuid();
 };
 
 }  // namespace dlf

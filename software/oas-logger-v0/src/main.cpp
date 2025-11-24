@@ -21,7 +21,7 @@
 #include <TinyGPS++.h>
 #include <WiFiManager.h>
 #include <Wire.h>
-#include <dlf_logger.h>
+#include <dlflib/dlf_logger.h>
 
 // Various flags for testing purposes
 const bool USB_POWER_OVERRIDE{false};
