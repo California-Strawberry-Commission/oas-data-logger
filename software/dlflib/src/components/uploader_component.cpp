@@ -333,7 +333,8 @@ void UploaderComponent::syncTask(void* arg) {
         continue;
       }
 
-      String runDirPath = resolvePath({uploaderComponent->dir_, runDir.name()});
+      String runDirPath =
+          dlf::util::resolvePath({uploaderComponent->dir_, runDir.name()});
 
       // Skip syncing in-progress runs. We check the presence of the
       // lock file, which indicates that the run is incomplete.
@@ -382,7 +383,7 @@ void UploaderComponent::syncTask(void* arg) {
           runDir.rewindDirectory();
           while (file = runDir.openNextFile()) {
             uploaderComponent->fs_.remove(
-                resolvePath({runDirPath, file.name()}));
+                dlf::util::resolvePath({runDirPath, file.name()}));
           }
           uploaderComponent->fs_.rmdir(runDirPath);
           Serial.printf(
@@ -391,7 +392,7 @@ void UploaderComponent::syncTask(void* arg) {
         } else if (uploaderComponent->options_.markAfterUpload) {
           // Add upload marker
           String markerFilePath =
-              resolvePath({runDirPath, UPLOAD_MARKER_FILE_NAME});
+              dlf::util::resolvePath({runDirPath, UPLOAD_MARKER_FILE_NAME});
           fs::File f = uploaderComponent->fs_.open(markerFilePath, "w", true);
           f.write(0);
           f.close();

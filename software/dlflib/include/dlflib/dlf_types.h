@@ -5,7 +5,7 @@
 
 #include <vector>
 
-#include "dlflib/utils/dlf_util.h"
+#include "dlflib/util/util.h"
 
 #define HEADER_VERSION 0
 

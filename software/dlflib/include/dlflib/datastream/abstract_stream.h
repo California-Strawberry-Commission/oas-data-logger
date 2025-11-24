@@ -11,7 +11,7 @@
 #include "dlflib/dlf_cfg.h"
 #include "dlflib/dlf_encodable.h"
 #include "dlflib/dlf_types.h"
-#include "dlflib/utils/dlf_util.h"
+#include "dlflib/util/util.h"
 
 namespace dlf::datastream {
 

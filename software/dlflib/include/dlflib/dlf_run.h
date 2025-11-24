@@ -12,7 +12,6 @@
 #include "dlflib/dlf_cfg.h"
 #include "dlflib/dlf_logfile.h"
 #include "dlflib/dlf_types.h"
-#include "dlflib/utils/uuid.h"
 
 namespace dlf {
 

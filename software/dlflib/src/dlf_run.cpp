@@ -2,7 +2,8 @@
 
 #include <time.h>
 
-#include "dlflib/utils/dlf_util.h"
+#include "dlflib/util/util.h"
+#include "dlflib/util/uuid.h"
 
 namespace dlf {
 
@@ -11,9 +12,9 @@ Run::Run(fs::FS& fs, String fs_dir, dlf::datastream::streams_t all_streams,
     : _fs(fs), _streams(all_streams), _tick_interval(tick_interval) {
   assert(tick_interval.count() > 0);
 
-  _uuid = StringUUIDGen();
-  _run_dir = resolvePath({fs_dir, _uuid});
-  _lockfile_path = resolvePath({_run_dir, LOCKFILE_NAME});
+  _uuid = dlf::util::stringUuidGen();
+  _run_dir = dlf::util::resolvePath({fs_dir, _uuid});
+  _lockfile_path = dlf::util::resolvePath({_run_dir, LOCKFILE_NAME});
   _sync = xSemaphoreCreateCounting(1, 0);
 
   Serial.printf("Starting run %s\n", _uuid.c_str());
@@ -56,7 +57,8 @@ void Run::create_metafile(Encodable& meta) {
       "\tmeta_structure: %s (hash: %x)\n",
       h.epoch_time_s, h.tick_base_us, h.meta_structure, meta.type_hash);
 #endif
-  fs::File f = _fs.open(resolvePath({_run_dir, "meta.dlf"}), "w", true);
+  fs::File f =
+      _fs.open(dlf::util::resolvePath({_run_dir, "meta.dlf"}), "w", true);
 
   f.write(reinterpret_cast<uint8_t*>(&h.magic), sizeof(h.magic));
   f.write(reinterpret_cast<uint8_t*>(&h.epoch_time_s), sizeof(h.epoch_time_s));

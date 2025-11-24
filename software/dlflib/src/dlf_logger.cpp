@@ -129,7 +129,7 @@ void CSCLogger::prune() {
     }
 
     // Search for lockfiles. Delete run if found (was dirty when closed).
-    String run_dir_path = resolvePath({fs_dir, run_dir.name()});
+    String run_dir_path = dlf::util::resolvePath({fs_dir, run_dir.name()});
     fs::File run_file;
     while (run_file = run_dir.openNextFile()) {
       if (!strcmp(run_file.name(), LOCKFILE_NAME)) {
@@ -137,7 +137,7 @@ void CSCLogger::prune() {
 
         run_dir.rewindDirectory();
         while (run_file = run_dir.openNextFile()) {
-          _fs.remove(resolvePath({run_dir_path, run_file.name()}));
+          _fs.remove(dlf::util::resolvePath({run_dir_path, run_file.name()}));
         }
 
         _fs.rmdir(run_dir_path);

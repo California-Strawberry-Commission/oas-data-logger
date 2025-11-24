@@ -3,8 +3,8 @@
 #include "dlflib/datastream/event_stream.h"
 #include "dlflib/datastream/polled_stream.h"
 #include "dlflib/dlf_cfg.h"
-#include "dlflib/utils/dlf_util.h"
-#include "dlflib/utils/uuid.h"
+#include "dlflib/util/util.h"
+#include "dlflib/util/uuid.h"
 
 namespace dlf {
 
