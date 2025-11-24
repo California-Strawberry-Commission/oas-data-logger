@@ -90,7 +90,7 @@ CRGB leds[NUM_LEDS];
 SFE_UBLOX_GNSS_SERIAL myGNSS;  // u-blox GNSS object
 ESP32Time rtc;
 WiFiManager wifiManager;
-CSCLogger logger{SD_MMC};
+dlf::CSCLogger logger{SD_MMC};
 TaskHandle_t xGPS_Handle = NULL;
 
 // State Machine Variables
@@ -98,7 +98,7 @@ SystemState currentState = SystemState::INIT;
 ErrorType currentError = ErrorType::NONE;
 bool offloadMode = false;
 bool gpsEnabled = false;
-run_handle_t runHandle{0};
+dlf::run_handle_t runHandle{0};
 
 // GPS Time tracking (separate from position data)
 bool gpsTimeValid = false;

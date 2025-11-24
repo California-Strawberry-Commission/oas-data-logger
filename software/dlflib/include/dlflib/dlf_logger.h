@@ -44,8 +44,10 @@
 
 #define MAX_RUNS 1
 
+namespace dlf {
+
 // 0 is error, > 0 is valid handle
-typedef int run_handle_t;
+using run_handle_t = int;
 
 class CSCLogger : public dlf::components::DlfComponent {
   std::unique_ptr<dlf::Run> runs[MAX_RUNS];
@@ -113,6 +115,8 @@ class CSCLogger : public dlf::components::DlfComponent {
  private:
   run_handle_t get_available_handle();
 };
+
+}  // namespace dlf
 
 #undef POLL
 #undef WATCH

@@ -88,9 +88,9 @@ TinyGPSPlus gps;
 ESP32Time rtc;
 WiFiManager wifiManager;
 unsigned long lastWifiReconnectAttemptMillis{0};
-CSCLogger logger{SD};
+dlf::CSCLogger logger{SD};
 unsigned long lastLoggerStartRunMillis{0};
-run_handle_t runHandle{0};
+dlf::run_handle_t runHandle{0};
 bool offloadMode{false};
 bool gpsEnabled{false};
 

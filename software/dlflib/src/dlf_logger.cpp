@@ -1,6 +1,9 @@
 #include "dlflib/dlf_logger.h"
 
 #include "dlflib/components/uploader_component.h"
+#include "dlflib/dlf_cfg.h"
+
+namespace dlf {
 
 CSCLogger::CSCLogger(fs::FS& fs, String fs_dir) : _fs(fs), fs_dir(fs_dir) {
   ev = xEventGroupCreate();
@@ -147,3 +150,5 @@ void CSCLogger::prune() {
   }
   root.close();
 }
+
+}  // namespace dlf

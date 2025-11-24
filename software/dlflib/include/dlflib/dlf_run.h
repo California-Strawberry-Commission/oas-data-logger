@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "dlflib/datastream/abstract_stream.h"
-#include "dlflib/dlf_cfg.h"
 #include "dlflib/dlf_logfile.h"
 #include "dlflib/dlf_types.h"
 

@@ -2,6 +2,7 @@
 
 #include <time.h>
 
+#include "dlflib/dlf_cfg.h"
 #include "dlflib/util/util.h"
 #include "dlflib/util/uuid.h"
 
