@@ -80,19 +80,20 @@ CSCLogger& CSCLogger::_poll(Encodable value, String id,
   return *this;
 }
 
-CSCLogger& CSCLogger::syncTo(const String& endpoint, const String& deviceUid,
-                             const UploaderComponent::Options& options) {
-  if (!hasComponent<UploaderComponent>()) {
-    addComponent(
-        new UploaderComponent(_fs, fs_dir, endpoint, deviceUid, options));
+CSCLogger& CSCLogger::syncTo(
+    const String& endpoint, const String& deviceUid,
+    const dlf::components::UploaderComponent::Options& options) {
+  if (!hasComponent<dlf::components::UploaderComponent>()) {
+    addComponent(new dlf::components::UploaderComponent(_fs, fs_dir, endpoint,
+                                                        deviceUid, options));
   }
 
   return *this;
 }
 
 void CSCLogger::waitForSyncCompletion() {
-  if (hasComponent<UploaderComponent>()) {
-    getComponent<UploaderComponent>()->waitForSyncCompletion();
+  if (hasComponent<dlf::components::UploaderComponent>()) {
+    getComponent<dlf::components::UploaderComponent>()->waitForSyncCompletion();
   }
 }
 
@@ -101,12 +102,12 @@ bool CSCLogger::begin() {
   prune();
 
   // Set subcomponent stores to enable component communication
-  for (DlfComponent*& comp : components) {
+  for (dlf::components::DlfComponent*& comp : components) {
     comp->setup(&components);
   }
 
   // begin subcomponents
-  for (DlfComponent*& comp : components) {
+  for (dlf::components::DlfComponent*& comp : components) {
     // Break recursion
     if (comp == this) {
       continue;

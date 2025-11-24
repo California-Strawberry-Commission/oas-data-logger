@@ -5,10 +5,6 @@
 
 #include "dlflib/datastream/abstract_stream.h"
 
-typedef std::unique_ptr<dlf::datastream::AbstractStreamHandle> stream_handle_t;
-typedef std::vector<std::unique_ptr<dlf::datastream::AbstractStreamHandle>>
-    stream_handles_t;
-
 namespace dlf::datastream {
 
 /**
@@ -59,5 +55,9 @@ class AbstractStreamHandle {
     }
   }
 };
+
+using stream_handle_t = std::unique_ptr<dlf::datastream::AbstractStreamHandle>;
+using stream_handles_t =
+    std::vector<std::unique_ptr<dlf::datastream::AbstractStreamHandle>>;
 
 }  // namespace dlf::datastream

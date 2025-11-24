@@ -758,7 +758,7 @@ void initializeLogger() {
   POLL(logger, gpsData.lng, gpsDataLogInterval, gpsDataMutex);
   POLL(logger, gpsData.alt, gpsDataLogInterval, gpsDataMutex);
 
-  UploaderComponent::Options options;
+  dlf::components::UploaderComponent::Options options;
   options.markAfterUpload = LOGGER_MARK_AFTER_UPLOAD;
   options.deleteAfterUpload = LOGGER_DELETE_AFTER_UPLOAD;
   logger.syncTo(UPLOAD_ENDPOINT, getDeviceUid(), options).begin();

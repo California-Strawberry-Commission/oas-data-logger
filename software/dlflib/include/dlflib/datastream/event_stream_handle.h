@@ -4,6 +4,7 @@
 #include "dlflib/datastream/event_stream.h"
 
 namespace dlf::datastream {
+
 class EventStreamHandle : public AbstractStreamHandle {
   size_t _hash = 0;
 
@@ -18,4 +19,5 @@ class EventStreamHandle : public AbstractStreamHandle {
 
   size_t encode_into(StreamBufferHandle_t buf, dlf_tick_t tick);
 };
+
 }  // namespace dlf::datastream

@@ -2,7 +2,7 @@
 
 #include "dlflib/datastream/event_stream_handle.h"
 
-using namespace dlf::datastream;
+namespace dlf::datastream {
 
 EventStream::EventStream(Encodable& dat, String id, const char* notes,
                          SemaphoreHandle_t mutex)
@@ -15,3 +15,5 @@ stream_handle_t EventStream::handle(microseconds tick_interval,
 }
 
 dlf_stream_type_e EventStream::type() { return EVENT; }
+
+}  // namespace dlf::datastream

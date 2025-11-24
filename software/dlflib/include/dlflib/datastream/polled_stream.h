@@ -24,4 +24,5 @@ class PolledStream : public AbstractStream {
 
   dlf_stream_type_e type();
 };
+
 }  // namespace dlf::datastream

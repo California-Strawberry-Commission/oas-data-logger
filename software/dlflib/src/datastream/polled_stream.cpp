@@ -2,7 +2,7 @@
 
 #include "dlflib/datastream/polled_stream_handle.h"
 
-using namespace dlf::datastream;
+namespace dlf::datastream {
 
 PolledStream::PolledStream(Encodable& src, String id,
                            microseconds sample_interval, microseconds phase,
@@ -26,3 +26,5 @@ stream_handle_t PolledStream::handle(microseconds tick_interval,
 }
 
 dlf_stream_type_e PolledStream::type() { return POLLED; }
+
+}  // namespace dlf::datastream

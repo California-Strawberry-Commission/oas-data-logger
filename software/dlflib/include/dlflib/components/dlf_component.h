@@ -4,6 +4,8 @@
 
 #include "dlflib/utils/dlf_util.h"
 
+namespace dlf::components {
+
 class DlfComponent {
  public:
   void setup(std::vector<DlfComponent*>* componentStore) {
@@ -47,3 +49,5 @@ class DlfComponent {
   std::vector<DlfComponent*>* componentStore_;
   size_t id_;
 };
+
+}  // namespace dlf::components

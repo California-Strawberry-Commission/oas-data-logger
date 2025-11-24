@@ -6,18 +6,18 @@
 
 #include "dlflib/components/dlf_component.h"
 
+namespace dlf::components {
+
 class UploaderComponent : public DlfComponent {
  public:
-  static void syncTask(void* arg);
-
   struct Options {
     bool deleteAfterUpload = false;
     bool markAfterUpload = true;
   };
-  UploaderComponent(FS& fs, const String& fsDir, const String& endpoint,
+  UploaderComponent(fs::FS& fs, const String& fsDir, const String& endpoint,
                     const String& deviceUid, const Options& options);
   bool begin();
-  bool uploadRun(File runDir, const String& runUuid, bool isActive = false);
+  bool uploadRun(fs::File runDir, const String& runUuid, bool isActive = false);
   void waitForSyncCompletion();
 
  private:
@@ -27,6 +27,8 @@ class UploaderComponent : public DlfComponent {
   enum SyncEvent {
     SYNC_COMPLETE = 1,
   };
+
+  static void syncTask(void* arg);
 
   // https://github.com/espressif/arduino-esp32/blob/master/libraries/WiFi/examples/WiFiClientEvents/WiFiClientEvents.ino
   void onWifiDisconnected(arduino_event_id_t event, arduino_event_info_t info);
@@ -42,3 +44,5 @@ class UploaderComponent : public DlfComponent {
   // Used to notify when sync is in progress/complete
   EventGroupHandle_t syncEvent_;
 };
+
+}  // namespace dlf::components

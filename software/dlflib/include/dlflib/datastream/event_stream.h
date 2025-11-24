@@ -5,8 +5,6 @@
 #include "dlflib/datastream/abstract_stream.h"
 #include "dlflib/dlf_encodable.h"
 
-using std::chrono::microseconds;
-
 namespace dlf::datastream {
 
 /**
@@ -17,8 +15,10 @@ class EventStream : public AbstractStream {
  public:
   EventStream(Encodable& dat, String id, const char* notes,
               SemaphoreHandle_t mutex = NULL);
-  stream_handle_t handle(microseconds tick_interval, dlf_stream_idx_t idx);
+  stream_handle_t handle(std::chrono::microseconds tick_interval,
+                         dlf_stream_idx_t idx);
 
   dlf_stream_type_e type();
 };
+
 }  // namespace dlf::datastream

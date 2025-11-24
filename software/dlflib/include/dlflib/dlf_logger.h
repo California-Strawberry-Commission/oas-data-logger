@@ -47,7 +47,7 @@
 // 0 is error, > 0 is valid handle
 typedef int run_handle_t;
 
-class CSCLogger : public DlfComponent {
+class CSCLogger : public dlf::components::DlfComponent {
   typedef std::chrono::microseconds microseconds;
   typedef std::chrono::milliseconds milliseconds;
 
@@ -59,7 +59,7 @@ class CSCLogger : public DlfComponent {
   fs::FS& _fs;
   String fs_dir;
 
-  std::vector<DlfComponent*> components;
+  std::vector<dlf::components::DlfComponent*> components;
 
  public:
   enum LoggerEvents : uint32_t { NEW_RUN = 1 };
@@ -107,7 +107,7 @@ class CSCLogger : public DlfComponent {
   POLL(float)
 
   CSCLogger& syncTo(const String& endpoint, const String& deviceUid,
-                    const UploaderComponent::Options& options);
+                    const dlf::components::UploaderComponent::Options& options);
   void waitForSyncCompletion();
 
   void prune();
