@@ -79,7 +79,7 @@ class LogFile {
    */
   StreamBufferHandle_t stream_;
   dlf_file_state_e state_;
-  SemaphoreHandle_t syncMutex_;
+  SemaphoreHandle_t syncSemaphore_;
   SemaphoreHandle_t
       fileMutex_;  // Protects file operations from race conditions
   dlf_tick_t lastTick_;

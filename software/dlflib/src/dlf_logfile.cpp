@@ -147,7 +147,7 @@ void LogFile::taskFlusher(void* arg) {
   }
 
   self->state_ = FLUSHED;
-  xSemaphoreGive(self->syncMutex_);
+  xSemaphoreGive(self->syncSemaphore_);
 
   Serial.printf("Flusher exited cleanly w/ HWM %u\n",
                 uxTaskGetStackHighWaterMark(NULL));
@@ -229,8 +229,8 @@ LogFile::LogFile(dlf::datastream::stream_handles_t handles,
     return;
   }
 
-  syncMutex_ = xSemaphoreCreateCounting(1, 0);
-  if (syncMutex_ == NULL) {
+  syncSemaphore_ = xSemaphoreCreateCounting(1, 0);
+  if (syncSemaphore_ == NULL) {
     state_ = SYNC_CREATE_ERROR;
     return;
   }
@@ -336,12 +336,13 @@ void LogFile::close() {
   }
 
   state_ = FLUSHING;
-  xSemaphoreTake(syncMutex_, portMAX_DELAY);  // wait for flusher to finish up.
+  xSemaphoreTake(syncSemaphore_,
+                 portMAX_DELAY);  // wait for flusher to finish up.
   state_ = CLOSED;
 
   // Cleanup dynamic allocations
   vStreamBufferDelete(stream_);
-  vSemaphoreDelete(syncMutex_);
+  vSemaphoreDelete(syncSemaphore_);
   vSemaphoreDelete(fileMutex_);
 
   // Finally, update and close file
