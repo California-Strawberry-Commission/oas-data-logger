@@ -493,7 +493,7 @@ void handleRunningState() {
   //
   //   if (runHandle) {
   //     // Get the current run directory name
-  //     // The run name format appears to be based on when start_run was called
+  //     // The run name format appears to be based on when startRun was called
   //     // We need to access the logger's current run directory
   //
   //     Serial.println("[Running State] Attempting to upload current run while
@@ -768,11 +768,11 @@ void initializeLogger() {
 
 void startLoggerRun() {
   if (runHandle) {
-    logger.stop_run(runHandle);
+    logger.stopRun(runHandle);
   }
 
   double m = 0;
-  runHandle = logger.start_run(Encodable(m, "double"));
+  runHandle = logger.startRun(Encodable(m, "double"));
   lastLoggerStartRunMillis = millis();
 }
 
@@ -802,7 +802,7 @@ void sleepMonitorTask(void* args) {
 
         // Stop current run before transitioning to offload
         if (runHandle) {
-          logger.stop_run(runHandle);
+          logger.stopRun(runHandle);
           runHandle = 0;
         }
 
@@ -827,7 +827,7 @@ void sleepMonitorTask(void* args) {
 
         // Stop current run before transitioning to offload
         if (runHandle) {
-          logger.stop_run(runHandle);
+          logger.stopRun(runHandle);
           runHandle = 0;
         }
 

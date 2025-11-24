@@ -410,8 +410,7 @@ void UploaderComponent::syncTask(void* arg) {
 
     xEventGroupSetBits(uploaderComponent->syncEvent_, SYNC_COMPLETE);
 
-    xEventGroupWaitBits(logger->ev, CSCLogger::NEW_RUN, pdTRUE, pdTRUE,
-                        portMAX_DELAY);
+    logger->waitForNewRun();
   }
 }
 

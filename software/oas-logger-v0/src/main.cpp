@@ -285,10 +285,10 @@ void initializeLogger() {
 void startLoggerRun() {
   // Stop existing run (if any) and start a new run
   if (runHandle) {
-    logger.stop_run(runHandle);
+    logger.stopRun(runHandle);
   }
   double m = 0;
-  runHandle = logger.start_run(Encodable(m, "double"));
+  runHandle = logger.startRun(Encodable(m, "double"));
   lastLoggerStartRunMillis = millis();
 }
 
@@ -416,7 +416,7 @@ void sleepMonitorTask(void* args) {
 
   // If there is an active run, stop it and attempt to upload its data
   if (runHandle) {
-    logger.stop_run(runHandle);
+    logger.stopRun(runHandle);
     runHandle = 0;
     Serial.println("[Sleep Monitor] Stopped active run");
     // Just in case for logger sync/upload to start
