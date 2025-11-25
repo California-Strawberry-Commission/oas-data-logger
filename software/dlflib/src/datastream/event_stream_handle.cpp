@@ -7,7 +7,7 @@ namespace dlf::datastream {
 EventStreamHandle::EventStreamHandle(EventStream* stream, dlf_stream_idx_t idx)
     : AbstractStreamHandle(stream, idx) {}
 
-inline size_t EventStreamHandle::currentHash() {
+size_t EventStreamHandle::currentHash() {
   return fnv_32_buf(stream->dataSource(), stream->dataSize(), FNV1_32_INIT);
 }
 

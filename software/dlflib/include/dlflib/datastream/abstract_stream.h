@@ -46,19 +46,19 @@ class AbstractStream {
 
   virtual dlf_stream_type_e type() = 0;
 
-  inline size_t dataSize() { return src_.dataSize; }
+  size_t dataSize() { return src_.dataSize; }
 
-  inline const uint8_t* dataSource() { return src_.data; }
+  const uint8_t* dataSource() { return src_.data; }
 
-  inline const char* typeStructure() { return src_.typeStructure; }
+  const char* typeStructure() { return src_.typeStructure; }
 
-  inline size_t typeHash() { return src_.typeHash; }
+  size_t typeHash() { return src_.typeHash; }
 
-  inline const char* notes() { return notes_ != nullptr ? notes_ : "N/A"; }
+  const char* notes() { return notes_ != nullptr ? notes_ : "N/A"; }
 
-  inline const char* id() { return id_.c_str(); }
+  const char* id() { return id_.c_str(); }
 
-  inline SemaphoreHandle_t mutex() const { return mutex_; }
+  SemaphoreHandle_t mutex() const { return mutex_; }
 
  protected:
   AbstractStream(Encodable& dat, String id, const char* notes,

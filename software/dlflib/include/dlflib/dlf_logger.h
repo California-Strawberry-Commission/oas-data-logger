@@ -15,25 +15,25 @@
 #include "dlflib/dlf_run.h"
 #include "dlflib/dlf_types.h"
 
-#define POLL(type_name)                                                       \
-  CSCLogger& poll(                                                            \
-      type_name& value, String id, std::chrono::microseconds sampleInterval,  \
-      std::chrono::microseconds phase = std::chrono::microseconds::zero(),    \
-      const char* notes = nullptr, SemaphoreHandle_t mutex = NULL) {          \
-    return pollInternal(Encodable(value, #type_name), id, sampleInterval,     \
-                        phase, notes, mutex);                                 \
-  }                                                                           \
-  inline CSCLogger& poll(type_name& value, String id,                         \
-                         std::chrono::microseconds sampleInterval,            \
-                         const char* notes, SemaphoreHandle_t mutex = NULL) { \
-    return pollInternal(Encodable(value, #type_name), id, sampleInterval,     \
-                        std::chrono::microseconds::zero(), notes, mutex);     \
-  }                                                                           \
-  inline CSCLogger& poll(type_name& value, String id,                         \
-                         std::chrono::microseconds sampleInterval,            \
-                         SemaphoreHandle_t mutex) {                           \
-    return pollInternal(Encodable(value, #type_name), id, sampleInterval,     \
-                        std::chrono::microseconds::zero(), nullptr, mutex);   \
+#define POLL(type_name)                                                        \
+  CSCLogger& poll(                                                             \
+      type_name& value, String id, std::chrono::microseconds sampleInterval,   \
+      std::chrono::microseconds phase = std::chrono::microseconds::zero(),     \
+      const char* notes = nullptr, SemaphoreHandle_t mutex = NULL) {           \
+    return pollInternal(Encodable(value, #type_name), id, sampleInterval,      \
+                        phase, notes, mutex);                                  \
+  }                                                                            \
+  CSCLogger& poll(type_name& value, String id,                                 \
+                  std::chrono::microseconds sampleInterval, const char* notes, \
+                  SemaphoreHandle_t mutex = NULL) {                            \
+    return pollInternal(Encodable(value, #type_name), id, sampleInterval,      \
+                        std::chrono::microseconds::zero(), notes, mutex);      \
+  }                                                                            \
+  CSCLogger& poll(type_name& value, String id,                                 \
+                  std::chrono::microseconds sampleInterval,                    \
+                  SemaphoreHandle_t mutex) {                                   \
+    return pollInternal(Encodable(value, #type_name), id, sampleInterval,      \
+                        std::chrono::microseconds::zero(), nullptr, mutex);    \
   }
 
 #define WATCH(type_name)                                                     \
