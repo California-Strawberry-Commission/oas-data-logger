@@ -37,7 +37,8 @@ run_handle_t CSCLogger::startRun(Encodable meta,
     return h;
   }
 
-  Serial.printf("Starting logging with a cycle time-base of %dus\n", tickRate);
+  Serial.printf("[CSCLogger] Starting logging with a cycle time-base of %dus\n",
+                tickRate);
 
   // Initialize new run
   dlf::Run* run = new dlf::Run(fs_, fsDir_, streams_, tickRate, meta);
@@ -100,7 +101,7 @@ void CSCLogger::waitForSyncCompletion() {
 }
 
 bool CSCLogger::begin() {
-  Serial.println("CSC Logger init");
+  Serial.println("[CSCLogger] Begin");
   prune();
 
   // Set subcomponent stores to enable component communication
@@ -137,7 +138,7 @@ void CSCLogger::prune() {
     fs::File run_file;
     while (run_file = run_dir.openNextFile()) {
       if (!strcmp(run_file.name(), LOCKFILE_NAME)) {
-        Serial.printf("Pruning %s\n", run_dir_path.c_str());
+        Serial.printf("[CSCLogger] Pruning %s\n", run_dir_path.c_str());
 
         run_dir.rewindDirectory();
         while (run_file = run_dir.openNextFile()) {

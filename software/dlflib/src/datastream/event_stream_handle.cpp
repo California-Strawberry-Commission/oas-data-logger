@@ -11,28 +11,21 @@ size_t EventStreamHandle::currentHash() {
   return fnv_32_buf(stream->dataSource(), stream->dataSize(), FNV1_32_INIT);
 }
 
-// This called every tick. currentHash uses FNV to try to be efficient, but
-// if perf is an issue look for alternatives.
+// This called every tick to determine whether we need to write new data.
+// currentHash uses FNV to try to be efficient, but if perf is an issue look for
+// alternatives.
 bool EventStreamHandle::available(dlf_tick_t tick) {
-  bool a = hash_ != currentHash();
-#if defined(DEBUG) && defined(SILLY)
-  DEBUG.printf(
-      "\tCheck Event Data\n"
-      "\t\tid: %s\n"
-      "\t\tAvailable: %d\n",
-      stream->id(), a);
-#endif
-  return a;
+  return hash_ != currentHash();
 }
 
 size_t EventStreamHandle::encodeHeaderInto(StreamBufferHandle_t buf) {
 #ifdef DEBUG
-  DEBUG.printf(
-      "\tEncode Event Header\n"
-      "\t\tidx: %d\n"
-      "\t\ttype_structure: %s (hash: %x)\n"
-      "\t\tid: %s\n"
-      "\t\tnotes: %s\n",
+  Serial.printf(
+      "[EventStreamHandle] Encoding event header:\n"
+      "\tidx: %d\n"
+      "\ttype_structure: %s (hash: %x)\n"
+      "\tid: %s\n"
+      "\tnotes: %s\n",
       idx, stream->typeStructure(), stream->typeHash(), stream->id(),
       stream->notes());
 #endif
@@ -46,11 +39,12 @@ size_t EventStreamHandle::encodeHeaderInto(StreamBufferHandle_t buf) {
 size_t EventStreamHandle::encodeInto(StreamBufferHandle_t buf,
                                      dlf_tick_t tick) {
 #ifdef DEBUG
-  DEBUG.printf(
-      "\tEncode Event Data\n"
-      "\t\tid: %s\n",
+  Serial.printf(
+      "[EventStreamHandle] Encoding event data:\n"
+      "\tid: %s\n",
       stream->id());
 #endif
+
   size_t written = 0;
 
   if (stream->mutex()) {

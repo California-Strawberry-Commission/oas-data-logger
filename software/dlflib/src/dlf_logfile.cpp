@@ -16,7 +16,8 @@ namespace dlf {
 void LogFile::taskFlusher(void* arg) {
   auto self = static_cast<LogFile*>(arg);
 
-  Serial.printf("[FLUSHER] Task started for %s\n", self->filename_.c_str());
+  Serial.printf("[LogFile][taskFlusher] Task started for %s\n",
+                self->filename_.c_str());
 
   uint8_t buf[DLF_SD_BLOCK_WRITE_SIZE];
   size_t totalBytesWritten = 0;
@@ -30,8 +31,11 @@ void LogFile::taskFlusher(void* arg) {
                                            pdMS_TO_TICKS(1000));
 
     if (received > 0) {
-      Serial.printf("[FLUSHER] %s: Received %zu bytes from buffer\n",
-                    self->filename_.c_str(), received);
+#ifdef DEBUG
+      Serial.printf(
+          "[LogFile][taskFlusher] %s: Received %zu bytes from buffer\n",
+          self->filename_.c_str(), received);
+#endif
 
       // Lock file mutex before writing
       if (xSemaphoreTake(self->fileMutex_, portMAX_DELAY) == pdTRUE) {
@@ -48,8 +52,9 @@ void LogFile::taskFlusher(void* arg) {
         if ((bytesSinceLastSync >= SYNC_THRESHOLD_BYTES ||
              (millis() - lastSyncTime) >= SYNC_INTERVAL_MS) &&
             bytesSinceLastSync > 0) {
-          Serial.printf("[FLUSHER] %s: Forcing SD sync (close/reopen)...\n",
-                        self->filename_.c_str());
+          Serial.printf(
+              "[LogFile][taskFlusher] %s: Forcing SD sync (close/reopen)...\n",
+              self->filename_.c_str());
 
           String fname = self->filename_;
           self->file_.flush();
@@ -59,10 +64,12 @@ void LogFile::taskFlusher(void* arg) {
           self->file_ = self->fs_.open(fname, "a");
           if (!self->file_) {
             Serial.printf(
-                "[FLUSHER] ERROR: Could not reopen file after sync!\n");
+                "[LogFile][taskFlusher] ERROR: Could not reopen file after "
+                "sync!\n");
           } else {
-            Serial.printf("[FLUSHER] %s: SD sync complete, file reopened\n",
-                          self->filename_.c_str());
+            Serial.printf(
+                "[LogFile][taskFlusher] %s: SD sync complete, file reopened\n",
+                self->filename_.c_str());
           }
 
           lastSyncTime = millis();
@@ -72,28 +79,34 @@ void LogFile::taskFlusher(void* arg) {
           self->file_.flush();
         }
 
-        Serial.printf("[FLUSHER] %s: Wrote %zu bytes, total: %zu\n",
-                      self->filename_.c_str(), received, totalBytesWritten);
+#ifdef DEBUG
+        Serial.printf(
+            "[LogFile][taskFlusher] %s: Wrote %zu bytes, total: %zu\n",
+            self->filename_.c_str(), received, totalBytesWritten);
+#endif
 
         xSemaphoreGive(self->fileMutex_);
       } else {
-        Serial.printf("[FLUSHER] %s: FAILED to acquire mutex!\n",
+        Serial.printf("[LogFile][taskFlusher] %s: FAILED to acquire mutex!\n",
                       self->filename_.c_str());
       }
     }
   }
 
-  /* BEGIN EXIT - NO LONGER IN LOGGING STATE */
+  Serial.printf(
+      "[LogFile][taskFlusher] No longer in LOGGING state. Current state: %x\n",
+      self->state_);
 
-  // If errored, exit immediately
+  // If no need to flush, exit immediately
   if (self->state_ != FLUSHING) {
-    Serial.printf("FLUSHER ERROR WITH %x\n", self->state_);
+    Serial.println(
+        "[LogFile][taskFlusher] No need to flush. Terminating task.");
 
     vTaskDelete(NULL);
     return;
   }
 
-  Serial.println("Flushing remaining bytes...");
+  Serial.println("[LogFile][taskFlusher] Flushing remaining bytes...");
   // Flush remaining bytes
   while (xStreamBufferBytesAvailable(self->stream_) > 0 &&
          self->state_ == FLUSHING) {
@@ -114,7 +127,7 @@ void LogFile::taskFlusher(void* arg) {
   // SD card This must happen BEFORE we signal completion so closeFile doesn't
   // run yet
   if (xSemaphoreTake(self->fileMutex_, portMAX_DELAY) == pdTRUE) {
-    Serial.printf("[FLUSHER] Performing final SD sync...\n");
+    Serial.printf("[LogFile][taskFlusher] Performing final SD sync...\n");
 
     String fname = self->filename_;
     self->file_.flush();
@@ -127,20 +140,22 @@ void LogFile::taskFlusher(void* arg) {
       self->file_.seek(0, SeekEnd);
       size_t actualFileSize = self->file_.position();
       Serial.printf(
-          "[FLUSHER] Final SD sync complete. Actual file size: %zu bytes\n",
+          "[LogFile][taskFlusher] Final SD sync complete. Actual file size: "
+          "%zu bytes\n",
           actualFileSize);
 
       // Close it - closeFile will reopen for header update
       self->file_.close();
     } else {
       Serial.printf(
-          "[FLUSHER] ERROR: Could not reopen file for final sync "
+          "[LogFile][taskFlusher] ERROR: Could not reopen file for final sync "
           "verification!\n");
     }
 
     self->fileEndPosition_ = totalBytesWritten;
     Serial.printf(
-        "[FLUSHER] Final flush complete. Total bytes written: %zu, file end "
+        "[LogFile][taskFlusher] Final flush complete. Total bytes written: "
+        "%zu, file end "
         "position: %zu\n",
         totalBytesWritten, self->fileEndPosition_);
     xSemaphoreGive(self->fileMutex_);
@@ -149,7 +164,7 @@ void LogFile::taskFlusher(void* arg) {
   self->state_ = FLUSHED;
   xSemaphoreGive(self->syncSemaphore_);
 
-  Serial.printf("Flusher exited cleanly w/ HWM %u\n",
+  Serial.printf("[LogFile][taskFlusher] Flusher exited cleanly w/ HWM %u\n",
                 uxTaskGetStackHighWaterMark(NULL));
   vTaskDelete(NULL);
 }
@@ -166,8 +181,9 @@ void LogFile::writeHeader(dlf_stream_type_e streamType) {
 }
 
 void LogFile::closeFile() {
-  Serial.printf("[CLOSE_FILE] Closing file, tracked end position: %zu\n",
-                fileEndPosition_);
+  Serial.printf(
+      "[LogFile][closeFile] Closing file, tracked end position: %zu\n",
+      fileEndPosition_);
 
   // Get file name for debugging
   String fname = filename_;
@@ -176,14 +192,16 @@ void LogFile::closeFile() {
   file_.flush();
   file_.close();
 
-  Serial.printf("[CLOSE_FILE] File closed, checking actual size on SD...\n");
+  Serial.printf(
+      "[LogFile][closeFile] File closed, checking actual size on SD...\n");
 
   // Check file size on SD before header update
   fs::File checkFile = fs_.open(fname, "r");
   if (checkFile) {
     size_t sizeBeforeUpdate = checkFile.size();
     Serial.printf(
-        "[CLOSE_FILE] File size on SD BEFORE header update: %zu bytes\n",
+        "[LogFile][closeFile] File size on SD BEFORE header update: %zu "
+        "bytes\n",
         sizeBeforeUpdate);
     checkFile.close();
   }
@@ -192,7 +210,8 @@ void LogFile::closeFile() {
   file_ = fs_.open(fname, "r+");
   if (!file_) {
     Serial.printf(
-        "[CLOSE_FILE] ERROR: Could not reopen file for header update!\n");
+        "[LogFile][closeFile] ERROR: Could not reopen file for header "
+        "update!\n");
     return;
   }
 
@@ -207,12 +226,12 @@ void LogFile::closeFile() {
   if (checkFile) {
     size_t sizeAfterUpdate = checkFile.size();
     Serial.printf(
-        "[CLOSE_FILE] File size on SD AFTER header update: %zu bytes\n",
+        "[LogFile][closeFile] File size on SD AFTER header update: %zu bytes\n",
         sizeAfterUpdate);
     checkFile.close();
   }
 
-  Serial.printf("[CLOSE_FILE] Header update complete\n");
+  Serial.printf("[LogFile][closeFile] Header update complete\n");
 }
 
 LogFile::LogFile(dlf::datastream::stream_handles_t handles,
@@ -285,16 +304,19 @@ void LogFile::sample(dlf_tick_t tick) {
       h->encodeInto(stream_, tick);
       size_t afterBytes = xStreamBufferBytesAvailable(stream_);
 
-      // Diagnostic: Print when data is added to stream buffer
+#ifdef DEBUG
       if (afterBytes > beforeBytes && tick % 100 == 0) {
         Serial.printf(
-            "[SAMPLE] Tick %llu: Added %zu bytes to %s buffer (total: %zu)\n",
+            "[LogFile][sample] Tick %llu: Added %zu bytes to %s buffer (total: "
+            "%zu)\n",
             tick, afterBytes - beforeBytes, filename_.c_str(), afterBytes);
       }
+#endif
 
       if (xStreamBufferIsFull(stream_)) {
-        Serial.printf("[ERROR] QUEUE_FULL for %s at tick %llu\n",
-                      filename_.c_str(), tick);
+        Serial.printf(
+            "[LogFile][sample] Error: QUEUE_FULL for %s at tick %llu\n",
+            filename_.c_str(), tick);
         state_ = QUEUE_FULL;
       }
     }
@@ -347,7 +369,7 @@ void LogFile::close() {
 
   // Finally, update and close file
   closeFile();
-  Serial.println("Logfile closed cleanly");
+  Serial.println("[LogFile] Logfile closed cleanly");
 }
 
 }  // namespace dlf
