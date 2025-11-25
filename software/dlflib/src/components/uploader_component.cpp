@@ -336,13 +336,11 @@ void UploaderComponent::syncTask(void* arg) {
       String runDirPath =
           dlf::util::resolvePath({uploaderComponent->dir_, runDir.name()});
 
-      // Skip syncing in-progress runs. We check the presence of the
-      // lock file, which indicates that the run is incomplete.
+      // Detect lockfile (indicates an active run) and upload marker file
+      // (indicates that the run has already been uploaded)
       bool lockfileFound = false;
-      // Skip syncing runs that have already been uploaded. We check for the
-      // presence of a file with a specific filename, which indicates that the
-      // run has already been uploaded.
       bool uploadMarkerFound = false;
+
       fs::File file;
       while (file = runDir.openNextFile()) {
         if (!strcmp(file.name(), LOCKFILE_NAME)) {
@@ -353,13 +351,18 @@ void UploaderComponent::syncTask(void* arg) {
           break;
         }
       }
+
+      // Skip uploading active run
       if (lockfileFound) {
         Serial.printf(
             "[UploaderComponent][syncTask] %s is active and/or incomplete. "
             "Skipping\n",
             runDirPath.c_str());
         continue;
-      } else if (uploadMarkerFound) {
+      }
+
+      // Skip already uploaded run
+      if (uploadMarkerFound) {
         Serial.printf(
             "[UploaderComponent][syncTask] %s has already been uploaded. "
             "Skipping\n",
@@ -367,8 +370,8 @@ void UploaderComponent::syncTask(void* arg) {
         continue;
       }
 
-      // Upload run
-      Serial.printf("[UploaderComponent][syncTask] Syncing: %s\n",
+      // Upload completed run that has not been uploaded yet
+      Serial.printf("[UploaderComponent][syncTask] Uploading: %s\n",
                     runDir.name());
 
       runDir.rewindDirectory();
@@ -390,7 +393,7 @@ void UploaderComponent::syncTask(void* arg) {
               "[UploaderComponent][syncTask] Removed run data for %s\n",
               runDir.name());
         } else if (uploaderComponent->options_.markAfterUpload) {
-          // Add upload marker
+          // Add upload marker to indicate that this run has been uploaded
           String markerFilePath =
               dlf::util::resolvePath({runDirPath, UPLOAD_MARKER_FILE_NAME});
           fs::File f = uploaderComponent->fs_.open(markerFilePath, "w", true);
