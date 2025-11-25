@@ -18,7 +18,7 @@ Run::Run(fs::FS& fs, String fsDir, dlf::datastream::streams_t streams,
   lockfilePath_ = dlf::util::resolvePath({runDir_, LOCKFILE_NAME});
   syncSemaphore_ = xSemaphoreCreateCounting(1, 0);
 
-  Serial.printf("Starting run %s\n", uuid_.c_str());
+  Serial.printf("[Run] Starting run %s\n", uuid_.c_str());
 
   // Make directory to contain run files
   fs_.mkdir(runDir_);
@@ -34,7 +34,7 @@ Run::Run(fs::FS& fs, String fsDir, dlf::datastream::streams_t streams,
   createLogfile(POLLED);
   createLogfile(EVENT);
 
-  Serial.println("Logfiles inited");
+  Serial.println("[Run] Logfiles inited");
 
   status_ = LOGGING;
 
@@ -51,13 +51,14 @@ void Run::createMetafile(Encodable& meta) {
   h.meta_size = meta.dataSize;
 
 #ifdef DEBUG
-  DEBUG.printf(
-      "Creating metafile\n"
+  Serial.printf(
+      "[Run] Creating metafile\n"
       "\tepoch_time_s: %lu\n"
       "\ttick_base_us: %lu\n"
       "\tmeta_structure: %s (hash: %x)\n",
       h.epoch_time_s, h.tick_base_us, h.meta_structure, meta.typeHash);
 #endif
+
   fs::File f =
       fs_.open(dlf::util::resolvePath({runDir_, "meta.dlf"}), "w", true);
 
@@ -73,7 +74,8 @@ void Run::createMetafile(Encodable& meta) {
 
 void Run::createLogfile(dlf_stream_type_e t) {
 #ifdef DEBUG
-  DEBUG.printf("Creating %s logfile\n", dlf::datastream::streamTypeToString(t));
+  Serial.printf("[Run] Creating %s logfile\n",
+                dlf::datastream::streamTypeToString(t));
 #endif
   dlf::datastream::stream_handles_t handles;
 
@@ -88,36 +90,31 @@ void Run::createLogfile(dlf_stream_type_e t) {
 }
 
 void Run::taskSampler(void* arg) {
-  Serial.println("Sampler inited");
   auto self = static_cast<Run*>(arg);
 
   const TickType_t interval =
       std::chrono::duration_cast<DLF_FREERTOS_DURATION>(self->tickInterval_)
           .count();
-  Serial.printf("Interval %d\n", interval);
+  Serial.printf("[Run][taskSampler] Interval (RTOS ticks): %d\n", interval);
 
   TickType_t prev_run = xTaskGetTickCount();
 
   // Run at constant tick interval
   for (dlf_tick_t tick = 0; self->status_ == LOGGING; tick++) {
-#if defined(DEBUG) && defined(SILLY)
-    DEBUG.printf("Sample\n\ttick: %d\n", tick);
-#endif
     for (auto& lf : self->logFiles_) {
       lf->sample(tick);
     }
     xTaskDelayUntil(&prev_run, interval);
   }
-#ifdef DEBUG
-  DEBUG.println("Sampler exiting cleanly");
-#endif
+
+  Serial.println("[Run][taskSampler] Sampler task exiting cleanly");
 
   xSemaphoreGive(self->syncSemaphore_);
   vTaskDelete(NULL);
 }
 
 void Run::close() {
-  Serial.println("Closing run!");
+  Serial.println("[Run] Closing run...");
   status_ = FLUSHING;
 
   // Wait for sampling task to cleanly exit.
@@ -130,36 +127,36 @@ void Run::close() {
 
   // Remove the lockfile last, as the presence of the lockfile indicates that
   // the run is incomplete and should not be uploaded
-  Serial.printf("[RUN] Removing lockfile: %s\n", lockfilePath_.c_str());
+  Serial.printf("[Run] Removing lockfile: %s\n", lockfilePath_.c_str());
   bool lockfileRemoved = fs_.remove(lockfilePath_);
   if (lockfileRemoved) {
-    Serial.println("[RUN] Lockfile successfully removed");
+    Serial.println("[Run] Lockfile successfully removed");
   } else {
-    Serial.println("[RUN] WARNING: Failed to remove lockfile!");
+    Serial.println("[Run] WARNING: Failed to remove lockfile!");
   }
 
   // Verify lockfile was actually deleted by listing directory contents
-  Serial.printf("[RUN] Verifying run directory contents for %s:\n",
+  Serial.printf("[Run] Verifying run directory contents for %s:\n",
                 runDir_.c_str());
   fs::File runDir = fs_.open(runDir_);
   if (runDir && runDir.isDirectory()) {
     fs::File file;
     while (file = runDir.openNextFile()) {
-      Serial.printf("[RUN]   - %s (%d bytes)\n", file.name(), file.size());
+      Serial.printf("\t- %s (%d bytes)\n", file.name(), file.size());
       file.close();
     }
     runDir.close();
   } else {
     Serial.println(
-        "[RUN] WARNING: Could not open run directory for verification!");
+        "[Run] WARNING: Could not open run directory for verification!");
   }
 
-  Serial.println("Run closed cleanly!");
+  Serial.println("[Run] Run closed cleanly");
 }
 
 void Run::createLockfile() {
 #ifdef DEBUG
-  Serial.println("Creating lockfile");
+  Serial.println("[Run] Creating lockfile");
 #endif
 
   fs::File f = fs_.open(lockfilePath_, "w", true);
