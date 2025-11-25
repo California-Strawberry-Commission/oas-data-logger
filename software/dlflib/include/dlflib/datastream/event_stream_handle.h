@@ -16,7 +16,7 @@ class EventStreamHandle : public AbstractStreamHandle {
   size_t encodeInto(StreamBufferHandle_t buf, dlf_tick_t tick);
 
  private:
-  inline size_t currentHash();
+  size_t currentHash();
 
   size_t hash_ = 0;
 };
