@@ -704,60 +704,82 @@ void sleepMonitorTask(void* args) {
 
   while (true) {
     // Only check sleep conditions if we're in RUNNING state
-    if (currentState == SystemState::RUNNING) {
+    if (currentState == SystemState::RUNNING ||
+        currentState == SystemState::WAIT_WIFI) {
       // Check sleep button
       bool sleepButtonPressed = !digitalRead(PIN_SLEEP_BUTTON);
+
       if (sleepButtonPressed) {
-        Serial.println(
-            "[Sleep Monitor] Sleep button pressed. Starting offload before "
-            "sleep");
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        if (!digitalRead(PIN_SLEEP_BUTTON)) {  // if still LOW after 2 seconds,
+                                               // user is holding
 
-        // CRITICAL: Disable GPS FIRST to stop data updates before stopping the
-        // run This prevents GPS task from modifying gpsData while logger is
-        // flushing
-        Serial.println("[Sleep Monitor] Disabling GPS to freeze data");
-        disableGps();
+          if (runHandle) {
+            Serial.println("[Sleep Monitor] Stopping Run before WiFi start...");
+            logger.stopRun(runHandle);
+            runHandle = 0;
+          }
 
-        // Small delay to ensure GPS task has stopped
-        vTaskDelay(pdMS_TO_TICKS(100));
+          wifiManager.resetSettings();
+          transitionToState(SystemState::WAIT_WIFI);
+          while (!digitalRead(
+              PIN_SLEEP_BUTTON)) {  // wait for a release of the button.
+            vTaskDelay(pdMS_TO_TICKS(10));
+          }
+        } else {
+          Serial.println(
+              "[Sleep Monitor] Sleep button pressed. Starting offload before "
+              "sleep");
 
-        // Stop current run before transitioning to offload
-        if (runHandle) {
-          logger.stopRun(runHandle);
-          runHandle = 0;
+          // CRITICAL: Disable GPS FIRST to stop data updates before stopping
+          // the run This prevents GPS task from modifying gpsData while logger
+          // is flushing
+          Serial.println("[Sleep Monitor] Disabling GPS to freeze data");
+          disableGps();
+
+          // Small delay to ensure GPS task has stopped
+          vTaskDelay(pdMS_TO_TICKS(100));
+
+          // Stop current run before transitioning to offload
+          if (runHandle) {
+            logger.stopRun(runHandle);
+            runHandle = 0;
+          }
+
+          transitionToState(SystemState::OFFLOAD);
+          break;
         }
-
-        transitionToState(SystemState::OFFLOAD);
-        break;
       }
 
       // Check USB power for sleep trigger
-      bool usbSleep = !offloadMode && !hasUsbPower();
-      if (usbSleep && usbSleepTriggered) {
-        Serial.println(
-            "[Sleep Monitor] USB power disconnected. Starting offload before "
-            "sleep");
+      if (currentState == SystemState::RUNNING) {
+        bool usbSleep = !offloadMode && !hasUsbPower();
+        if (usbSleep && usbSleepTriggered) {
+          Serial.println(
+              "[Sleep Monitor] USB power disconnected. Starting offload before "
+              "sleep");
 
-        // CRITICAL: Disable GPS FIRST to stop data updates before stopping the
-        // run
-        Serial.println("[Sleep Monitor] Disabling GPS to freeze data");
-        disableGps();
+          // CRITICAL: Disable GPS FIRST to stop data updates before stopping
+          // the run
+          Serial.println("[Sleep Monitor] Disabling GPS to freeze data");
+          disableGps();
 
-        // Small delay to ensure GPS task has stopped
-        vTaskDelay(pdMS_TO_TICKS(100));
+          // Small delay to ensure GPS task has stopped
+          vTaskDelay(pdMS_TO_TICKS(100));
 
-        // Stop current run before transitioning to offload
-        if (runHandle) {
-          logger.stopRun(runHandle);
-          runHandle = 0;
+          // Stop current run before transitioning to offload
+          if (runHandle) {
+            logger.stopRun(runHandle);
+            runHandle = 0;
+          }
+
+          transitionToState(SystemState::OFFLOAD);
+          break;
+        } else if (usbSleep) {
+          usbSleepTriggered = true;
+        } else {
+          usbSleepTriggered = false;
         }
-
-        transitionToState(SystemState::OFFLOAD);
-        break;
-      } else if (usbSleep) {
-        usbSleepTriggered = true;
-      } else {
-        usbSleepTriggered = false;
       }
     }
 
