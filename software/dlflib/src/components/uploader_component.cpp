@@ -123,7 +123,7 @@ bool UploaderComponent::begin() {
                          std::placeholders::_1, std::placeholders::_2),
                ARDUINO_EVENT_WIFI_STA_GOT_IP);
 
-  xTaskCreate(syncTask, "sync", 4096, this, 5, NULL);
+  xTaskCreate(syncTask, "sync", 8092, this, 5, NULL);
 
   return true;
 }

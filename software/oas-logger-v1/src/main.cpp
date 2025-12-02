@@ -704,8 +704,7 @@ void sleepMonitorTask(void* args) {
 
   while (true) {
     // Only check sleep conditions if we're in RUNNING state
-    if (currentState == SystemState::RUNNING ||
-        currentState == SystemState::WAIT_WIFI) {
+    if (currentState == SystemState::RUNNING) {
       // Check sleep button
       bool sleepButtonPressed = !digitalRead(PIN_SLEEP_BUTTON);
 
@@ -714,18 +713,30 @@ void sleepMonitorTask(void* args) {
         if (!digitalRead(PIN_SLEEP_BUTTON)) {  // if still LOW after 2 seconds,
                                                // user is holding
 
+          Serial.println(
+              "[WiFi Reconfiguration] WiFi reconfiguration mode entered...");
+
           if (runHandle) {
-            Serial.println("[Sleep Monitor] Stopping Run before WiFi start...");
+            Serial.println("[WiFi Reconfiguration] Stopping current run...");
             logger.stopRun(runHandle);
             runHandle = 0;
           }
 
-          wifiManager.resetSettings();
-          transitionToState(SystemState::WAIT_WIFI);
-          while (!digitalRead(
-              PIN_SLEEP_BUTTON)) {  // wait for a release of the button.
-            vTaskDelay(pdMS_TO_TICKS(10));
-          }
+          // graceful shutdown to prepare for soft reboot
+
+          Serial.println("[WiFi Reconfiguration] Disabling GPS...");
+          disableGps();
+          vTaskDelay(pdMS_TO_TICKS(100));
+
+          Serial.println("[WiFi Reconfiguration] Waiting on logger to sync...");
+          logger.waitForSyncCompletion();
+
+          Serial.println("[WiFi Reconfiguration] Resetting WiFiManager...");
+          wifiManager.resetSettings();  // uses vTaskDelay internally
+          Serial.println(
+              "[WiFi Reconfiguration] Rebooting device into AP mode...");
+          ESP.restart();  // soft reboot
+
         } else {
           Serial.println(
               "[Sleep Monitor] Sleep button pressed. Starting offload before "
