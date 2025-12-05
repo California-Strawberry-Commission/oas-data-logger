@@ -699,26 +699,12 @@ void startLoggerRun() {
 }
 
 void sleepCleanup() {
-  Serial.println(
-      "[Sleep Monitor] Sleep button pressed. Starting offload before "
-      "sleep");
-
-  // CRITICAL: Disable GPS FIRST to stop data updates before stopping
-  // the run This prevents GPS task from modifying gpsData while logger
-  // is flushing
-  Serial.println("[Sleep Monitor] Disabling GPS to freeze data");
   disableGps();
-
-  // Small delay to ensure GPS task has stopped
   vTaskDelay(pdMS_TO_TICKS(100));
-
-  // Stop current run before transitioning to offload
   if (runHandle) {
     logger.stopRun(runHandle);
     runHandle = 0;
   }
-
-  transitionToState(SystemState::OFFLOAD);
 }
 
 void sleepMonitorTask(void* args) {
@@ -740,22 +726,9 @@ void sleepMonitorTask(void* args) {
             Serial.println(
                 "[WiFi Reconfiguration] WiFi reconfiguration mode entered...");
 
-            if (runHandle) {
-              Serial.println("[WiFi Reconfiguration] Stopping current run...");
-              logger.stopRun(runHandle);
-              runHandle = 0;
-            }
-
-            // graceful shutdown to prepare for soft reboot
-
-            Serial.println("[WiFi Reconfiguration] Disabling GPS...");
-            disableGps();
+            sleepCleanup();
             vTaskDelay(pdMS_TO_TICKS(100));
-
-            Serial.println(
-                "[WiFi Reconfiguration] Waiting on logger to sync...");
             logger.waitForSyncCompletion();
-
             Serial.println("[WiFi Reconfiguration] Resetting WiFiManager...");
             wifiManager.resetSettings();  // uses vTaskDelay internally
             Serial.println(
@@ -768,6 +741,7 @@ void sleepMonitorTask(void* args) {
 
         if (millis() - start < HOLD_TIME_MS) {
           sleepCleanup();
+          transitionToState(SystemState::OFFLOAD);
           break;
         }
       }
@@ -777,6 +751,7 @@ void sleepMonitorTask(void* args) {
     bool usbSleep = !offloadMode && !hasUsbPower();
     if (usbSleep && usbSleepTriggered) {
       sleepCleanup();
+      transitionToState(SystemState::OFFLOAD);
       break;
     } else if (usbSleep) {
       usbSleepTriggered = true;
