@@ -20,6 +20,7 @@ const bool USB_POWER_OVERRIDE{true};
 const bool USB_POWER_OVERRIDE_VALUE{true};
 const int LOGGER_RUN_INTERVAL_S{0};
 const int GPS_PRINT_INTERVAL_MS{1000};
+const int HOLD_TIME_MS{2000};
 
 // Pin Definitions
 const gpio_num_t PIN_USB_POWER{GPIO_NUM_13};
@@ -697,6 +698,15 @@ void startLoggerRun() {
   lastLoggerStartRunMillis = millis();
 }
 
+void sleepCleanup() {
+  disableGps();
+  vTaskDelay(pdMS_TO_TICKS(100));
+  if (runHandle) {
+    logger.stopRun(runHandle);
+    runHandle = 0;
+  }
+}
+
 void sleepMonitorTask(void* args) {
   vTaskDelay(pdMS_TO_TICKS(5000));
 
@@ -707,58 +717,46 @@ void sleepMonitorTask(void* args) {
     if (currentState == SystemState::RUNNING) {
       // Check sleep button
       bool sleepButtonPressed = !digitalRead(PIN_SLEEP_BUTTON);
+
       if (sleepButtonPressed) {
-        Serial.println(
-            "[Sleep Monitor] Sleep button pressed. Starting offload before "
-            "sleep");
+        unsigned long start = millis();
 
-        // CRITICAL: Disable GPS FIRST to stop data updates before stopping the
-        // run This prevents GPS task from modifying gpsData while logger is
-        // flushing
-        Serial.println("[Sleep Monitor] Disabling GPS to freeze data");
-        disableGps();
+        while (!digitalRead(PIN_SLEEP_BUTTON)) {
+          if (millis() - start >= HOLD_TIME_MS) {
+            Serial.println(
+                "[WiFi Reconfiguration] WiFi reconfiguration mode entered...");
 
-        // Small delay to ensure GPS task has stopped
-        vTaskDelay(pdMS_TO_TICKS(100));
-
-        // Stop current run before transitioning to offload
-        if (runHandle) {
-          logger.stopRun(runHandle);
-          runHandle = 0;
+            sleepCleanup();
+            vTaskDelay(pdMS_TO_TICKS(100));
+            logger.waitForSyncCompletion();
+            Serial.println("[WiFi Reconfiguration] Resetting WiFiManager...");
+            wifiManager.resetSettings();  // uses vTaskDelay internally
+            Serial.println(
+                "[WiFi Reconfiguration] Rebooting device into AP mode...");
+            ESP.restart();  // soft reboot
+            break;
+          }
+          yield();
         }
 
-        transitionToState(SystemState::OFFLOAD);
-        break;
-      }
-
-      // Check USB power for sleep trigger
-      bool usbSleep = !offloadMode && !hasUsbPower();
-      if (usbSleep && usbSleepTriggered) {
-        Serial.println(
-            "[Sleep Monitor] USB power disconnected. Starting offload before "
-            "sleep");
-
-        // CRITICAL: Disable GPS FIRST to stop data updates before stopping the
-        // run
-        Serial.println("[Sleep Monitor] Disabling GPS to freeze data");
-        disableGps();
-
-        // Small delay to ensure GPS task has stopped
-        vTaskDelay(pdMS_TO_TICKS(100));
-
-        // Stop current run before transitioning to offload
-        if (runHandle) {
-          logger.stopRun(runHandle);
-          runHandle = 0;
+        if (millis() - start < HOLD_TIME_MS) {
+          sleepCleanup();
+          transitionToState(SystemState::OFFLOAD);
+          break;
         }
-
-        transitionToState(SystemState::OFFLOAD);
-        break;
-      } else if (usbSleep) {
-        usbSleepTriggered = true;
-      } else {
-        usbSleepTriggered = false;
       }
+    }
+
+    // Check USB power for sleep trigger
+    bool usbSleep = !offloadMode && !hasUsbPower();
+    if (usbSleep && usbSleepTriggered) {
+      sleepCleanup();
+      transitionToState(SystemState::OFFLOAD);
+      break;
+    } else if (usbSleep) {
+      usbSleepTriggered = true;
+    } else {
+      usbSleepTriggered = false;
     }
 
     vTaskDelay(pdMS_TO_TICKS(1000));
