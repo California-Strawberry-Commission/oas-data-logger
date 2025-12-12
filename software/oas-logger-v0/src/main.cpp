@@ -33,6 +33,7 @@ const bool USE_LEGACY_GPIO_CONFIG{false};
 const int LOGGER_RUN_INTERVAL_S{0};
 const bool LOGGER_MARK_AFTER_UPLOAD{true};
 const bool LOGGER_DELETE_AFTER_UPLOAD{false};
+const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{0};
 
 // Serial
 const unsigned long SERIAL_BAUD_RATE{115200};
@@ -279,6 +280,8 @@ void initializeLogger() {
   dlf::components::UploaderComponent::Options options;
   options.markAfterUpload = LOGGER_MARK_AFTER_UPLOAD;
   options.deleteAfterUpload = LOGGER_DELETE_AFTER_UPLOAD;
+  options.partialRunUploadIntervalSecs =
+      LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS;
   logger.syncTo(UPLOAD_ENDPOINT, getDeviceUid(), options).begin();
 }
 

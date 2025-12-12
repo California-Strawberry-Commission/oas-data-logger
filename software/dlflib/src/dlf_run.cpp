@@ -42,6 +42,69 @@ Run::Run(fs::FS& fs, String fsDir, dlf::datastream::streams_t streams,
   xTaskCreate(taskSampler, "Sampler", 4096 * 2, this, 5, NULL);
 }
 
+void Run::close() {
+  Serial.println("[Run] Closing run...");
+  status_ = FLUSHING;
+
+  // Wait for sampling task to cleanly exit.
+  xSemaphoreTake(syncSemaphore_, portMAX_DELAY);
+  vSemaphoreDelete(syncSemaphore_);
+
+  for (auto& lf : logFiles_) {
+    lf->close();
+  }
+
+  // Remove the lockfile last, as the presence of the lockfile indicates that
+  // the run is incomplete and should not be uploaded
+  Serial.printf("[Run] Removing lockfile: %s\n", lockfilePath_.c_str());
+  bool lockfileRemoved = fs_.remove(lockfilePath_);
+  if (lockfileRemoved) {
+    Serial.println("[Run] Lockfile successfully removed");
+  } else {
+    Serial.println("[Run] WARNING: Failed to remove lockfile!");
+  }
+
+  // Verify lockfile was actually deleted by listing directory contents
+  Serial.printf("[Run] Verifying run directory contents for %s:\n",
+                runDir_.c_str());
+  fs::File runDir = fs_.open(runDir_);
+  if (runDir && runDir.isDirectory()) {
+    fs::File file;
+    while (file = runDir.openNextFile()) {
+      Serial.printf("\t- %s (%d bytes)\n", file.name(), file.size());
+      file.close();
+    }
+    runDir.close();
+  } else {
+    Serial.println(
+        "[Run] WARNING: Could not open run directory for verification!");
+  }
+
+  Serial.println("[Run] Run closed cleanly");
+}
+
+void Run::flushLogFiles() {
+  if (status_ != LOGGING) {
+    return;
+  }
+
+  for (auto& lf : logFiles_) {
+    lf->flush();
+  }
+}
+
+void Run::lockAllLogFiles() {
+  for (auto& lf : logFiles_) {
+    lf->lock();
+  }
+}
+
+void Run::unlockAllLogFiles() {
+  for (auto& lf : logFiles_) {
+    lf->unlock();
+  }
+}
+
 void Run::createMetafile(Encodable& meta) {
   dlf_meta_header_t h;
   time_t now = time(NULL);
@@ -111,47 +174,6 @@ void Run::taskSampler(void* arg) {
 
   xSemaphoreGive(self->syncSemaphore_);
   vTaskDelete(NULL);
-}
-
-void Run::close() {
-  Serial.println("[Run] Closing run...");
-  status_ = FLUSHING;
-
-  // Wait for sampling task to cleanly exit.
-  xSemaphoreTake(syncSemaphore_, portMAX_DELAY);
-  vSemaphoreDelete(syncSemaphore_);
-
-  for (auto& lf : logFiles_) {
-    lf->close();
-  }
-
-  // Remove the lockfile last, as the presence of the lockfile indicates that
-  // the run is incomplete and should not be uploaded
-  Serial.printf("[Run] Removing lockfile: %s\n", lockfilePath_.c_str());
-  bool lockfileRemoved = fs_.remove(lockfilePath_);
-  if (lockfileRemoved) {
-    Serial.println("[Run] Lockfile successfully removed");
-  } else {
-    Serial.println("[Run] WARNING: Failed to remove lockfile!");
-  }
-
-  // Verify lockfile was actually deleted by listing directory contents
-  Serial.printf("[Run] Verifying run directory contents for %s:\n",
-                runDir_.c_str());
-  fs::File runDir = fs_.open(runDir_);
-  if (runDir && runDir.isDirectory()) {
-    fs::File file;
-    while (file = runDir.openNextFile()) {
-      Serial.printf("\t- %s (%d bytes)\n", file.name(), file.size());
-      file.close();
-    }
-    runDir.close();
-  } else {
-    Serial.println(
-        "[Run] WARNING: Could not open run directory for verification!");
-  }
-
-  Serial.println("[Run] Run closed cleanly");
 }
 
 void Run::createLockfile() {

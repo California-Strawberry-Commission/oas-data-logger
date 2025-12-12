@@ -11,8 +11,13 @@ namespace dlf::components {
 class UploaderComponent : public DlfComponent {
  public:
   struct Options {
+    // Delete the run data from the SD card after uploading
     bool deleteAfterUpload = false;
+    // Adds a marker file to the run directory on the SD card after uploading
     bool markAfterUpload = true;
+    // Attempts to upload the active runs' data at a regular interval. <= 0
+    // disables partial run uploads.
+    int partialRunUploadIntervalSecs = 0;
   };
   UploaderComponent(fs::FS& fs, const String& fsDir, const String& endpoint,
                     const String& deviceUid, const Options& options);
@@ -29,6 +34,7 @@ class UploaderComponent : public DlfComponent {
   };
 
   static void syncTask(void* arg);
+  static void partialRunUploadTask(void* arg);
 
   // https://github.com/espressif/arduino-esp32/blob/master/libraries/WiFi/examples/WiFiClientEvents/WiFiClientEvents.ino
   void onWifiDisconnected(arduino_event_id_t event, arduino_event_info_t info);
