@@ -12,15 +12,18 @@
 
 // Configuration
 const int SERIAL_BAUD_RATE{115200};
-const uint32_t LOGGER_MARK_AFTER_UPLOAD{100 * 1024};
+const int LOGGER_RUN_INTERVAL_S{0};
+const bool LOGGER_MARK_AFTER_UPLOAD{true};
 const bool LOGGER_DELETE_AFTER_UPLOAD{false};
+const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{0};
+const int WIFI_RECONFIG_BUTTON_HOLD_TIME_MS{2000};
+
+// Testing overrides
 const bool WAIT_FOR_VALID_TIME{true};
 const bool USE_LEGACY_GPIO_CONFIG{false};
 const bool USB_POWER_OVERRIDE{true};
 const bool USB_POWER_OVERRIDE_VALUE{true};
-const int LOGGER_RUN_INTERVAL_S{0};
 const int GPS_PRINT_INTERVAL_MS{1000};
-const int HOLD_TIME_MS{2000};
 
 // Pin Definitions
 const gpio_num_t PIN_USB_POWER{GPIO_NUM_13};
@@ -683,6 +686,8 @@ void initializeLogger() {
   dlf::components::UploaderComponent::Options options;
   options.markAfterUpload = LOGGER_MARK_AFTER_UPLOAD;
   options.deleteAfterUpload = LOGGER_DELETE_AFTER_UPLOAD;
+  options.partialRunUploadIntervalSecs =
+      LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS;
   logger.syncTo(UPLOAD_ENDPOINT, getDeviceUid(), options).begin();
 
   Serial.println("Logger initialized");
@@ -722,7 +727,7 @@ void sleepMonitorTask(void* args) {
         unsigned long start = millis();
 
         while (!digitalRead(PIN_SLEEP_BUTTON)) {
-          if (millis() - start >= HOLD_TIME_MS) {
+          if (millis() - start >= WIFI_RECONFIG_BUTTON_HOLD_TIME_MS) {
             Serial.println(
                 "[WiFi Reconfiguration] WiFi reconfiguration mode entered...");
 
@@ -739,7 +744,7 @@ void sleepMonitorTask(void* args) {
           yield();
         }
 
-        if (millis() - start < HOLD_TIME_MS) {
+        if (millis() - start < WIFI_RECONFIG_BUTTON_HOLD_TIME_MS) {
           sleepCleanup();
           transitionToState(SystemState::OFFLOAD);
           break;

@@ -169,71 +169,6 @@ void LogFile::taskFlusher(void* arg) {
   vTaskDelete(NULL);
 }
 
-void LogFile::writeHeader(dlf_stream_type_e streamType) {
-  dlf_logfile_header_t h;
-  h.stream_type = streamType;
-  h.num_streams = handles_.size();
-  xStreamBufferSend(stream_, &h, sizeof(h), portMAX_DELAY);
-
-  for (auto& handle : handles_) {
-    handle->encodeHeaderInto(stream_);
-  }
-}
-
-void LogFile::closeFile() {
-  Serial.printf(
-      "[LogFile][closeFile] Closing file, tracked end position: %zu\n",
-      fileEndPosition_);
-
-  // Get file name for debugging
-  String fname = filename_;
-
-  // Flush and close current write handle
-  file_.flush();
-  file_.close();
-
-  Serial.printf(
-      "[LogFile][closeFile] File closed, checking actual size on SD...\n");
-
-  // Check file size on SD before header update
-  fs::File checkFile = fs_.open(fname, "r");
-  if (checkFile) {
-    size_t sizeBeforeUpdate = checkFile.size();
-    Serial.printf(
-        "[LogFile][closeFile] File size on SD BEFORE header update: %zu "
-        "bytes\n",
-        sizeBeforeUpdate);
-    checkFile.close();
-  }
-
-  // Reopen in read/write mode to update header
-  file_ = fs_.open(fname, "r+");
-  if (!file_) {
-    Serial.printf(
-        "[LogFile][closeFile] ERROR: Could not reopen file for header "
-        "update!\n");
-    return;
-  }
-
-  // Update header with # of ticks
-  file_.seek(offsetof(dlf_logfile_header_t, tick_span));
-  file_.write(reinterpret_cast<uint8_t*>(&lastTick_), sizeof(dlf_tick_t));
-  file_.flush();
-  file_.close();
-
-  // Check file size after header update
-  checkFile = fs_.open(fname, "r");
-  if (checkFile) {
-    size_t sizeAfterUpdate = checkFile.size();
-    Serial.printf(
-        "[LogFile][closeFile] File size on SD AFTER header update: %zu bytes\n",
-        sizeAfterUpdate);
-    checkFile.close();
-  }
-
-  Serial.printf("[LogFile][closeFile] Header update complete\n");
-}
-
 LogFile::LogFile(dlf::datastream::stream_handles_t handles,
                  dlf_stream_type_e streamType, String dir, fs::FS& fs)
     : fs_(fs), handles_(std::move(handles)), fileEndPosition_(0) {
@@ -323,6 +258,95 @@ void LogFile::sample(dlf_tick_t tick) {
   }
 }
 
+void LogFile::close() {
+  if (state_ != LOGGING) {
+    return;
+  }
+
+  state_ = FLUSHING;
+  xSemaphoreTake(syncSemaphore_,
+                 portMAX_DELAY);  // wait for flusher to finish up.
+  state_ = CLOSED;
+
+  // Cleanup dynamic allocations
+  vStreamBufferDelete(stream_);
+  vSemaphoreDelete(syncSemaphore_);
+  vSemaphoreDelete(fileMutex_);
+
+  // Finally, update and close file
+  closeFile();
+  Serial.println("[LogFile] Logfile closed cleanly");
+}
+
+void LogFile::lock() { xSemaphoreTake(fileMutex_, portMAX_DELAY); }
+
+void LogFile::unlock() { xSemaphoreGive(fileMutex_); }
+
+void LogFile::writeHeader(dlf_stream_type_e streamType) {
+  dlf_logfile_header_t h;
+  h.stream_type = streamType;
+  h.num_streams = handles_.size();
+  xStreamBufferSend(stream_, &h, sizeof(h), portMAX_DELAY);
+
+  for (auto& handle : handles_) {
+    handle->encodeHeaderInto(stream_);
+  }
+}
+
+void LogFile::closeFile() {
+  Serial.printf(
+      "[LogFile][closeFile] Closing file, tracked end position: %zu\n",
+      fileEndPosition_);
+
+  // Get file name for debugging
+  String fname = filename_;
+
+  // Flush and close current write handle
+  file_.flush();
+  file_.close();
+
+  Serial.printf(
+      "[LogFile][closeFile] File closed, checking actual size on SD...\n");
+
+  // Check file size on SD before header update
+  fs::File checkFile = fs_.open(fname, "r");
+  if (checkFile) {
+    size_t sizeBeforeUpdate = checkFile.size();
+    Serial.printf(
+        "[LogFile][closeFile] File size on SD BEFORE header update: %zu "
+        "bytes\n",
+        sizeBeforeUpdate);
+    checkFile.close();
+  }
+
+  // Reopen in read/write mode to update header
+  file_ = fs_.open(fname, "r+");
+  if (!file_) {
+    Serial.printf(
+        "[LogFile][closeFile] ERROR: Could not reopen file for header "
+        "update!\n");
+    return;
+  }
+
+  // Update header with # of ticks
+  file_.seek(offsetof(dlf_logfile_header_t, tick_span));
+  file_.write(reinterpret_cast<uint8_t*>(&lastTick_), sizeof(dlf_tick_t));
+  file_.flush();
+  file_.close();
+
+  // Check file size after header update
+  checkFile = fs_.open(fname, "r");
+  if (checkFile) {
+    size_t sizeAfterUpdate = checkFile.size();
+    Serial.printf(
+        "[LogFile][closeFile] File size on SD AFTER header update: %zu bytes\n",
+        sizeAfterUpdate);
+    checkFile.close();
+  }
+
+  Serial.printf("[LogFile][closeFile] Header update complete\n");
+}
+
 void LogFile::flush() {
   if (state_ != LOGGING) {
     return;
@@ -350,26 +374,6 @@ void LogFile::flush() {
 
     xSemaphoreGive(fileMutex_);
   }
-}
-
-void LogFile::close() {
-  if (state_ != LOGGING) {
-    return;
-  }
-
-  state_ = FLUSHING;
-  xSemaphoreTake(syncSemaphore_,
-                 portMAX_DELAY);  // wait for flusher to finish up.
-  state_ = CLOSED;
-
-  // Cleanup dynamic allocations
-  vStreamBufferDelete(stream_);
-  vSemaphoreDelete(syncSemaphore_);
-  vSemaphoreDelete(fileMutex_);
-
-  // Finally, update and close file
-  closeFile();
-  Serial.println("[LogFile] Logfile closed cleanly");
 }
 
 }  // namespace dlf

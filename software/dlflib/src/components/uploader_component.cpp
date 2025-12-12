@@ -125,6 +125,11 @@ bool UploaderComponent::begin() {
 
   xTaskCreate(syncTask, "sync", 8192, this, 5, NULL);
 
+  if (options_.partialRunUploadIntervalSecs > 0) {
+    xTaskCreate(partialRunUploadTask, "partial_run_upload", 8192, this, 5,
+                NULL);
+  }
+
   return true;
 }
 
@@ -290,13 +295,18 @@ void UploaderComponent::waitForSyncCompletion() {
                       portMAX_DELAY);
 }
 
+/**
+ * This task scans the SD card to find completed runs that have not yet been
+ * uploaded, and uploads their data.
+ */
 void UploaderComponent::syncTask(void* arg) {
   UploaderComponent* uploaderComponent = static_cast<UploaderComponent*>(arg);
   CSCLogger* logger = uploaderComponent->getComponent<CSCLogger>();
 
   if (!logger) {
     Serial.println(
-        "[UploaderComponent][syncTask] NO LOGGER. This should not happen");
+        "[UploaderComponent][syncTask] NO LOGGER. This should not happen. "
+        "Terminating task");
     vTaskDelete(NULL);
   }
 
@@ -304,14 +314,15 @@ void UploaderComponent::syncTask(void* arg) {
     // Make sure SD is inserted and provided path is a dir
     fs::File root = uploaderComponent->fs_.open(uploaderComponent->dir_);
     if (!root) {
-      Serial.println("[UploaderComponent][syncTask] No storage found");
+      Serial.println(
+          "[UploaderComponent][syncTask] No storage found. Terminating task");
       vTaskDelay(pdMS_TO_TICKS(1000));
       vTaskDelete(NULL);
     }
 
     if (!root.isDirectory()) {
       Serial.println(
-          "[UploaderComponent][syncTask] Root is not dir - exiting sync");
+          "[UploaderComponent][syncTask] Root is not dir. Terminating task");
       vTaskDelete(NULL);
     }
 
@@ -319,7 +330,7 @@ void UploaderComponent::syncTask(void* arg) {
     xEventGroupWaitBits(uploaderComponent->wifiEvent_, WLAN_READY, pdFALSE,
                         pdTRUE, portMAX_DELAY);
 
-    Serial.println("[UploaderComponent][syncTask] WLAN ready - beginning sync");
+    Serial.println("[UploaderComponent][syncTask] WLAN ready");
 
     xEventGroupClearBits(uploaderComponent->syncEvent_, SYNC_COMPLETE);
 
@@ -414,6 +425,88 @@ void UploaderComponent::syncTask(void* arg) {
     xEventGroupSetBits(uploaderComponent->syncEvent_, SYNC_COMPLETE);
 
     logger->waitForNewRun();
+  }
+}
+
+/**
+ * This task attempts to upload data for currently active runs at a regular
+ * interval.
+ */
+void UploaderComponent::partialRunUploadTask(void* arg) {
+  UploaderComponent* uploaderComponent = static_cast<UploaderComponent*>(arg);
+  CSCLogger* logger = uploaderComponent->getComponent<CSCLogger>();
+
+  if (!logger) {
+    Serial.println(
+        "[UploaderComponent][partialRunUploadTask] NO LOGGER. This should not "
+        "happen. Terminating task");
+    vTaskDelete(NULL);
+  }
+
+  int intervalSecs = uploaderComponent->options_.partialRunUploadIntervalSecs;
+  if (intervalSecs <= 0) {
+    Serial.println(
+        "[UploaderComponent][partialRunUploadTask] Invalid interval. "
+        "Terminating task");
+    vTaskDelete(NULL);
+  }
+  const TickType_t period = pdMS_TO_TICKS(intervalSecs * 1000);
+  TickType_t lastWakeTime = xTaskGetTickCount();
+
+  Serial.printf(
+      "[UploaderComponent][partialRunUploadTask] Partial upload interval: %d\n",
+      intervalSecs);
+  while (true) {
+    // Wait for wifi to be connected
+    xEventGroupWaitBits(uploaderComponent->wifiEvent_, WLAN_READY, pdFALSE,
+                        pdTRUE, portMAX_DELAY);
+    Serial.println("[UploaderComponent][partialRunUploadTask] WLAN ready");
+
+    // Start partial run upload
+    for (run_handle_t h : logger->getActiveRuns()) {
+      Run* run = logger->getRun(h);
+      if (!run) {
+        Serial.println(
+            "[UploaderComponent][partialRunUploadTask] Invalid run handle. "
+            "Skipping");
+      }
+
+      Serial.printf(
+          "[UploaderComponent][partialRunUploadTask] Attempting upload for "
+          "active run %s\n",
+          run->uuid());
+
+      // Manually flush the log files for the run. This updates the log file
+      // headers.
+      run->flushLogFiles();
+
+      // Acquire locks on run's LogFiles to avoid conflict with SD card writes
+      // when uploading.
+      RunLogFilesLock lock(run);
+
+      fs::File runDir = uploaderComponent->fs_.open(uploaderComponent->dir_ +
+                                                    "/" + run->uuid());
+      if (!runDir || !runDir.isDirectory()) {
+        Serial.printf(
+            "[UploaderComponent][partialRunUploadTask] Invalid run dir %s. "
+            "Skipping.",
+            runDir.name());
+        continue;
+      }
+
+      bool uploadSuccess =
+          uploaderComponent->uploadRun(runDir, runDir.name(), true);
+      if (uploadSuccess) {
+        Serial.println(
+            "[UploaderComponent][partialRunUploadTask] Upload successful");
+      } else {
+        Serial.println(
+            "[UploaderComponent][partialRunUploadTask] Upload failed");
+      }
+    }
+
+    // Block until desired interval has passed since the last loop
+    vTaskDelayUntil(&lastWakeTime, period);
   }
 }
 

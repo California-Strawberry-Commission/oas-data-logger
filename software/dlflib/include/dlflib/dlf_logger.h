@@ -62,8 +62,6 @@ class CSCLogger : public dlf::components::DlfComponent {
 
   void stopRun(run_handle_t h);
 
-  bool runIsActive(const char* uuid);
-
   WATCH(uint8_t)
   WATCH(uint16_t)
   WATCH(uint32_t)
@@ -98,6 +96,10 @@ class CSCLogger : public dlf::components::DlfComponent {
                                ticksToWait);
   }
 
+  std::vector<run_handle_t> getActiveRuns();
+
+  Run* getRun(run_handle_t h);
+
  private:
   CSCLogger& watchInternal(Encodable value, String id, const char* notes,
                            SemaphoreHandle_t mutex = NULL);
@@ -111,7 +113,7 @@ class CSCLogger : public dlf::components::DlfComponent {
 
   void prune();
 
-  std::unique_ptr<dlf::Run> runs_[MAX_RUNS];
+  std::unique_ptr<Run> runs_[MAX_RUNS];
   // Todo: Figure out how to do this with unique_ptrs
   dlf::datastream::streams_t streams_;
   fs::FS& fs_;

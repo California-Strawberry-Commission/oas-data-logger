@@ -11,21 +11,26 @@ CSCLogger::CSCLogger(fs::FS& fs, String fsDir) : fs_(fs), fsDir_(fsDir) {
   addComponent(this);
 }
 
-run_handle_t CSCLogger::getAvailableHandle() {
-  for (size_t i = 0; i < MAX_RUNS; i++) {
-    if (!runs_[i]) return i + 1;
+bool CSCLogger::begin() {
+  Serial.println("[CSCLogger] Begin");
+  prune();
+
+  // Set subcomponent stores to enable component communication
+  for (dlf::components::DlfComponent*& comp : components_) {
+    comp->setup(&components_);
   }
 
-  return 0;
-}
-
-bool CSCLogger::runIsActive(const char* uuid) {
-  for (size_t i = 0; i < MAX_RUNS; i++) {
-    if (runs_[i] && !strcmp(runs_[i]->uuid(), uuid)) {
-      return true;
+  // begin subcomponents
+  for (dlf::components::DlfComponent*& comp : components_) {
+    // Break recursion
+    if (comp == this) {
+      continue;
     }
+
+    comp->begin();
   }
-  return false;
+
+  return true;
 }
 
 run_handle_t CSCLogger::startRun(Encodable meta,
@@ -47,19 +52,58 @@ run_handle_t CSCLogger::startRun(Encodable meta,
     return 0;
   }
 
-  runs_[h - 1] = std::unique_ptr<dlf::Run>(run);
+  int runIdx = h - 1;
+  runs_[runIdx] = std::unique_ptr<dlf::Run>(run);
 
   return h;
 }
 
 void CSCLogger::stopRun(run_handle_t h) {
-  if (!runs_[h - 1]) {
+  int runIdx = h - 1;
+  if (runIdx < 0 || runIdx >= MAX_RUNS || !runs_[runIdx]) {
     return;
   }
 
-  runs_[h - 1]->close();
-  runs_[h - 1].reset();
+  runs_[runIdx]->close();
+  runs_[runIdx].reset();
   xEventGroupSetBits(loggerEventGroup_, NEW_RUN);
+}
+
+CSCLogger& CSCLogger::syncTo(
+    const String& endpoint, const String& deviceUid,
+    const dlf::components::UploaderComponent::Options& options) {
+  if (!hasComponent<dlf::components::UploaderComponent>()) {
+    addComponent(new dlf::components::UploaderComponent(fs_, fsDir_, endpoint,
+                                                        deviceUid, options));
+  }
+
+  return *this;
+}
+
+void CSCLogger::waitForSyncCompletion() {
+  if (hasComponent<dlf::components::UploaderComponent>()) {
+    getComponent<dlf::components::UploaderComponent>()->waitForSyncCompletion();
+  }
+}
+
+std::vector<run_handle_t> CSCLogger::getActiveRuns() {
+  std::vector<run_handle_t> activeRuns;
+  for (size_t i = 0; i < MAX_RUNS; ++i) {
+    if (runs_[i]) {
+      run_handle_t handle = i + 1;
+      activeRuns.push_back(handle);
+    }
+  }
+  return activeRuns;
+}
+
+Run* CSCLogger::getRun(run_handle_t h) {
+  int runIdx = h - 1;
+  if (runIdx < 0 || runIdx >= MAX_RUNS || !runs_[runIdx]) {
+    return nullptr;
+  }
+
+  return runs_[runIdx].get();
 }
 
 CSCLogger& CSCLogger::watchInternal(Encodable value, String id,
@@ -83,43 +127,14 @@ CSCLogger& CSCLogger::pollInternal(Encodable value, String id,
   return *this;
 }
 
-CSCLogger& CSCLogger::syncTo(
-    const String& endpoint, const String& deviceUid,
-    const dlf::components::UploaderComponent::Options& options) {
-  if (!hasComponent<dlf::components::UploaderComponent>()) {
-    addComponent(new dlf::components::UploaderComponent(fs_, fsDir_, endpoint,
-                                                        deviceUid, options));
-  }
-
-  return *this;
-}
-
-void CSCLogger::waitForSyncCompletion() {
-  if (hasComponent<dlf::components::UploaderComponent>()) {
-    getComponent<dlf::components::UploaderComponent>()->waitForSyncCompletion();
-  }
-}
-
-bool CSCLogger::begin() {
-  Serial.println("[CSCLogger] Begin");
-  prune();
-
-  // Set subcomponent stores to enable component communication
-  for (dlf::components::DlfComponent*& comp : components_) {
-    comp->setup(&components_);
-  }
-
-  // begin subcomponents
-  for (dlf::components::DlfComponent*& comp : components_) {
-    // Break recursion
-    if (comp == this) {
-      continue;
+run_handle_t CSCLogger::getAvailableHandle() {
+  for (size_t i = 0; i < MAX_RUNS; i++) {
+    if (!runs_[i]) {
+      return i + 1;
     }
-
-    comp->begin();
   }
 
-  return true;
+  return 0;
 }
 
 void CSCLogger::prune() {

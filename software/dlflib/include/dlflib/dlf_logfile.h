@@ -33,13 +33,29 @@ class LogFile {
   /**
    * Samples data. Intended to be externally called at the tick interval.
    * Called by the Run class to trigger a sample.
+   * @param tick The tick to sample data at
    */
   void sample(dlf_tick_t tick);
 
   /**
-   * Flushes and closes this logfile
+   * Flushes and closes this logfile.
    */
   void close();
+
+  /**
+   * Force a manual flush on the logfile.
+   */
+  void flush();
+
+  /**
+   * Lock the file mutex
+   */
+  void lock();
+
+  /**
+   * Release the file mutex
+   */
+  void unlock();
 
  private:
   /**
@@ -61,8 +77,6 @@ class LogFile {
    * buffers
    */
   void closeFile();
-
-  void flush();
 
   /**
    * @brief Data stream handles logged by this logfile
