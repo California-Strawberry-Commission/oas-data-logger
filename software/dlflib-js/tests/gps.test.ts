@@ -81,7 +81,7 @@ test("Polled data", async () => {
       },
       data: 3,
       tick: 0n,
-      o: 0n,
+      offset: 0n,
     },
     {
       stream: {
@@ -96,7 +96,7 @@ test("Polled data", async () => {
       },
       data: 35.3053619,
       tick: 0n,
-      o: 4n,
+      offset: 4n,
     },
     {
       stream: {
@@ -111,7 +111,7 @@ test("Polled data", async () => {
       },
       data: -120.6720945,
       tick: 0n,
-      o: 12n,
+      offset: 12n,
     },
     {
       stream: {
@@ -126,7 +126,7 @@ test("Polled data", async () => {
       },
       data: 85.306,
       tick: 0n,
-      o: 20n,
+      offset: 20n,
     },
   ]);
 });

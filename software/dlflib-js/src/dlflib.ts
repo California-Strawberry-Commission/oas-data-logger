@@ -80,6 +80,8 @@ const logfile_header_t = new Parser()
   })
   .buffer("data", { readUntil: "eof" });
 
+type Stream = Tlogfile_header_t["streams"][0];
+
 export abstract class Adapter {
   abstract get polled_dlf(): Promise<Uint8Array>;
   abstract get events_dlf(): Promise<Uint8Array>;
@@ -161,17 +163,17 @@ export abstract class Adapter {
   }
 
   async polled_header(): Promise<Tlogfile_header_t> {
-    let polledDataFile = await this.polled_dlf;
+    const polledDataFile = await this.polled_dlf;
     return logfile_header_t.parse(polledDataFile);
   }
 
   async events_header(): Promise<Tlogfile_header_t> {
-    let eventDataFile = await this.events_dlf;
+    const eventDataFile = await this.events_dlf;
     return logfile_header_t.parse(eventDataFile);
   }
 
   async events_data() {
-    let header = await this.events_header();
+    const header = await this.events_header();
 
     // Create choices
     const choices = {};
@@ -202,104 +204,145 @@ export abstract class Adapter {
     return merged_data;
   }
 
-  // Really, really awful code. Sorry... binary-parser has a kinda yucky api.
-  async polled_data(start = 0n, stop: null | bigint = null, downsample = 1n) {
-    start = BigInt(start);
-
-    if (stop != null) {
-      stop = BigInt(stop);
+  async polled_data(startTick = 0n, endTick: null | bigint = null) {
+    function mod(a: bigint, m: bigint) {
+      const r = a % m;
+      return r < 0n ? r + m : r;
     }
 
-    downsample = BigInt(downsample) || 1n;
+    // First tick >= 0 such that (tick + phase) % interval == 0
+    function firstTick(interval: bigint, phase: bigint) {
+      return mod(-phase, interval);
+    }
 
-    let header = await this.polled_header();
+    // Smallest tick >= start such that (tick + phase) % interval == 0
+    function nextDueAtOrAfter(start: bigint, interval: bigint, phase: bigint) {
+      const f = firstTick(interval, phase);
+      if (start <= f) {
+        return f;
+      }
+      const k = (start - f + interval - 1n) / interval; // ceil
+      return f + k * interval;
+    }
 
-    const createParser = (stream) => {
-      const parser = this.create_parser(
-        stream.type_structure,
-        stream.type_size
-      );
+    // Number of due ticks in [0, t) for a stream
+    function countBefore(t: bigint, interval: bigint, phase: bigint) {
+      const f = firstTick(interval, phase);
+      if (t <= f) {
+        return 0n;
+      }
+      // Ticks are f, f+interval, f+2*interval, ... < t
+      return 1n + (t - 1n - f) / interval;
+    }
+
+    // Read header
+    const header = await this.polled_header();
+    // Note: stream order in the header is important because it dictates the order for data across
+    // streams that exist on the same tick
+    const streams: Stream[] = header.streams;
+
+    // Build parsers for each stream
+    const parsers = streams.map((s) => {
+      const parser = this.create_parser(s.type_structure, s.type_size);
       if (typeof parser === "string") {
         // @ts-ignore
         return new Parser()[parser]("data");
-      } else {
-        return new Parser().nest("data", {
-          // @ts-ignore
-          type: "uint32le",
-        });
       }
-    };
-    const mapEntries = header.streams.map((s) => [s, createParser(s)]);
-    let headerParsers = new Map<Tlogfile_header_t["streams"][0], Parser>(
-      mapEntries as any
+      return new Parser().nest("data", {
+        // @ts-ignore
+        type: "uint32le",
+      });
+    });
+
+    // Pull out per-stream interval/phase/size values for convenience
+    const streamInfos = streams.map((stream, index) => {
+      const interval = BigInt((stream as any).stream_info.tick_interval);
+      const phase = BigInt((stream as any).stream_info.tick_phase);
+      const size = BigInt(stream.type_size);
+      return {
+        stream,
+        index,
+        interval,
+        phase,
+        size,
+      };
+    });
+
+    const dataLen = BigInt(header.data.byteLength);
+    const buf = header.data.buffer;
+    const baseByteOffset = BigInt(header.data.byteOffset);
+
+    // Seek byte offset to the start tick
+    let offset = 0n;
+    for (const streamInfo of streamInfos) {
+      offset +=
+        countBefore(startTick, streamInfo.interval, streamInfo.phase) *
+        streamInfo.size;
+    }
+    if (offset >= dataLen) {
+      return [];
+    }
+
+    // Initialize each stream's next due tick >= start
+    const nextDue = streamInfos.map((streamInfo) =>
+      nextDueAtOrAfter(startTick, streamInfo.interval, streamInfo.phase)
     );
 
-    function getNearestByteOffset(
-      tick: bigint,
-      stream: Tlogfile_header_t["streams"][0]
-    ) {
-      // @ts-ignore
-      let interval = BigInt(stream.stream_info.tick_interval);
-      // @ts-ignore
-      let phase = BigInt(stream.stream_info.tick_phase);
-      let size = BigInt(stream.type_size);
+    // Current tick is the minimum nextDue across all streams
+    const minNextDue = () => nextDue.reduce((a, b) => (a < b ? a : b));
+    let currentTick = minNextDue();
 
-      if (tick % interval != 0n) {
-        return null;
+    const out: any[] = [];
+
+    while (true) {
+      if (endTick != null && currentTick >= endTick) {
+        // We've reached the end of the range we care about (endTick)
+        break;
       }
 
-      // Formula: sum (ceil((tick+phase) / interval) * size)
-      let block_start = 0n;
-      let target_found = false;
-      for (const s of header.streams) {
-        // @ts-ignore
-        let interval = BigInt(s.stream_info.tick_interval);
-        // @ts-ignore
-        let phase = BigInt(s.stream_info.tick_phase);
-        let size = BigInt(s.type_size);
-
-        // Add contribution to base offset
-        block_start +=
-          ((tick + phase) / interval + (tick % interval ? 1n : 0n)) * size;
-
-        // calculate offset within base block offset
-        target_found ||= s == stream;
-
-        if (!target_found && (tick + phase) % interval == 0n) {
-          block_start += size;
+      // For this tick, consume payload bytes in header order for streams due now
+      for (let streamIdx = 0; streamIdx < streamInfos.length; streamIdx++) {
+        if (nextDue[streamIdx] !== currentTick) {
+          // There's no data due at this tick for this stream
+          continue;
         }
-      }
-      return block_start;
-    }
 
-    let data = []; // tick: {values}
+        const streamInfo = streamInfos[streamIdx];
+        if (offset + streamInfo.size > dataLen) {
+          // Unexpected EOF - data region cuts off earlier than expected
+          return out;
+        }
 
-    for (
-      let tick: bigint = start;
-      // @ts-ignore
-      (stop == null || tick < stop) && tick < BigInt(header.tick_span);
-      tick += downsample
-    ) {
-      for (const [stream, parser] of headerParsers.entries()) {
-        let o = getNearestByteOffset(tick, stream);
-        if (o == null) continue;
-        if (BigInt(stream.type_size) + o > header.data.byteLength) break;
-        data.push({
-          stream,
-          data: parser.parse(
-            // @ts-ignore
-            new Uint8Array(
-              header.data.buffer,
-              Number(o) + header.data.byteOffset
-            ) // @ts-ignore
-          ).data,
-          tick,
-          o,
+        // Parse data at this tick for this stream
+        const decoded = parsers[streamInfo.index].parse(
+          new Uint8Array(
+            buf,
+            Number(baseByteOffset + offset),
+            Number(streamInfo.size)
+          )
+        ).data;
+
+        out.push({
+          stream: streamInfo.stream,
+          data: decoded,
+          tick: currentTick,
+          offset,
         });
+
+        offset += streamInfo.size;
+        nextDue[streamIdx] = currentTick + streamInfo.interval; // advance that stream
       }
+
+      if (offset >= dataLen) {
+        // Expected EOF - we've reached exactly the end of the data region
+        break;
+      }
+
+      // Jump to next tick where any stream has data
+      currentTick = minNextDue();
     }
 
-    return data;
+    return out;
   }
 
   async data() {
