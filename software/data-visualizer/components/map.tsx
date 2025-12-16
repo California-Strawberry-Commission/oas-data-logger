@@ -1,8 +1,11 @@
 "use client";
 
+import HeatmapLayer, { HeatmapPoint } from "@/components/heatmap-layer";
+import { Button } from "@/components/ui/button";
 import { Icon, LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { useEffect, useMemo, useState } from "react";
+import { Pause, Play } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   MapContainer,
   Marker,
@@ -10,7 +13,6 @@ import {
   Popup,
   TileLayer,
 } from "react-leaflet";
-import HeatmapLayer, { HeatmapPoint } from "@/components/heatmap-layer";
 
 const MIN_NUM_SATELLITES = 1; // filter out GPS points that were logged with less than X satellites
 const MAX_JUMP_METERS = 100; // filter out GPS points that jump more than X meters from the previous point
@@ -79,7 +81,13 @@ function distanceMeters(a: LatLngExpression, b: LatLngExpression): number {
   return R * c;
 }
 
-export default function Map({ points }: { points: MapPoint[] }) {
+export default function Map({
+  points,
+  playbackDurationS = 10,
+}: {
+  points: MapPoint[];
+  playbackDurationS?: number;
+}) {
   const [filterEnabled, setFilterEnabled] = useState(true);
   const [heatmapEnabled, setHeatmapEnabled] = useState(false);
 
@@ -188,6 +196,82 @@ export default function Map({ points }: { points: MapPoint[] }) {
     return closest;
   }, [displayPoints, currentTimestampS]);
 
+  const [isPlaying, setIsPlaying] = useState(false);
+  // Request ID of the requestAnimationFrame call
+  const playRafRef = useRef<number | null>(null);
+  // Epoch time (ms) of animation start
+  const playStartMsRef = useRef<number | null>(null);
+  // Timestamp (s) of run data that animation should start at
+  const playStartTimestampSRef = useRef<number>(startTimestampS);
+
+  // Keep refs in sync when the range changes
+  useEffect(() => {
+    playStartTimestampSRef.current = startTimestampS;
+    if (isPlaying) {
+      // If range changed mid-play, stop to avoid jumps
+      setIsPlaying(false);
+    }
+  }, [startTimestampS, endTimestampS]);
+
+  // Scrubber playback
+  useEffect(() => {
+    // If playback is stopped, cancel animation frame and clean up state
+    if (!isPlaying) {
+      if (playRafRef.current) {
+        cancelAnimationFrame(playRafRef.current);
+      }
+      playRafRef.current = null;
+      playStartMsRef.current = null;
+      return;
+    }
+
+    // Invalid playback timeline
+    if (endTimestampS <= startTimestampS) {
+      setIsPlaying(false);
+      return;
+    }
+
+    const tick = (nowMs: number) => {
+      if (playStartMsRef.current == null) {
+        playStartMsRef.current = nowMs;
+        playStartTimestampSRef.current = currentTimestampS;
+      }
+
+      const durationMs =
+        ((endTimestampS - playStartTimestampSRef.current) /
+          (endTimestampS - startTimestampS)) *
+        playbackDurationS *
+        1000;
+      const elapsedMs = nowMs - playStartMsRef.current;
+      const t = Math.min(1, elapsedMs / durationMs);
+
+      const startS = playStartTimestampSRef.current;
+      const targetS = startS + t * (endTimestampS - startS);
+      const nextS = Math.min(
+        endTimestampS,
+        Math.max(startTimestampS, Math.round(targetS))
+      );
+      setCurrentTimestampS(nextS);
+
+      if (t >= 1 || nextS >= endTimestampS) {
+        setIsPlaying(false);
+        return;
+      }
+
+      playRafRef.current = requestAnimationFrame(tick);
+    };
+
+    playRafRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      if (playRafRef.current) {
+        cancelAnimationFrame(playRafRef.current);
+      }
+      playRafRef.current = null;
+      playStartMsRef.current = null;
+    };
+  }, [isPlaying, startTimestampS, endTimestampS, playbackDurationS]);
+
   // Note: all hooks must be defined before early returns (Rules of Hooks)
   if (displayPoints.length === 0 || !currentPoint) {
     return null;
@@ -264,14 +348,44 @@ export default function Map({ points }: { points: MapPoint[] }) {
           max={endTimestampS}
           step={1}
           value={currentTimestampS}
-          onChange={(e) => setCurrentTimestampS(Number(e.target.value))}
+          onChange={(e) => {
+            // Stop playback when manually scrubbing
+            setIsPlaying(false);
+            setCurrentTimestampS(Number(e.target.value));
+          }}
         />
-        <div className="mt-1 flex justify-between">
+        <div className="flex justify-between">
           <span>{new Date(startTimestampS * 1000).toLocaleTimeString()}</span>
           <span className="font-semibold">
             {new Date(currentTimestampS * 1000).toLocaleTimeString()}
           </span>
           <span>{new Date(endTimestampS * 1000).toLocaleTimeString()}</span>
+        </div>
+
+        {/* Scrubber playback button */}
+        <div className="m-2 flex items-center justify-center gap-2">
+          <Button
+            size="sm"
+            onClick={() => {
+              // If at end, restart from beginning when hitting play
+              if (!isPlaying && currentTimestampS >= endTimestampS) {
+                setCurrentTimestampS(startTimestampS);
+              }
+              setIsPlaying((v) => !v);
+            }}
+          >
+            {isPlaying ? (
+              <>
+                <Pause className="h-4 w-4" />
+                Pause
+              </>
+            ) : (
+              <>
+                <Play className="h-4 w-4" />
+                Play
+              </>
+            )}
+          </Button>
         </div>
 
         {/* Filter toggle */}
