@@ -16,6 +16,7 @@ import {
 
 const MIN_NUM_SATELLITES = 1; // filter out GPS points that were logged with less than X satellites
 const MAX_JUMP_METERS = 100; // filter out GPS points that jump more than X meters from the previous point
+const DWELL_RADIUS_METERS = 1; // consider any points that lie within X meters of another point to be dwelling at the same point
 
 export type MapPoint = {
   timestampS: number;
@@ -91,14 +92,14 @@ export default function Map({
   const [filterEnabled, setFilterEnabled] = useState(true);
   const [heatmapEnabled, setHeatmapEnabled] = useState(false);
 
-  const sortedPoints = useMemo(
+  const sortedPoints: MapPoint[] = useMemo(
     // Create a copy of the points array before sorting in place
     () => [...points].sort((a, b) => a.timestampS - b.timestampS),
     [points]
   );
 
   // Filtered view when toggle is on
-  const displayPoints = useMemo(() => {
+  const displayPoints: MapPoint[] = useMemo(() => {
     if (!filterEnabled) {
       return sortedPoints;
     }
@@ -132,38 +133,81 @@ export default function Map({
 
   // Create data for heatmap rendering
   const heatmapPoints: HeatmapPoint[] = useMemo(() => {
-    const n = displayPoints.length;
-    if (n === 0) {
+    const numPoints = displayPoints.length;
+    if (numPoints === 0) {
       return [];
     }
 
-    const dwellTimesSecs: number[] = new Array(n).fill(0);
-    for (let i = 0; i < n - 1; i++) {
+    // Calculate time deltas between each point in displayPoints
+    const dts: number[] = new Array(numPoints).fill(0);
+    for (let i = 0; i < numPoints - 1; i++) {
       const dt = displayPoints[i + 1].timestampS - displayPoints[i].timestampS;
-      dwellTimesSecs[i] = Math.max(0, Math.min(dt, 60)); // clamp to 60s to avoid outliers ruining the visualization
+      dts[i] = Math.max(0, Math.min(dt, 60)); // clamp to avoid outliers ruining the visualization
+    }
+    // Set the dt of the last point to be the same as the second-to-last point
+    if (numPoints > 1) {
+      dts[numPoints - 1] = dts[numPoints - 2];
     }
 
-    // Set the dwell time of the last point to be the same as the second-to-last point
-    if (n > 1) {
-      dwellTimesSecs[n - 1] = dwellTimesSecs[n - 2];
-    }
-
-    const maxDwellTimeSecs =
-      dwellTimesSecs.reduce((prev, curr) => (curr > prev ? curr : prev), 0) ||
-      1;
+    const maxDt =
+      dts.reduce((prev, curr) => (curr > prev ? curr : prev), 0) || 1;
 
     return displayPoints.map((p, idx) => {
       const { lat, lng } = toLatLng(p.position);
-      // Set the weight to be the dwell time normalized to [0, 1]
-      const weight = dwellTimesSecs[idx] / maxDwellTimeSecs;
+      // Set the heatmap weight for each point to be dt normalized to [0, 1]
+      const weight = dts[idx] / maxDt;
       return [lat, lng, weight] as HeatmapPoint;
     });
+  }, [displayPoints]);
+
+  // Calculate min and max dwell times
+  const { minDwellS, maxDwellS } = useMemo(() => {
+    const numPoints = displayPoints.length;
+    if (numPoints < 2) {
+      return { minDwellS: 0, maxDwellS: 0 };
+    }
+
+    // Compute min/max dwell using a sliding anchor. Any points following an anchor point that is
+    // less than DWELL_RADIUS_METERS to the anchor point is considered to be dwelling at the
+    // anchor point.
+    let anchorIdx = 0;
+    let dwellS = 0;
+    let minDwellS = Infinity;
+    let maxDwellS = 0;
+    for (let i = 0; i < numPoints - 1; i++) {
+      const dt = displayPoints[i + 1].timestampS - displayPoints[i].timestampS;
+      const dist = distanceMeters(
+        displayPoints[anchorIdx].position,
+        displayPoints[i + 1].position
+      );
+      if (dist <= DWELL_RADIUS_METERS) {
+        // We're still dwelling at the anchor point
+        dwellS += dt;
+      } else {
+        // We're no longer dwelling at the anchor point.
+        // Update min/max dwell times and update the anchor point.
+        minDwellS = Math.min(minDwellS, dwellS);
+        maxDwellS = Math.max(maxDwellS, dwellS);
+        anchorIdx = i + 1;
+        dwellS = 0;
+      }
+    }
+
+    minDwellS = Math.min(minDwellS, dwellS);
+    maxDwellS = Math.max(maxDwellS, dwellS);
+
+    if (minDwellS === Infinity) {
+      minDwellS = 0;
+    }
+
+    return { minDwellS, maxDwellS };
   }, [displayPoints]);
 
   const startTimestampS = displayPoints[0]?.timestampS ?? 0;
   const endTimestampS =
     displayPoints[displayPoints.length - 1]?.timestampS ?? startTimestampS;
 
+  // Current timestamp of the scrubber
   const [currentTimestampS, setCurrentTimestampS] =
     useState<number>(startTimestampS);
 
@@ -196,6 +240,7 @@ export default function Map({
     return closest;
   }, [displayPoints, currentTimestampS]);
 
+  // Whether the scrubber playback animation is active
   const [isPlaying, setIsPlaying] = useState(false);
   // Request ID of the requestAnimationFrame call
   const playRafRef = useRef<number | null>(null);
@@ -213,7 +258,7 @@ export default function Map({
     }
   }, [startTimestampS, endTimestampS]);
 
-  // Scrubber playback
+  // Scrubber playback animation
   useEffect(() => {
     // If playback is stopped, cancel animation frame and clean up state
     if (!isPlaying) {
@@ -281,63 +326,76 @@ export default function Map({
 
   return (
     <div className="flex h-full w-full flex-col">
-      <MapContainer
-        center={displayPoints[0].position}
-        zoom={18}
-        scrollWheelZoom={true}
-        touchZoom={true}
-        doubleClickZoom={true}
-        className="h-full w-full flex-1"
-      >
-        <TileLayer
-          attribution="Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community"
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-          maxZoom={22}
-        />
-
-        {/* Dwell-time heatmap overlay */}
-        {heatmapEnabled && (
-          <HeatmapLayer
-            points={heatmapPoints}
-            radius={10}
-            blur={20}
-            maxIntensity={1}
-          />
-        )}
-
-        {/* Full track */}
-        <Polyline positions={polylinePositions} color="blue" />
-
-        {/* Start marker */}
-        <Marker position={displayPoints[0].position} icon={greenIcon}>
-          <Popup>
-            <div className="max-w-[200px] break-words text-sm">
-              {`Start: ${new Date(startTimestampS * 1000).toLocaleString()}`}
-            </div>
-          </Popup>
-        </Marker>
-
-        {/* End marker */}
-        <Marker
-          position={displayPoints[displayPoints.length - 1].position}
-          icon={redIcon}
+      {/* Map + overlay container */}
+      <div className="relative h-full w-full flex-1">
+        <MapContainer
+          center={displayPoints[0].position}
+          zoom={18}
+          scrollWheelZoom={true}
+          touchZoom={true}
+          doubleClickZoom={true}
+          className="h-full w-full flex-1"
         >
-          <Popup>
-            <div className="max-w-[200px] break-words text-sm">
-              {`End: ${new Date(endTimestampS * 1000).toLocaleString()}`}
-            </div>
-          </Popup>
-        </Marker>
+          <TileLayer
+            attribution="Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community"
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+            maxZoom={22}
+          />
 
-        {/* Current (scrubbed) marker */}
-        <Marker position={currentPoint.position} icon={blueIcon}>
-          <Popup>
-            <div className="max-w-[220px] break-words text-sm">
-              {new Date(currentPoint.timestampS * 1000).toLocaleString()}
+          {/* Dwell-time heatmap overlay */}
+          {heatmapEnabled && (
+            <HeatmapLayer
+              points={heatmapPoints}
+              radius={10}
+              blur={20}
+              maxIntensity={1}
+            />
+          )}
+
+          {/* Full track */}
+          <Polyline positions={polylinePositions} color="blue" />
+
+          {/* Start marker */}
+          <Marker position={displayPoints[0].position} icon={greenIcon}>
+            <Popup>
+              <div className="max-w-[200px] break-words text-sm">
+                {`Start: ${new Date(startTimestampS * 1000).toLocaleString()}`}
+              </div>
+            </Popup>
+          </Marker>
+
+          {/* End marker */}
+          <Marker
+            position={displayPoints[displayPoints.length - 1].position}
+            icon={redIcon}
+          >
+            <Popup>
+              <div className="max-w-[200px] break-words text-sm">
+                {`End: ${new Date(endTimestampS * 1000).toLocaleString()}`}
+              </div>
+            </Popup>
+          </Marker>
+
+          {/* Current (scrubbed) marker */}
+          <Marker position={currentPoint.position} icon={blueIcon}>
+            <Popup>
+              <div className="max-w-[220px] break-words text-sm">
+                {new Date(currentPoint.timestampS * 1000).toLocaleString()}
+              </div>
+            </Popup>
+          </Marker>
+        </MapContainer>
+
+        {/* Dwell time overlay */}
+        {heatmapEnabled && (
+          <div className="pointer-events-none absolute left-1/2 top-2 z-[1000] -translate-x-1/2">
+            <div className="rounded-md bg-white/80 px-3 py-1 text-xs shadow">
+              <span className="font-semibold">Max dwell time:</span>{" "}
+              <span className="tabular-nums">{maxDwellS.toFixed(1)}s</span>
             </div>
-          </Popup>
-        </Marker>
-      </MapContainer>
+          </div>
+        )}
+      </div>
 
       <div className="rounded-md bg-white/80 p-2 text-xs shadow">
         {/* Scrubber */}
