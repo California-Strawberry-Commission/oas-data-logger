@@ -165,11 +165,13 @@ export async function POST(
         const latestTick = latestTickRow?.tick ?? BigInt(-1);
 
         // Filter out items in eventsData whose tick <= latestTick
-        const newEvents = eventsData.filter((d) => BigInt(d.tick) > latestTick);
+        const newEvents = eventsData.filter(
+          (d: any) => BigInt(d.tick) > latestTick
+        );
 
         if (newEvents.length > 0) {
           await prisma.runData.createMany({
-            data: newEvents.map((d) => {
+            data: newEvents.map((d: any) => {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const data = d.data as any;
               const dataStr =
