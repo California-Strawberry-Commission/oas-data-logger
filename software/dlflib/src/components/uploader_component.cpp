@@ -253,8 +253,20 @@ bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
     client->printf(fileTemplate, file.name());
 
     // Send file data
+    // Send file data
     while (file.available()) {
-      size_t len = file.read(buf, chunkSize);
+      ssize_t len = file.read(buf, chunkSize);
+
+      if (len <= 0) {
+        Serial.printf(
+            "[Uploader] Error: File corrupt or unreadable: %s. Aborting "
+            "upload.\n",
+            file.name());
+        file.close();
+        client->stop();
+        return false;
+      }
+
       client->write(buf, len);
     }
 
