@@ -140,29 +140,29 @@ run_handle_t CSCLogger::getAvailableHandle() {
 void CSCLogger::prune() {
   fs::File root = fs_.open(fsDir_);
 
-  fs::File run_dir;
-  while (run_dir = root.openNextFile()) {
+  fs::File runDir;
+  while (runDir = root.openNextFile()) {
     // Skip files and sys vol information dir
-    if (!run_dir.isDirectory() ||
-        !strcmp(run_dir.name(), "System Volume Information")) {
+    if (!runDir.isDirectory() ||
+        !strcmp(runDir.name(), "System Volume Information")) {
       continue;
     }
 
     // Search for lockfiles, if found, are pruned for upload on startup
-    String run_dir_path = dlf::util::resolvePath({fsDir_, run_dir.name()});
-    fs::File run_file;
-    while (run_file = run_dir.openNextFile()) {
-      if (!strcmp(run_file.name(), LOCKFILE_NAME)) {
-        Serial.printf("[CSCLogger] Pruning %s\n", run_dir_path.c_str());
+    String runDirPath = dlf::util::resolvePath({fsDir_, runDir.name()});
+    fs::File runFile;
+    while (runFile = runDir.openNextFile()) {
+      if (!strcmp(runFile.name(), LOCKFILE_NAME)) {
+        Serial.printf("[CSCLogger] Pruning %s\n", runDirPath.c_str());
 
-        String lockfile_path{
-            dlf::util::resolvePath({run_dir_path, LOCKFILE_NAME})};
-        if (fs_.remove(lockfile_path)) {
+        String lockfilePath{
+            dlf::util::resolvePath({runDirPath, LOCKFILE_NAME})};
+        if (fs_.remove(lockfilePath)) {
           Serial.printf("[CSCLogger] Successfully removed lockfile: %s\n",
-                        lockfile_path.c_str());
+                        lockfilePath.c_str());
         } else {
           Serial.printf("[CSCLogger] ERROR: Failed to remove lockfile: %s\n",
-                        lockfile_path.c_str());
+                        lockfilePath.c_str());
         }
         break;
       }
