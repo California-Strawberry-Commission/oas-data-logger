@@ -148,7 +148,7 @@ void CSCLogger::prune() {
       continue;
     }
 
-    // Search for lockfiles. Delete run if found (was dirty when closed).
+    // Search for lockfiles, if found, are pruned for upload on startup
     String run_dir_path = dlf::util::resolvePath({fsDir_, run_dir.name()});
     fs::File run_file;
     while (run_file = run_dir.openNextFile()) {
