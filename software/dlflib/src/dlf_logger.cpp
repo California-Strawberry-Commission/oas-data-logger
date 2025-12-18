@@ -140,27 +140,33 @@ run_handle_t CSCLogger::getAvailableHandle() {
 void CSCLogger::prune() {
   fs::File root = fs_.open(fsDir_);
 
-  fs::File run_dir;
-  while (run_dir = root.openNextFile()) {
+  fs::File runDir;
+  while (runDir = root.openNextFile()) {
     // Skip files and sys vol information dir
-    if (!run_dir.isDirectory() ||
-        !strcmp(run_dir.name(), "System Volume Information")) {
+    if (!runDir.isDirectory() ||
+        !strcmp(runDir.name(), "System Volume Information")) {
       continue;
     }
 
-    // Search for lockfiles. Delete run if found (was dirty when closed).
-    String run_dir_path = dlf::util::resolvePath({fsDir_, run_dir.name()});
-    fs::File run_file;
-    while (run_file = run_dir.openNextFile()) {
-      if (!strcmp(run_file.name(), LOCKFILE_NAME)) {
-        Serial.printf("[CSCLogger] Pruning %s\n", run_dir_path.c_str());
+    // The presence of a lockfile indicates that the run was not closed properly
+    // (for example, due to power loss during a run). In this case, we still
+    // want to upload the data for the run. In order to do that, we'll remove
+    // the lockfile so that the uploader will attempt to upload this run
+    String runDirPath = dlf::util::resolvePath({fsDir_, runDir.name()});
+    fs::File runFile;
+    while (runFile = runDir.openNextFile()) {
+      if (!strcmp(runFile.name(), LOCKFILE_NAME)) {
+        Serial.printf("[CSCLogger] Pruning %s\n", runDirPath.c_str());
 
-        run_dir.rewindDirectory();
-        while (run_file = run_dir.openNextFile()) {
-          fs_.remove(dlf::util::resolvePath({run_dir_path, run_file.name()}));
+        String lockfilePath{
+            dlf::util::resolvePath({runDirPath, LOCKFILE_NAME})};
+        if (fs_.remove(lockfilePath)) {
+          Serial.printf("[CSCLogger] Successfully removed lockfile: %s\n",
+                        lockfilePath.c_str());
+        } else {
+          Serial.printf("[CSCLogger] ERROR: Failed to remove lockfile: %s\n",
+                        lockfilePath.c_str());
         }
-
-        fs_.rmdir(run_dir_path);
         break;
       }
     }
