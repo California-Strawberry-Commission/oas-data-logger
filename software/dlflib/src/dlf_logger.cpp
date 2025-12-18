@@ -155,12 +155,15 @@ void CSCLogger::prune() {
       if (!strcmp(run_file.name(), LOCKFILE_NAME)) {
         Serial.printf("[CSCLogger] Pruning %s\n", run_dir_path.c_str());
 
-        run_dir.rewindDirectory();
-        while (run_file = run_dir.openNextFile()) {
-          fs_.remove(dlf::util::resolvePath({run_dir_path, run_file.name()}));
+        String lockfile_path{
+            dlf::util::resolvePath({run_dir_path, LOCKFILE_NAME})};
+        if (fs_.remove(lockfile_path)) {
+          Serial.printf("[CSCLogger] Successfully removed lockfile: %s\n",
+                        lockfile_path.c_str());
+        } else {
+          Serial.printf("[CSCLogger] ERROR: Failed to remove lockfile: %s\n",
+                        lockfile_path.c_str());
         }
-
-        fs_.rmdir(run_dir_path);
         break;
       }
     }
