@@ -261,10 +261,6 @@ bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
     client->print("\r\n");
     file.close();
     file = runDir.openNextFile();
-
-    client->print("\r\n");
-    file.close();
-    file = runDir.openNextFile();
   }
 
   ////////////////////
