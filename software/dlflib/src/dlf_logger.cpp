@@ -148,7 +148,10 @@ void CSCLogger::prune() {
       continue;
     }
 
-    // Search for lockfiles, if found, are pruned for upload on startup
+    // The presence of a lockfile indicates that the run was not closed properly
+    // (for example, due to power loss during a run). In this case, we still
+    // want to upload the data for the run. In order to do that, we'll remove
+    // the lockfile so that the uploader will attempt to upload this run
     String runDirPath = dlf::util::resolvePath({fsDir_, runDir.name()});
     fs::File runFile;
     while (runFile = runDir.openNextFile()) {
