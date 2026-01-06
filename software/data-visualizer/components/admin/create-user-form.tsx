@@ -13,8 +13,7 @@ import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 
 type Device = {
-  id: number;
-  deviceUid: string;
+  id: string;
   name: string | null;
 };
 
@@ -81,7 +80,7 @@ export default function CreateUserForm({ devices }: { devices: Device[] }) {
                   className="h-4 w-4"
                 />
                 <span>
-                  {device.deviceUid}{" "}
+                  {device.id}{" "}
                   {device.name && (
                     <span className="text-xs text-muted-foreground">
                       ({device.name})

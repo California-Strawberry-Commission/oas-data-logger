@@ -26,7 +26,6 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
-        deviceUid: true,
         name: true,
         createdAt: true,
       },

@@ -43,10 +43,9 @@ export async function POST(
 
     // Ensure device exists (create if missing)
     const device = await prisma.device.upsert({
-      where: { deviceUid },
+      where: { id: deviceUid },
       update: {},
-      create: { deviceUid },
-      select: { id: true },
+      create: { id: deviceUid },
     });
 
     // Process isActive field (OPTIONAL)

@@ -32,16 +32,16 @@ export async function createDeviceAction(
       return { error: "Not authorized" };
     }
 
-    const deviceUid = (formData.get("deviceUid") as string | null)?.trim();
+    const deviceId = (formData.get("deviceId") as string | null)?.trim();
     const name = (formData.get("name") as string | null)?.trim();
 
-    if (!deviceUid) {
-      return { error: "Device UID is required" };
+    if (!deviceId) {
+      return { error: "Device ID is required" };
     }
 
     await prisma.device.create({
       data: {
-        deviceUid,
+        id: deviceId,
         name: name || null,
       },
     });
@@ -73,26 +73,46 @@ export async function createUserAction(
 
     const email = (formData.get("email") as string | null)?.trim();
     const password = (formData.get("password") as string | null)?.trim();
-    const deviceIdsRaw = formData.getAll("deviceIds") as string[];
+    const deviceIdsRaw = (formData.getAll("deviceIds") as string[])
+      .map((s) => (typeof s === "string" ? s.trim() : ""))
+      .filter(Boolean);
 
     if (!email || !password) {
       return { error: "Email and password are required" };
     }
 
-    const deviceIds = deviceIdsRaw
-      .map((id) => Number(id))
-      .filter((n) => Number.isFinite(n));
+    // De-dupe device IDs
+    const deviceIds = Array.from(new Set(deviceIdsRaw));
 
     const passwordHash = await hashPassword(password);
+
+    // Validate that selected devices exist
+    let existingDeviceIds: string[] = [];
+    if (deviceIds.length > 0) {
+      const devices = await prisma.device.findMany({
+        where: { id: { in: deviceIds } },
+        select: { id: true },
+      });
+      existingDeviceIds = devices.map((d) => d.id);
+
+      const missingDeviceIds = deviceIds.filter(
+        (id) => !existingDeviceIds.includes(id)
+      );
+      if (missingDeviceIds.length) {
+        return {
+          error: `Unknown device ID(s): ${missingDeviceIds.join(", ")}`,
+        };
+      }
+    }
 
     await prisma.user.create({
       data: {
         email,
         passwordHash,
         role: "USER",
-        userDevices: deviceIds.length
+        userDevices: existingDeviceIds.length
           ? {
-              create: deviceIds.map((deviceId) => ({
+              create: existingDeviceIds.map((deviceId) => ({
                 device: { connect: { id: deviceId } },
                 role: "VIEWER",
               })),
@@ -126,18 +146,19 @@ export async function updateUserAction(
       return { success: false, error: "Not authorized" };
     }
 
-    const userId = Number(formData.get("userId"));
+    const userId = formData.get("userId") as string | null;
     const role = formData.get("role") as string | null;
     const password = (formData.get("password") as string | null)?.trim();
-    const deviceIdsRaw = formData.getAll("deviceIds") as string[];
+    const deviceIdsRaw = (formData.getAll("deviceIds") as string[])
+      .map((s) => (typeof s === "string" ? s.trim() : ""))
+      .filter(Boolean);
 
     if (!userId || !role) {
       return { success: false, error: "User id and role are required" };
     }
 
-    const deviceIds = deviceIdsRaw
-      .map((id) => Number(id))
-      .filter((n) => Number.isFinite(n));
+    // De-dupe device IDs
+    const deviceIds = Array.from(new Set(deviceIdsRaw));
 
     // Update user & their device associations
     await prisma.$transaction(async (tx) => {
@@ -190,7 +211,7 @@ export async function updateDeviceAction(
       return { success: false, error: "Not authorized" };
     }
 
-    const deviceId = Number(formData.get("deviceId"));
+    const deviceId = (formData.get("deviceId") as string | null)?.trim();
     const name = (formData.get("name") as string | null)?.trim();
 
     if (!deviceId) {

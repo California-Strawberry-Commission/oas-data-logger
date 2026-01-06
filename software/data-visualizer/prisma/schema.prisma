@@ -8,6 +8,10 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ------------------------------------------------------------
+// User and device management
+// ------------------------------------------------------------
+
 enum AppRole {
   ADMIN
   USER
@@ -18,28 +22,24 @@ enum DeviceRole {
   // Will add more in the future
 }
 
-enum StreamType {
-  POLLED
-  EVENT
-}
-
 model User {
-  id           Int      @id @default(autoincrement())
-  email        String   @unique
+  id           String  @id @default(cuid(2))
+  email        String  @unique
   passwordHash String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @default(now()) @updatedAt
-  role         AppRole  @default(USER)
+  role         AppRole @default(USER)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   userDevices UserDevice[]
 }
 
 model Device {
-  id        Int      @id @default(autoincrement())
-  deviceUid String   @unique
+  id   String  @id
+  name String?
+
   createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
-  name      String?
+  updatedAt DateTime @updatedAt
 
   userDevices UserDevice[]
   runs        Run[]
@@ -47,31 +47,41 @@ model Device {
 
 model UserDevice {
   user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId   Int // relation field
+  userId   String // relation field
   device   Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  deviceId Int // relation field
+  deviceId String // relation field
 
   role DeviceRole @default(VIEWER)
 
   createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
+  updatedAt DateTime @updatedAt
 
   @@id([userId, deviceId]) // each user-device pair is unique
   @@index([deviceId, role])
   @@index([userId, role])
 }
 
+// ------------------------------------------------------------
+// Runs and stream data
+// ------------------------------------------------------------
+
+enum StreamType {
+  POLLED
+  EVENT
+}
+
 model Run {
-  id         Int      @id @default(autoincrement())
-  uuid       String   @unique
-  device     Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  deviceId   Int // relation field
+  id         Int     @id @default(autoincrement())
+  uuid       String  @unique
+  device     Device  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  deviceId   String // relation field
   epochTimeS BigInt
   tickBaseUs BigInt
   metadata   Json
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @default(now()) @updatedAt
-  isActive   Boolean  @default(false)
+  isActive   Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   runData RunData[]
 }
