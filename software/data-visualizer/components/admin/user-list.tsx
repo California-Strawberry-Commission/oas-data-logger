@@ -19,18 +19,17 @@ import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 type Device = {
-  id: number;
-  deviceUid: string;
+  id: string;
   name: string | null;
 };
 
 type UserDevice = {
-  deviceId: number;
+  deviceId: string;
   device: Device;
 };
 
 type User = {
-  id: number;
+  id: string;
   email: string;
   role: "USER" | "ADMIN";
   userDevices: UserDevice[];
@@ -135,7 +134,7 @@ function UpdateUserForm({
                   className="h-4 w-4"
                 />
                 <span>
-                  {device.deviceUid}{" "}
+                  {device.id}{" "}
                   {device.name && (
                     <span className="text-xs text-muted-foreground">
                       ({device.name})
@@ -221,7 +220,7 @@ export default function UserList({
                 {user.userDevices.length === 0 ? (
                   <span className="text-muted-foreground">none</span>
                 ) : (
-                  user.userDevices.map((ud) => ud.device.deviceUid).join(", ")
+                  user.userDevices.map((ud) => ud.device.id).join(", ")
                 )}
               </div>
             </button>
@@ -231,7 +230,7 @@ export default function UserList({
 
       <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
         {selectedUser && (
-          <DialogContent className="sm:max-w-[480px]">
+          <DialogContent className="sm:max-w-120">
             <DialogHeader>
               <DialogTitle>Edit user</DialogTitle>
               <DialogDescription></DialogDescription>

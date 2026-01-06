@@ -14,12 +14,12 @@ export async function verifyPassword(pw: string, hash: string) {
   return bcrypt.compare(pw, hash);
 }
 
-export async function setSession(cookies: ResponseCookies, userId: number) {
+export async function setSession(cookies: ResponseCookies, userId: string) {
   // Note: calling `await cookies()` inside a helper does not reliably work for
   // responses as it may not be bound to the same response context as that in the
   // route handler. So, to be safe, we pass ResponseCookies in as a param that we
   // then modify.
-  const token = await new SignJWT({ sub: String(userId) })
+  const token = await new SignJWT({ sub: userId })
     .setProtectedHeader({ alg })
     .setIssuedAt()
     .setExpirationTime("7d")
@@ -34,7 +34,7 @@ export async function setSession(cookies: ResponseCookies, userId: number) {
   });
 }
 
-export async function getSession(): Promise<{ userId: number } | null> {
+export async function getSession(): Promise<{ userId: string } | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
   if (!token) {
@@ -42,7 +42,7 @@ export async function getSession(): Promise<{ userId: number } | null> {
   }
   try {
     const { payload } = await jwtVerify(token, secret);
-    return payload?.sub ? { userId: Number(payload.sub) } : null;
+    return payload?.sub ? { userId: payload.sub } : null;
   } catch {
     return null;
   }

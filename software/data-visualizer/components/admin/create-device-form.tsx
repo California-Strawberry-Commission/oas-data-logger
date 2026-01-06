@@ -34,10 +34,10 @@ export default function CreateDeviceForm() {
 
       <form action={formAction} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="deviceUid">Device UID</Label>
+          <Label htmlFor="deviceId">Device UID</Label>
           <Input
-            id="deviceUid"
-            name="deviceUid"
+            id="deviceId"
+            name="deviceId"
             type="text"
             placeholder="unique-device-uid-123"
             required

@@ -19,8 +19,7 @@ import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 type Device = {
-  id: number;
-  deviceUid: string;
+  id: string;
   name: string | null;
 };
 
@@ -66,7 +65,7 @@ function UpdateDeviceForm({
       <div className="space-y-1">
         <Label>Device UID</Label>
         <p className="text-sm border rounded-md px-2 py-1 bg-muted text-muted-foreground">
-          {device.deviceUid}
+          {device.id}
         </p>
       </div>
 
@@ -138,7 +137,7 @@ export default function DeviceList({ devices }: { devices: Device[] }) {
               className="w-full text-left border rounded-md p-3 flex flex-col gap-1 hover:bg-muted transition"
             >
               <div className="flex justify-between items-center">
-                <span className="font-medium">{device.deviceUid}</span>
+                <span className="font-medium">{device.id}</span>
                 <span className="text-xs text-muted-foreground">
                   {device.name}
                 </span>
@@ -150,7 +149,7 @@ export default function DeviceList({ devices }: { devices: Device[] }) {
 
       <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
         {selectedDevice && (
-          <DialogContent className="sm:max-w-[480px]">
+          <DialogContent className="sm:max-w-120">
             <DialogHeader>
               <DialogTitle>Edit device</DialogTitle>
               <DialogDescription></DialogDescription>
