@@ -97,3 +97,35 @@ model RunData {
 
   @@index([runId, streamType, streamId, tick])
 }
+
+// ------------------------------------------------------------
+// OTA releases
+// ------------------------------------------------------------
+
+enum DeviceType {
+  V0
+  V1
+}
+
+enum OtaChannel {
+  STABLE
+  BETA
+}
+
+model FirmwareRelease {
+  id          String     @id @default(cuid(2))
+  deviceType  DeviceType
+  channel     OtaChannel @default(STABLE)
+  buildNumber Int // monotonic version number
+  version     String // human readable version name
+  sha256      String // 64 hex chars
+  size        Int // in bytes
+  s3Key       String
+  isPublished Boolean    @default(false)
+
+  createdAt   DateTime  @default(now())
+  publishedAt DateTime?
+
+  @@unique([deviceType, channel, buildNumber])
+  @@index([deviceType, channel, isPublished, buildNumber])
+}
