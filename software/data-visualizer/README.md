@@ -104,3 +104,5 @@ Run the following script to upload the firmware bin to S3 and update the DB:
 ```
 node scripts/publish-firmware.mjs --file <path/to/firmware.bin> --deviceType <V0|V1> --channel <STABLE|BETA> --version <human readable version name, like 0.0.1>
 ```
+
+Note: when updating a DB entry for existing firmware (for example, marking it as published), you will need to specify buildNumber, as {deviceType, channel, buildNumber} is used to uniquely identify the row.
