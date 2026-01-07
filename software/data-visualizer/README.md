@@ -41,7 +41,7 @@ $ vercel env pull .env.local --environment=development
         ALTER USER prisma_user CREATEDB;
         \q
 
-4.  Create a file called `.env.local` that contains the following line:
+4.  Check that `.env.local` contains the following line:
 
         DATABASE_URL="postgresql://prisma_user:password@localhost:5432/prisma_db"
 
@@ -87,12 +87,20 @@ $ npm run db:deploy
 curl -X POST http://localhost:3000/api/upload/example_run_20251107 -F "files=@/path/to/meta.dlf" -F "files=@/path/to/polled.dlf" -F "files=@/path/to/event.dlf" -F "isActive=false" -F "deviceUid=example-device-123"
 ```
 
-## Creating DB schema changes
+## Making DB schema changes
 
-When making any change to the Prisma schema in `schema.prisma`, first create a migration:
+After making any changes to the Prisma schema in `schema.prisma`, create a migration:
 
 ```
 $ npm run db:migrate my_migration_name
 ```
 
 Make sure to check in the generated files under the `prisma/migrations` directory to source control. Note that when Vercel picks up the commit, it will automatically apply the newly created migration (via `npm run vercel-build`).
+
+## Pushing OTA firmware
+
+Run the following script to upload the firmware bin to S3 and update the DB:
+
+```
+node scripts/publish-firmware.mjs --file <path/to/firmware.bin> --deviceType <V0|V1> --channel <STABLE|BETA> --version <human readable version name, like 0.0.1>
+```
