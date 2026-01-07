@@ -38,11 +38,25 @@ model Device {
   id   String  @id
   name String?
 
+  secret DeviceSecret? // optional because device might be created before provision
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   userDevices UserDevice[]
   runs        Run[]
+}
+
+model DeviceSecret {
+  deviceId String @id
+  
+  // This stores the encrypted secret.
+  secret   String 
+
+  updatedAt DateTime @updatedAt
+
+  // Relation fields
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 }
 
 model UserDevice {
