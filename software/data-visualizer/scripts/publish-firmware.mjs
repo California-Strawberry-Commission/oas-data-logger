@@ -1,15 +1,15 @@
 #!/usr/bin/env node
-import fs from "node:fs";
-import crypto from "node:crypto";
-import path from "node:path";
-import { parseArgs } from "node:util";
-import { fileURLToPath } from "node:url";
-import dotenv from "dotenv";
 import {
-  S3Client,
-  PutObjectCommand,
   HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
 } from "@aws-sdk/client-s3";
+import dotenv from "dotenv";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 import { PrismaClient } from "../generated/prisma/client/index.js";
 
 // Resolve ../.env.local relative to this script file
