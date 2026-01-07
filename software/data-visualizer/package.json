@@ -17,6 +17,7 @@
     "vercel-build": "prisma generate && prisma migrate deploy && next build"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.964.0",
     "@prisma/client": "^6.6.0",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-label": "^2.1.8",
@@ -27,6 +28,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "dlflib-js": "file:../dlflib-js",
+    "dotenv": "^17.2.3",
     "jose": "^6.1.1",
     "leaflet": "^1.9.4",
     "leaflet.heat": "^0.2.0",
