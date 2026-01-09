@@ -2,6 +2,8 @@
 #include <FastLED.h>
 #include <WiFiManager.h>
 
+#include "ota_updater/ota_updater.h"
+
 // Serial
 const unsigned long SERIAL_BAUD_RATE{115200};
 
@@ -29,7 +31,7 @@ static void connectWifiWithPortal() {
   wifiManager.setCaptivePortalEnable(true);
 
   if (shouldResetWifi()) {
-    Serial.println("Resetting WiFi settings");
+    Serial.println("[WiFi] Resetting WiFi settings");
     wifiManager.resetSettings();
   }
 
@@ -38,10 +40,10 @@ static void connectWifiWithPortal() {
   // fails for whatever reason, then restart the device. Note that this blocks
   // until configuration is complete.
   if (!wifiManager.autoConnect()) {
-    Serial.println("WiFi failed to connect. Restarting device...");
+    Serial.println("[WiFi] WiFi failed to connect. Restarting device...");
     ESP.restart();
   } else {
-    Serial.println("WiFi connected");
+    Serial.println("[WiFi] WiFi connected");
     FastLED.showColor(CRGB::Green);
   }
 }
@@ -49,7 +51,7 @@ static void connectWifiWithPortal() {
 void setup() {
   FastLED.addLeds<LED_TYPE, LED_PIN, LED_COLOR_ORDER>(leds, NUM_LEDS);
   FastLED.setBrightness(LED_BRIGHTNESS);
-  FastLED.showColor(CRGB::White);
+  FastLED.showColor(CRGB::Red);
 
   Serial.begin(SERIAL_BAUD_RATE);
 
@@ -60,6 +62,15 @@ void setup() {
   vTaskDelay(pdMS_TO_TICKS(1000));
 
   connectWifiWithPortal();
+
+  Serial.printf("Firmware: version=%s build=%d device=%s channel=%s\n",
+                FW_VERSION, FW_BUILD_NUMBER, DEVICE_TYPE, OTA_CHANNEL);
+
+  ota::OtaUpdater::Config otaConfig;
+  otaConfig.deviceType = DEVICE_TYPE;
+  otaConfig.channel = OTA_CHANNEL;
+  otaConfig.currentBuildNumber = FW_BUILD_NUMBER;
+  ota::OtaUpdater updater(otaConfig);
 }
 
 void loop() { delay(10); }
