@@ -1,0 +1,10 @@
+{
+  "name": "ota_updater",
+  "version": "1.0.0",
+  "description": "OTA update helper for ESP32",
+  "frameworks": ["arduino"],
+  "platforms": ["espressif32"],
+  "dependencies": {
+    "bblanchon/ArduinoJson": "^7.0.0"
+  }
+}
