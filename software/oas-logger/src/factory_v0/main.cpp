@@ -44,7 +44,7 @@ static void connectWifiWithPortal() {
     ESP.restart();
   } else {
     Serial.println("[WiFi] WiFi connected");
-    FastLED.showColor(CRGB::Green);
+    FastLED.showColor(CRGB::Yellow);
   }
 }
 
@@ -67,10 +67,22 @@ void setup() {
                 FW_VERSION, FW_BUILD_NUMBER, DEVICE_TYPE, OTA_CHANNEL);
 
   ota::OtaUpdater::Config otaConfig;
+  otaConfig.manifestEndpoint =
+      "http://192.168.1.71:3000/api/ota/manifest/%s/%s";
+  otaConfig.firmwareEndpoint =
+      "http://192.168.1.71:3000/api/ota/firmware/%s/%s/%d";
   otaConfig.deviceType = DEVICE_TYPE;
   otaConfig.channel = OTA_CHANNEL;
   otaConfig.currentBuildNumber = FW_BUILD_NUMBER;
-  ota::OtaUpdater updater(otaConfig);
+  ota::OtaUpdater otaUpdater(otaConfig);
+  auto res = otaUpdater.updateIfAvailable(true);
+  if (res.ok) {
+    FastLED.showColor(CRGB::Green);
+  } else {
+    Serial.printf("[OTA] Error when updating firmware: %s\n",
+                  res.message.c_str());
+    FastLED.showColor(CRGB::Orange);
+  }
 }
 
 void loop() { delay(10); }
