@@ -1,9 +1,11 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
 
-// Ensure this key is stored securely in your .env file
-// It must be 32 bytes (64 hex characters)
+// Key must be 32 bytes (64 hex characters)
 const ALGORITHM = "aes-256-gcm";
-const SECRET_KEY = Buffer.from(process.env.DEVICE_ENCRYPTION_KEY || "", "hex");
+const SECRET_KEY = Buffer.from(
+  process.env.DEVICE_SECRET_ENCRYPTION_KEY || "",
+  "hex"
+);
 
 /**
  * Encrypts a raw device secret using AES-256-GCM.
