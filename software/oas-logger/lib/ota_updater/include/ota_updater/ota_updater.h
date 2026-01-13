@@ -5,7 +5,6 @@
 namespace ota {
 
 struct Manifest {
-  bool hasLatest = false;
   String deviceType;
   String channel;
   String version;
@@ -25,7 +24,15 @@ class OtaUpdater {
     String channel;               // "STABLE" or "BETA"
     int currentBuildNumber = -1;  // currently installed build number
 
-    uint32_t httpTimeoutMs = 20000;
+    uint32_t manifestTimeoutMs = 3000;
+    uint32_t firmwareTimeoutMs = 20000;
+    uint32_t firmwareStallGraceMs = 5000;
+  };
+
+  struct ManifestResult {
+    bool ok = false;
+    String message;
+    Manifest manifest;
   };
 
   struct UpdateResult {
@@ -40,11 +47,9 @@ class OtaUpdater {
   /**
    * Fetch the latest manifest.
    *
-   * @param out The latest manifest data.
-   * @param err Error string, if the fetch was not successful.
-   * @return Whether the fetch was successful.
+   * @return The resulting state of the manifest fetch process.
    */
-  bool fetchLatestManifest(Manifest& out, String& err);
+  ManifestResult fetchLatestManifest();
 
   /**
    * Whether the manifest firmware version is newer than the one currently
