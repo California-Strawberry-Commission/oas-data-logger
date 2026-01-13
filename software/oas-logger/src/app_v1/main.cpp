@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <DeviceAuth.h>
 #include <ESP32Time.h>
 #include <FastLED.h>
 #include <SD_MMC.h>
@@ -63,6 +64,10 @@ const int WIFI_RECONNECT_BACKOFF_MS{2000};
 const int WIFI_MAX_BACKOFF_MS{30000};
 static volatile bool wifiConnecting = false;
 static uint32_t wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;
+
+// Security and Provisioning
+String deviceSecret;  // Populated from NVS at boot
+DeviceAuth* secureAuth = nullptr;
 
 // TODO: Be able to configure upload endpoint in Access Point mode
 const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
@@ -155,6 +160,24 @@ void setup() {
 
   // Initialize LED first for status indication
   initializeLeds();
+
+  // Temp instance to load credentials
+  DeviceAuth tempAuth(getDeviceUid(), "");
+
+  if (!tempAuth.loadSecret(deviceSecret)) {
+    // If no secret, BLOCK here until provisioned
+    // Check NVS -> Wait if empty
+    deviceSecret = tempAuth.awaitProvisioning();
+    Serial.println("System: Provisioned. Rebooting in 3s...");
+    delay(3000);
+    ESP.restart();
+  }
+
+  // Create signer instance
+  secureAuth = new DeviceAuth(getDeviceUid(), deviceSecret);
+  Serial.println("Security: Enabled");
+
+  logger.setSecurity(secureAuth);
 
   // Create mutex for GPS data protection
   gpsDataMutex = xSemaphoreCreateMutex();

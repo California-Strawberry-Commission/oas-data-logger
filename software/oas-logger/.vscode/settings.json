@@ -8,5 +8,14 @@
   "C_Cpp.clang_format_style": "Google",
   "C_Cpp.clang_format_fallbackStyle": "Google",
   "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
-  "C_Cpp.codeAnalysis.clangTidy.enabled": true
+  "C_Cpp.codeAnalysis.clangTidy.enabled": true,
+  "ROS2.distro": "humble",
+  "python.autoComplete.extraPaths": [
+    "/opt/ros/humble/lib/python3.10/site-packages",
+    "/opt/ros/humble/local/lib/python3.10/dist-packages"
+  ],
+  "python.analysis.extraPaths": [
+    "/opt/ros/humble/lib/python3.10/site-packages",
+    "/opt/ros/humble/local/lib/python3.10/dist-packages"
+  ]
 }
