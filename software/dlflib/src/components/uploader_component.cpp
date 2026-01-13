@@ -228,6 +228,18 @@ bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
 
   client->printf("POST %s HTTP/1.1\r\n", parts.path.c_str());
   client->printf("Host: %s\r\n", parts.host.c_str());
+
+  if (_auth != nullptr) {
+    // We sign the 'runUuid' to make the signature unique to this specific
+    // upload
+    AuthHeaders headers = _auth->signPayload(runUuid);
+
+    client->printf("x-device-id: %s\r\n", headers.deviceId.c_str());
+    client->printf("x-timestamp: %s\r\n", headers.timestamp.c_str());
+    client->printf("x-nonce: %s\r\n", headers.nonce.c_str());
+    client->printf("x-signature: %s\r\n", headers.signature.c_str());
+  }
+
   client->printf("Content-Type: multipart/form-data; boundary=%s\r\n",
                  boundary);
   client->printf("Content-Length: %zu\r\n", contentLength);
