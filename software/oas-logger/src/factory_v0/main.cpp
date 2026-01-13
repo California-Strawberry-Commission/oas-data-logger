@@ -68,14 +68,14 @@ void setup() {
 
   ota::OtaUpdater::Config otaConfig;
   otaConfig.manifestEndpoint =
-      "http://192.168.1.71:3000/api/ota/manifest/%s/%s";
+      "https://oas-data-logger.vercel.app/api/ota/manifest/%s/%s";
   otaConfig.firmwareEndpoint =
-      "http://192.168.1.71:3000/api/ota/firmware/%s/%s/%d";
+      "https://oas-data-logger.vercel.app/api/ota/firmware/%s/%s/%d";
   otaConfig.deviceType = DEVICE_TYPE;
   otaConfig.channel = OTA_CHANNEL;
   otaConfig.currentBuildNumber = FW_BUILD_NUMBER;
   ota::OtaUpdater otaUpdater(otaConfig);
-  auto res = otaUpdater.updateIfAvailable(true);
+  auto res{otaUpdater.updateIfAvailable(true)};
   if (res.ok) {
     FastLED.showColor(CRGB::Green);
   } else {
