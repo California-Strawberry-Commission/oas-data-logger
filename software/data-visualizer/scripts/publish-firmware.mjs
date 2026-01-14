@@ -12,20 +12,13 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { PrismaClient } from "../generated/prisma/client/index.js";
 
-// Resolve ../.env.local relative to this script file
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-dotenv.config({
-  path: path.resolve(__dirname, "../.env.local"),
-});
-
 //#region CLI Args
 
 function printUsageAndExit(code = 0) {
   console.log(`
 Usage:
   publish-firmware
+    --env local|preview|prod
     --file <firmware.bin>
     --deviceType V0|V1
     --version <string>
@@ -39,6 +32,7 @@ Usage:
 
 const {
   values: {
+    env,
     file,
     deviceType,
     channel = "STABLE",
@@ -50,6 +44,7 @@ const {
   },
 } = parseArgs({
   options: {
+    env: { type: "string" },
     file: { type: "string" },
     deviceType: { type: "string" },
     channel: { type: "string" },
@@ -66,10 +61,13 @@ if (help) {
   printUsageAndExit(0);
 }
 
-if (!file || !deviceType || !version) {
+if (!env || !file || !deviceType || !version) {
   printUsageAndExit(2);
 }
 
+if (!["local", "preview", "prod"].includes(env)) {
+  throw new Error(`env must be local, preview, or prod`);
+}
 if (!["V0", "V1"].includes(deviceType)) {
   throw new Error(`deviceType must be V0 or V1`);
 }
@@ -113,6 +111,12 @@ async function s3ObjectExists(s3, bucket, key) {
 }
 
 async function main() {
+  // Resolve .env file relative to this script file
+  const scriptDirname = path.dirname(fileURLToPath(import.meta.url));
+  dotenv.config({
+    path: path.resolve(scriptDirname, `../.env.${env}`),
+  });
+
   const databaseUrl = requireEnv("DATABASE_URL");
   const awsRegion = requireEnv("AWS_REGION");
   const s3Bucket = requireEnv("S3_BUCKET_NAME");
