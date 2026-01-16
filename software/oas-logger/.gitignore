@@ -4,3 +4,6 @@
 !.vscode
 .vscode/*
 !.vscode/settings.json
+
+# Custom dir used for downloading device FS
+unpacked_fs
