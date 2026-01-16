@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <ESP32Time.h>
+#include <Elog.h>
 #include <FastLED.h>
 #include <SD_MMC.h>
 #include <SparkFun_u-blox_GNSS_v3.h>
@@ -9,6 +10,8 @@
 #include <dlflib/dlf_logger.h>
 #include <driver/sdmmc_host.h>
 #include <esp_log.h>
+
+#define OAS_ELOG_ID 0
 
 // Configuration
 const int SERIAL_BAUD_RATE{115200};
@@ -144,7 +147,7 @@ bool wifiCredentialsExist();
 void enableGps();
 void disableGps();
 String getDeviceUid();
-void initializeLogger();
+void initializeDLFLogger();
 void startLoggerRun();
 void gpsTask(void* args);
 void sleepMonitorTask(void* args);
@@ -152,6 +155,17 @@ void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info);
 
 void setup() {
   Serial.begin(SERIAL_BAUD_RATE);
+
+  // Configure Elog
+  Logger.configureInternalLogging(
+      Serial,
+      ELOG_LEVEL_DEBUG);  // for now, output Elog internal logs to Serial
+  Logger.registerSerial(DLFLIB_ELOG_ID, ELOG_LEVEL_DEBUG, "dlflib", Serial);
+  Logger.registerSpiffs(DLFLIB_ELOG_ID, ELOG_LEVEL_INFO, "dlflib");
+  Logger.registerSerial(OAS_ELOG_ID, ELOG_LEVEL_DEBUG, "oas", Serial);
+  Logger.registerSpiffs(OAS_ELOG_ID, ELOG_LEVEL_INFO, "oas");
+  Logger.enableQuery(Serial);  // press space when on Serial Monitor to be able
+                               // to view the log files
 
   // Initialize LED first for status indication
   initializeLeds();
@@ -233,25 +247,27 @@ void loop() {
 void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   switch (event) {
     case ARDUINO_EVENT_WIFI_STA_START:
-      Serial.println("[WiFi] STA started");
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[WiFi] STA started");
       break;
     case ARDUINO_EVENT_WIFI_STA_CONNECTED:
-      Serial.println("[WiFi] Connected to AP");
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[WiFi] Connected to AP");
       wifiConnecting = false;
       wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;  // Reset backoff
       break;
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-      Serial.print("[WiFi] Got IP: ");
-      Serial.println(WiFi.localIP());
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[WiFi] Got IP: %s",
+                 WiFi.localIP());
       wifiConnecting = false;
       break;
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-      Serial.printf("[WiFi] Disconnected, reason: %d\n",
-                    info.wifi_sta_disconnected.reason);
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+                 "[WiFi] Disconnected, reason: %d",
+                 info.wifi_sta_disconnected.reason);
 
       // Handle auth failures differently
       if (info.wifi_sta_disconnected.reason == 201) {  // AUTH_FAIL
-        Serial.println("[WiFi] Authentication failed - check credentials");
+        Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+                   "[WiFi] Authentication failed - check credentials");
         // Don't auto-reconnect on auth failure
         wifiConnecting = false;
       } else {
@@ -337,8 +353,8 @@ void updateLedPattern() {
 }
 
 void transitionToState(SystemState newState) {
-  Serial.printf("State transition: %d -> %d\n", (int)currentState,
-                (int)newState);
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_DEBUG, "State transition: %d -> %d\n",
+             (int)currentState, (int)newState);
   currentState = newState;
 
   // Reset LED toggle state on transition
@@ -355,43 +371,47 @@ void handleInitState() {
 }
 
 void handleWaitSdState() {
-  Serial.println("Initializing SDIO for SD card...");
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Initializing SDIO for SD card...");
 
   // Configure the pins for SDIO
   if (!SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0, PIN_SD_D1, PIN_SD_D2,
                       PIN_SD_D3)) {
-    Serial.println("Pin configuration failed!");
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_ERROR, "Pin configuration failed!");
     currentError = ErrorType::SD_INIT_FAILED;
     transitionToState(SystemState::ERROR);
     return;
   }
 
   // Try 1-bit mode first (more reliable)
-  Serial.println("Trying 1-bit mode...");
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Trying 1-bit mode...");
   if (SD_MMC.begin("/sdcard", true)) {  // true = use 1-bit mode
-    Serial.println("SD card connected via SDIO (1-bit mode)");
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+               "SD card connected via SDIO (1-bit mode)");
 
     // Optionally try 4-bit mode
     SD_MMC.end();
     delay(100);
-    Serial.println("Now trying 4-bit mode...");
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Now trying 4-bit mode...");
     if (SD_MMC.begin("/sdcard", true, false,
                      SDMMC_FREQ_DEFAULT)) {  // false = 4-bit mode
-      Serial.println("SD card connected via SDIO (4-bit mode)");
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+                 "SD card connected via SDIO (4-bit mode)");
     } else {
-      Serial.println("4-bit failed, falling back to 1-bit");
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_WARNING,
+                 "4-bit failed, falling back to 1-bit");
       SD_MMC.begin("/sdcard", true);
     }
     transitionToState(SystemState::WAIT_WIFI);
   } else {
-    Serial.println("SD card initialization failed even in 1-bit mode");
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_ERROR,
+               "SD card initialization failed even in 1-bit mode");
     currentError = ErrorType::SD_INIT_FAILED;
     transitionToState(SystemState::ERROR);
   }
 }
 
 void handleWaitWifiState() {
-  Serial.println("Initializing WiFi (STA)...");
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Initializing WiFi (STA)...");
 
   // Set WiFi mode and register event handler
   WiFi.mode(WIFI_STA);
@@ -400,10 +420,12 @@ void handleWaitWifiState() {
 
   // Check if we have saved credentials
   if (WiFi.SSID().length() == 0) {
-    Serial.println("No WiFi credentials saved. Starting WiFi Manager...");
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+               "No WiFi credentials saved. Starting WiFi Manager...");
     wifiManager.autoConnect(WIFI_CONFIG_AP_NAME);
   } else {
-    Serial.printf("Connecting to saved WiFi: %s\n", WiFi.SSID().c_str());
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Connecting to saved WiFi: %s",
+               WiFi.SSID().c_str());
     WiFi.begin();  // Use saved credentials
     wifiConnecting = true;
   }
@@ -415,9 +437,10 @@ void handleWaitWifiState() {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("WiFi connected successfully");
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "WiFi connected successfully");
   } else {
-    Serial.println("WiFi not connected; continuing without network.");
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+               "WiFi not connected; continuing without network.");
   }
 
   transitionToState(SystemState::WAIT_GPS);
@@ -451,10 +474,11 @@ void handleWaitTimeState() {
     // Also set the RTC
     rtc.setTime(gpsEpoch);
 
-    Serial.printf("Valid time received: %ld\n", gpsEpoch);
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Valid GPS time received: %ld",
+               gpsEpoch);
 
     // Initialize logger and start run
-    initializeLogger();
+    initializeDLFLogger();
     startLoggerRun();
     transitionToState(SystemState::RUNNING);
   } else {
@@ -462,7 +486,7 @@ void handleWaitTimeState() {
     static unsigned long lastPrintTime = 0;
     if (millis() - lastPrintTime > 5000) {
       lastPrintTime = millis();
-      Serial.println("Waiting for valid GPS time...");
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Waiting for valid GPS time...");
     }
   }
 }
@@ -475,12 +499,12 @@ void handleRunningState() {
 
     // Try to get GPS data with mutex protection
     if (xSemaphoreTake(gpsDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-      Serial.printf(
-          "[GPS] Lat: %.6f, Lng: %.6f, Alt: %.1fm, Sats: %d, Fix: %d\n",
-          gpsData.lat, gpsData.lng, gpsData.alt, gpsData.satellites,
-          gpsFixType);
-      Serial.printf("[DIAG] RunHandle: %d, Uptime: %lu ms\n", runHandle,
-                    millis());
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_DEBUG,
+                 "[GPS] Lat: %.6f, Lng: %.6f, Alt: %.1fm, Sats: %d, Fix: %d\n",
+                 gpsData.lat, gpsData.lng, gpsData.alt, gpsData.satellites,
+                 gpsFixType);
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_DEBUG,
+                 "[DIAG] RunHandle: %d, Uptime: %lu ms\n", runHandle, millis());
       xSemaphoreGive(gpsDataMutex);
     }
   }
@@ -504,7 +528,8 @@ void handleOffloadState() {
 
 void handleErrorState() {
   // Error state is handled by LED pattern
-  Serial.printf("System in ERROR state. Error type: %d\n", (int)currentError);
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+             "System in ERROR state. Error type: %d\n", (int)currentError);
 
   // For critical errors, restart after 10 seconds
   static unsigned long errorStartMillis = millis();
@@ -514,7 +539,7 @@ void handleErrorState() {
 }
 
 void handleSleepState() {
-  Serial.println("Entering deep sleep...");
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Entering deep sleep...");
 
   // Stop all tasks
   disableGps();
@@ -543,8 +568,11 @@ bool hasUsbPower() {
 bool wifiCredentialsExist() { return WiFi.SSID().length() > 0; }
 
 void enableGps() {
-  if (gpsEnabled) return;
-  Serial.println("Enabling GPS...");
+  if (gpsEnabled) {
+    return;
+  }
+
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Enabling GPS...");
 
   // Power cycle the GPS module (TESTED AND WORKING)
   // Note: PIN_GPS_ENABLE is already HIGH from setup() (shared with SD card)
@@ -569,7 +597,7 @@ void enableGps() {
     }
   }
   if (!connected) {
-    Serial.println("GPS not responding");
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_ERROR, "GPS not responding");
     currentError = ErrorType::GPS_NOT_RESPONDING;
     transitionToState(SystemState::ERROR);
     return;
@@ -581,11 +609,11 @@ void enableGps() {
   myGNSS.saveConfiguration();
 
   gpsEnabled = true;
-  Serial.println("GPS enabled");
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "GPS enabled");
 }
 
 void gpsTask(void* args) {
-  Serial.println("[GPS Task] Started");
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[GPS Task] Started");
 
   while (true) {
     // Request PVT data - returns true when new data is available
@@ -644,11 +672,11 @@ void disableGps() {
     return;
   }
 
-  Serial.println("Disabling GPS...");
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Disabling GPS...");
 
   // Delete GPS task if it exists
   if (xGPS_Handle != NULL) {
-    Serial.println("[GPS] Deleting GPS task...");
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[GPS] Deleting GPS task...");
     vTaskDelete(xGPS_Handle);
     xGPS_Handle = NULL;
   }
@@ -662,7 +690,7 @@ void disableGps() {
   mySerial.end();
 
   gpsEnabled = false;
-  Serial.println("GPS disabled");
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "GPS disabled");
 }
 
 String getDeviceUid() {
@@ -672,8 +700,8 @@ String getDeviceUid() {
   return id;
 }
 
-void initializeLogger() {
-  Serial.println("Initializing logger...");
+void initializeDLFLogger() {
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Initializing DLF logger...");
 
   auto satellitesLogInterval{std::chrono::seconds(5)};
   POLL(logger, gpsData.satellites, satellitesLogInterval, gpsDataMutex);
@@ -690,7 +718,7 @@ void initializeLogger() {
       LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS;
   logger.syncTo(UPLOAD_ENDPOINT, getDeviceUid(), options).begin();
 
-  Serial.println("Logger initialized");
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "DLF logger initialized");
 }
 
 void startLoggerRun() {
@@ -728,15 +756,18 @@ void sleepMonitorTask(void* args) {
 
         while (!digitalRead(PIN_SLEEP_BUTTON)) {
           if (millis() - start >= WIFI_RECONFIG_BUTTON_HOLD_TIME_MS) {
-            Serial.println(
+            Logger.log(
+                OAS_ELOG_ID, ELOG_LEVEL_INFO,
                 "[WiFi Reconfiguration] WiFi reconfiguration mode entered...");
 
             sleepCleanup();
             vTaskDelay(pdMS_TO_TICKS(100));
             logger.waitForSyncCompletion();
-            Serial.println("[WiFi Reconfiguration] Resetting WiFiManager...");
+            Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+                       "[WiFi Reconfiguration] Resetting WiFiManager...");
             wifiManager.resetSettings();  // uses vTaskDelay internally
-            Serial.println(
+            Logger.log(
+                OAS_ELOG_ID, ELOG_LEVEL_INFO,
                 "[WiFi Reconfiguration] Rebooting device into AP mode...");
             ESP.restart();  // soft reboot
             break;
