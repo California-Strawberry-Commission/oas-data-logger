@@ -2,6 +2,7 @@
 
 #include "dlflib/components/uploader_component.h"
 #include "dlflib/dlf_cfg.h"
+#include "dlflib/log.h"
 
 namespace dlf {
 
@@ -12,7 +13,7 @@ CSCLogger::CSCLogger(fs::FS& fs, String fsDir) : fs_(fs), fsDir_(fsDir) {
 }
 
 bool CSCLogger::begin() {
-  Serial.println("[CSCLogger] Begin");
+  DLFLIB_LOG_INFO("[CSCLogger] Begin");
   prune();
 
   // Set subcomponent stores to enable component communication
@@ -42,8 +43,8 @@ run_handle_t CSCLogger::startRun(Encodable meta,
     return h;
   }
 
-  Serial.printf("[CSCLogger] Starting logging with a cycle time-base of %dus\n",
-                tickRate);
+  DLFLIB_LOG_INFO("[CSCLogger] Starting logging with a cycle time-base of %dus",
+                  tickRate);
 
   // Initialize new run
   dlf::Run* run = new dlf::Run(fs_, fsDir_, streams_, tickRate, meta);
@@ -156,16 +157,16 @@ void CSCLogger::prune() {
     fs::File runFile;
     while (runFile = runDir.openNextFile()) {
       if (!strcmp(runFile.name(), LOCKFILE_NAME)) {
-        Serial.printf("[CSCLogger] Pruning %s\n", runDirPath.c_str());
+        DLFLIB_LOG_INFO("[CSCLogger] Pruning %s", runDirPath.c_str());
 
         String lockfilePath{
             dlf::util::resolvePath({runDirPath, LOCKFILE_NAME})};
         if (fs_.remove(lockfilePath)) {
-          Serial.printf("[CSCLogger] Successfully removed lockfile: %s\n",
-                        lockfilePath.c_str());
+          DLFLIB_LOG_INFO("[CSCLogger] Successfully removed lockfile: %s",
+                          lockfilePath.c_str());
         } else {
-          Serial.printf("[CSCLogger] ERROR: Failed to remove lockfile: %s\n",
-                        lockfilePath.c_str());
+          DLFLIB_LOG_ERROR("[CSCLogger] ERROR: Failed to remove lockfile: %s",
+                           lockfilePath.c_str());
         }
         break;
       }

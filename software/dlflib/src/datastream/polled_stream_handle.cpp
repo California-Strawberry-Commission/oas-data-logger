@@ -1,5 +1,7 @@
 #include "dlflib/datastream/polled_stream_handle.h"
 
+#include "dlflib/log.h"
+
 namespace dlf::datastream {
 
 PolledStreamHandle::PolledStreamHandle(PolledStream* stream,
@@ -18,14 +20,14 @@ bool PolledStreamHandle::available(dlf_tick_t tick) {
 
 size_t PolledStreamHandle::encodeHeaderInto(StreamBufferHandle_t buf) {
 #ifdef DEBUG
-  Serial.printf(
+  DLFLIB_LOG_DEBUG(
       "[PolledStreamHandle] Encode polled header:\n"
       "\tidx: %d\n"
       "\ttype_structure: %s (hash: %x)\n"
       "\tid: %s\n"
       "\tnotes: %s\n"
       "\ttick_interval: %llu\n"
-      "\ttick_phase: %llu\n",
+      "\ttick_phase: %llu",
       idx, stream->typeStructure(), stream->typeHash(), stream->id(),
       stream->notes(), sampleIntervalTicks_, samplePhaseTicks_);
 #endif
@@ -43,9 +45,9 @@ size_t PolledStreamHandle::encodeHeaderInto(StreamBufferHandle_t buf) {
 size_t PolledStreamHandle::encodeInto(StreamBufferHandle_t buf,
                                       dlf_tick_t tick) {
 #ifdef DEBUG
-  Serial.printf(
+  DLFLIB_LOG_DEBUG(
       "[PolledStreamHandle] Encode polled data:\n"
-      "\tid: %s\n",
+      "\tid: %s",
       stream->id());
 #endif
 
