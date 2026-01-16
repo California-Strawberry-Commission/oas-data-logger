@@ -304,7 +304,7 @@ void UploaderComponent::waitForSyncCompletion() {
  */
 void UploaderComponent::syncTask(void* arg) {
   UploaderComponent* uploaderComponent = static_cast<UploaderComponent*>(arg);
-  CSCLogger* logger = uploaderComponent->getComponent<CSCLogger>();
+  DLFLogger* logger = uploaderComponent->getComponent<DLFLogger>();
 
   if (!logger) {
     DLFLIB_LOG_ERROR(
@@ -437,7 +437,7 @@ void UploaderComponent::syncTask(void* arg) {
  */
 void UploaderComponent::partialRunUploadTask(void* arg) {
   UploaderComponent* uploaderComponent = static_cast<UploaderComponent*>(arg);
-  CSCLogger* logger = uploaderComponent->getComponent<CSCLogger>();
+  DLFLogger* logger = uploaderComponent->getComponent<DLFLogger>();
 
   if (!logger) {
     DLFLIB_LOG_ERROR(

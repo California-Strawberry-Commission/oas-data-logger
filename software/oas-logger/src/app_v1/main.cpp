@@ -97,7 +97,7 @@ CRGB leds[NUM_LEDS];
 SFE_UBLOX_GNSS_SERIAL myGNSS;  // u-blox GNSS object
 ESP32Time rtc;
 WiFiManager wifiManager;
-dlf::CSCLogger logger{SD_MMC};
+dlf::DLFLogger logger{SD_MMC};
 TaskHandle_t xGPS_Handle = NULL;
 
 // State Machine Variables
