@@ -5,6 +5,7 @@
 
 #include "dlflib/dlf_cfg.h"
 #include "dlflib/dlf_logger.h"
+#include "dlflib/log.h"
 
 namespace {
 
@@ -51,7 +52,7 @@ std::unique_ptr<WiFiClient> connectToEndpoint(const String& url,
                                               uint32_t retryDelayMs = 500) {
   UrlParts parts{parseUrl(url)};
   if (parts.scheme.length() == 0 || parts.host.length() == 0) {
-    Serial.println("[UploaderComponent][connectToEndpoint] Invalid URL");
+    DLFLIB_LOG_ERROR("[UploaderComponent][connectToEndpoint] Invalid URL");
     return nullptr;
   }
 
@@ -67,22 +68,22 @@ std::unique_ptr<WiFiClient> connectToEndpoint(const String& url,
   }
 
   for (int attempt = 1; attempt <= maxRetries; ++attempt) {
-    Serial.printf(
-        "[UploaderComponent][connectToEndpoint] Attempt %d to %s:%u\n", attempt,
+    DLFLIB_LOG_INFO(
+        "[UploaderComponent][connectToEndpoint] Attempt %d to %s:%u", attempt,
         parts.host.c_str(), parts.port);
 
     if (client->connect(parts.host.c_str(), parts.port)) {
-      Serial.println(
+      DLFLIB_LOG_INFO(
           "[UploaderComponent][connectToEndpoint] Connected successfully");
       return std::unique_ptr<WiFiClient>(client);
     }
 
-    Serial.println(
+    DLFLIB_LOG_WARNING(
         "[UploaderComponent][connectToEndpoint] Connect failed, retrying...");
     delay(retryDelayMs);
   }
 
-  Serial.println(
+  DLFLIB_LOG_ERROR(
       "[UploaderComponent][connectToEndpoint] All connect retries failed");
   delete client;
   return nullptr;
@@ -103,7 +104,7 @@ UploaderComponent::UploaderComponent(fs::FS& fs, const String& fsDir,
       options_(options) {}
 
 bool UploaderComponent::begin() {
-  Serial.println("[UploaderComponent] begin");
+  DLFLIB_LOG_INFO("[UploaderComponent] begin");
   wifiEvent_ = xEventGroupCreate();
   syncEvent_ = xEventGroupCreate();
 
@@ -135,40 +136,42 @@ bool UploaderComponent::begin() {
 
 void UploaderComponent::onWifiDisconnected(arduino_event_id_t event,
                                            arduino_event_info_t info) {
-  Serial.println("[UploaderComponent] WiFi disconnected");
+  DLFLIB_LOG_INFO("[UploaderComponent] WiFi disconnected");
   xEventGroupClearBits(wifiEvent_, WLAN_READY);
 }
 
 void UploaderComponent::onWifiConnected(arduino_event_id_t event,
                                         arduino_event_info_t info) {
-  Serial.println("[UploaderComponent] WiFi connected");
+  DLFLIB_LOG_INFO("[UploaderComponent] WiFi connected");
   xEventGroupSetBits(wifiEvent_, WLAN_READY);
 }
 
 bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
                                   bool isActive) {
   if (!runDir) {
-    Serial.println("[UploaderComponent] No file to upload");
+    DLFLIB_LOG_INFO("[UploaderComponent] No file to upload");
     return false;
   }
 
   // List files to be uploaded
-  Serial.println("[UploaderComponent] Files to upload:");
+  DLFLIB_LOG_INFO("[UploaderComponent] Files to upload:");
   runDir.rewindDirectory();
   fs::File tempFile;
   while (tempFile = runDir.openNextFile()) {
-    Serial.printf("  - %s (%d bytes)\n", tempFile.name(), tempFile.size());
+    DLFLIB_LOG_INFO("  - %s (%d bytes)", tempFile.name(), tempFile.size());
     tempFile.close();
   }
 
   char urlBuf[256];
   snprintf(urlBuf, sizeof(urlBuf), endpoint_.c_str(), runUuid.c_str());
   String uploadUrl = urlBuf;
-  Serial.println("[UploaderComponent] Preparing to uploading to: " + uploadUrl);
+  DLFLIB_LOG_INFO("[UploaderComponent] Preparing to uploading to: %s",
+                  uploadUrl.c_str());
 
   auto client = connectToEndpoint(uploadUrl);
   if (!client) {
-    Serial.println("[UploaderComponent] Failed to connect to upload endpoint");
+    DLFLIB_LOG_ERROR(
+        "[UploaderComponent] Failed to connect to upload endpoint");
     return false;
   }
 
@@ -222,7 +225,7 @@ bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
   //////////////////////
   // Send request header
   //////////////////////
-  Serial.println("[UploaderComponent] Sending upload request...");
+  DLFLIB_LOG_INFO("[UploaderComponent] Sending upload request...");
 
   UrlParts parts = parseUrl(uploadUrl);
 
@@ -277,7 +280,7 @@ bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
       // We don't need to process the full response body, so return as soon as
       // we receive a line
       String statusLine = client->readStringUntil('\n');
-      Serial.println("[UploaderComponent] Response: " + statusLine);
+      DLFLIB_LOG_INFO("[UploaderComponent] Response: %s", statusLine.c_str());
       client->stop();
 
       return statusLine.startsWith("HTTP/1.1 200") ||
@@ -285,7 +288,7 @@ bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
     }
   }
 
-  Serial.println("[UploaderComponent] No response received within 5 seconds");
+  DLFLIB_LOG_ERROR("[UploaderComponent] No response received within 5 seconds");
   client->stop();
   return false;
 }
@@ -304,7 +307,7 @@ void UploaderComponent::syncTask(void* arg) {
   CSCLogger* logger = uploaderComponent->getComponent<CSCLogger>();
 
   if (!logger) {
-    Serial.println(
+    DLFLIB_LOG_ERROR(
         "[UploaderComponent][syncTask] NO LOGGER. This should not happen. "
         "Terminating task");
     vTaskDelete(NULL);
@@ -314,14 +317,14 @@ void UploaderComponent::syncTask(void* arg) {
     // Make sure SD is inserted and provided path is a dir
     fs::File root = uploaderComponent->fs_.open(uploaderComponent->dir_);
     if (!root) {
-      Serial.println(
+      DLFLIB_LOG_ERROR(
           "[UploaderComponent][syncTask] No storage found. Terminating task");
       vTaskDelay(pdMS_TO_TICKS(1000));
       vTaskDelete(NULL);
     }
 
     if (!root.isDirectory()) {
-      Serial.println(
+      DLFLIB_LOG_ERROR(
           "[UploaderComponent][syncTask] Root is not dir. Terminating task");
       vTaskDelete(NULL);
     }
@@ -330,7 +333,7 @@ void UploaderComponent::syncTask(void* arg) {
     xEventGroupWaitBits(uploaderComponent->wifiEvent_, WLAN_READY, pdFALSE,
                         pdTRUE, portMAX_DELAY);
 
-    Serial.println("[UploaderComponent][syncTask] WLAN ready");
+    DLFLIB_LOG_INFO("[UploaderComponent][syncTask] WLAN ready");
 
     xEventGroupClearBits(uploaderComponent->syncEvent_, SYNC_COMPLETE);
 
@@ -365,25 +368,25 @@ void UploaderComponent::syncTask(void* arg) {
 
       // Skip uploading active run
       if (lockfileFound) {
-        Serial.printf(
+        DLFLIB_LOG_INFO(
             "[UploaderComponent][syncTask] %s is active and/or incomplete. "
-            "Skipping\n",
+            "Skipping",
             runDirPath.c_str());
         continue;
       }
 
       // Skip already uploaded run
       if (uploadMarkerFound) {
-        Serial.printf(
+        DLFLIB_LOG_INFO(
             "[UploaderComponent][syncTask] %s has already been uploaded. "
-            "Skipping\n",
+            "Skipping",
             runDirPath.c_str());
         continue;
       }
 
       // Upload completed run that has not been uploaded yet
-      Serial.printf("[UploaderComponent][syncTask] Uploading: %s\n",
-                    runDir.name());
+      DLFLIB_LOG_INFO("[UploaderComponent][syncTask] Uploading: %s",
+                      runDir.name());
 
       runDir.rewindDirectory();
 
@@ -391,7 +394,7 @@ void UploaderComponent::syncTask(void* arg) {
       numFailures += !uploadSuccess;
 
       if (uploadSuccess) {
-        Serial.println("[UploaderComponent][syncTask] Upload successful");
+        DLFLIB_LOG_INFO("[UploaderComponent][syncTask] Upload successful");
         if (uploaderComponent->options_.deleteAfterUpload) {
           // Remove run data
           runDir.rewindDirectory();
@@ -400,8 +403,8 @@ void UploaderComponent::syncTask(void* arg) {
                 dlf::util::resolvePath({runDirPath, file.name()}));
           }
           uploaderComponent->fs_.rmdir(runDirPath);
-          Serial.printf(
-              "[UploaderComponent][syncTask] Removed run data for %s\n",
+          DLFLIB_LOG_INFO(
+              "[UploaderComponent][syncTask] Removed run data for %s",
               runDir.name());
         } else if (uploaderComponent->options_.markAfterUpload) {
           // Add upload marker to indicate that this run has been uploaded
@@ -410,17 +413,17 @@ void UploaderComponent::syncTask(void* arg) {
           fs::File f = uploaderComponent->fs_.open(markerFilePath, "w", true);
           f.write(0);
           f.close();
-          Serial.printf("[UploaderComponent][syncTask] Marked %s as uploaded\n",
-                        runDir.name());
+          DLFLIB_LOG_INFO("[UploaderComponent][syncTask] Marked %s as uploaded",
+                          runDir.name());
         }
       } else {
-        Serial.println("[UploaderComponent][syncTask] Upload failed");
+        DLFLIB_LOG_ERROR("[UploaderComponent][syncTask] Upload failed");
       }
     }
 
     root.close();
-    Serial.printf("[UploaderComponent][syncTask] Done syncing (failures: %d)\n",
-                  numFailures);
+    DLFLIB_LOG_INFO("[UploaderComponent][syncTask] Done syncing (failures: %d)",
+                    numFailures);
 
     xEventGroupSetBits(uploaderComponent->syncEvent_, SYNC_COMPLETE);
 
@@ -437,7 +440,7 @@ void UploaderComponent::partialRunUploadTask(void* arg) {
   CSCLogger* logger = uploaderComponent->getComponent<CSCLogger>();
 
   if (!logger) {
-    Serial.println(
+    DLFLIB_LOG_ERROR(
         "[UploaderComponent][partialRunUploadTask] NO LOGGER. This should not "
         "happen. Terminating task");
     vTaskDelete(NULL);
@@ -445,7 +448,7 @@ void UploaderComponent::partialRunUploadTask(void* arg) {
 
   int intervalSecs = uploaderComponent->options_.partialRunUploadIntervalSecs;
   if (intervalSecs <= 0) {
-    Serial.println(
+    DLFLIB_LOG_ERROR(
         "[UploaderComponent][partialRunUploadTask] Invalid interval. "
         "Terminating task");
     vTaskDelete(NULL);
@@ -453,27 +456,28 @@ void UploaderComponent::partialRunUploadTask(void* arg) {
   const TickType_t period = pdMS_TO_TICKS(intervalSecs * 1000);
   TickType_t lastWakeTime = xTaskGetTickCount();
 
-  Serial.printf(
-      "[UploaderComponent][partialRunUploadTask] Partial upload interval: %d\n",
+  DLFLIB_LOG_INFO(
+      "[UploaderComponent][partialRunUploadTask] Partial upload interval: %d",
       intervalSecs);
   while (true) {
     // Wait for wifi to be connected
     xEventGroupWaitBits(uploaderComponent->wifiEvent_, WLAN_READY, pdFALSE,
                         pdTRUE, portMAX_DELAY);
-    Serial.println("[UploaderComponent][partialRunUploadTask] WLAN ready");
+    DLFLIB_LOG_INFO("[UploaderComponent][partialRunUploadTask] WLAN ready");
 
     // Start partial run upload
     for (run_handle_t h : logger->getActiveRuns()) {
       Run* run = logger->getRun(h);
       if (!run) {
-        Serial.println(
+        DLFLIB_LOG_WARNING(
             "[UploaderComponent][partialRunUploadTask] Invalid run handle. "
             "Skipping");
+        continue;
       }
 
-      Serial.printf(
+      DLFLIB_LOG_INFO(
           "[UploaderComponent][partialRunUploadTask] Attempting upload for "
-          "active run %s\n",
+          "active run %s",
           run->uuid());
 
       // Manually flush the log files for the run. This updates the log file
@@ -487,7 +491,7 @@ void UploaderComponent::partialRunUploadTask(void* arg) {
       fs::File runDir = uploaderComponent->fs_.open(uploaderComponent->dir_ +
                                                     "/" + run->uuid());
       if (!runDir || !runDir.isDirectory()) {
-        Serial.printf(
+        DLFLIB_LOG_WARNING(
             "[UploaderComponent][partialRunUploadTask] Invalid run dir %s. "
             "Skipping.",
             runDir.name());
@@ -497,10 +501,10 @@ void UploaderComponent::partialRunUploadTask(void* arg) {
       bool uploadSuccess =
           uploaderComponent->uploadRun(runDir, runDir.name(), true);
       if (uploadSuccess) {
-        Serial.println(
+        DLFLIB_LOG_INFO(
             "[UploaderComponent][partialRunUploadTask] Upload successful");
       } else {
-        Serial.println(
+        DLFLIB_LOG_ERROR(
             "[UploaderComponent][partialRunUploadTask] Upload failed");
       }
     }

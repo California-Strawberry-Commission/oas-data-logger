@@ -2,6 +2,8 @@
 
 #include <fnv.h>
 
+#include "dlflib/log.h"
+
 namespace dlf::datastream {
 
 EventStreamHandle::EventStreamHandle(EventStream* stream, dlf_stream_idx_t idx)
@@ -20,12 +22,12 @@ bool EventStreamHandle::available(dlf_tick_t tick) {
 
 size_t EventStreamHandle::encodeHeaderInto(StreamBufferHandle_t buf) {
 #ifdef DEBUG
-  Serial.printf(
+  DLFLIB_LOG_DEBUG(
       "[EventStreamHandle] Encoding event header:\n"
       "\tidx: %d\n"
       "\ttype_structure: %s (hash: %x)\n"
       "\tid: %s\n"
-      "\tnotes: %s\n",
+      "\tnotes: %s",
       idx, stream->typeStructure(), stream->typeHash(), stream->id(),
       stream->notes());
 #endif
@@ -39,9 +41,9 @@ size_t EventStreamHandle::encodeHeaderInto(StreamBufferHandle_t buf) {
 size_t EventStreamHandle::encodeInto(StreamBufferHandle_t buf,
                                      dlf_tick_t tick) {
 #ifdef DEBUG
-  Serial.printf(
+  DLFLIB_LOG_DEBUG(
       "[EventStreamHandle] Encoding event data:\n"
-      "\tid: %s\n",
+      "\tid: %s",
       stream->id());
 #endif
 

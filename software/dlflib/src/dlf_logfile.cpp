@@ -3,6 +3,7 @@
 #include "dlflib/datastream/event_stream.h"
 #include "dlflib/datastream/polled_stream.h"
 #include "dlflib/dlf_cfg.h"
+#include "dlflib/log.h"
 #include "dlflib/util/util.h"
 #include "dlflib/util/uuid.h"
 
@@ -16,8 +17,8 @@ namespace dlf {
 void LogFile::taskFlusher(void* arg) {
   auto self = static_cast<LogFile*>(arg);
 
-  Serial.printf("[LogFile][taskFlusher] Task started for %s\n",
-                self->filename_.c_str());
+  DLFLIB_LOG_INFO("[LogFile][taskFlusher] Task started for %s",
+                  self->filename_.c_str());
 
   uint8_t buf[DLF_SD_BLOCK_WRITE_SIZE];
   size_t totalBytesWritten = 0;
@@ -32,8 +33,8 @@ void LogFile::taskFlusher(void* arg) {
 
     if (received > 0) {
 #ifdef DEBUG
-      Serial.printf(
-          "[LogFile][taskFlusher] %s: Received %zu bytes from buffer\n",
+      DLFLIB_LOG_DEBUG(
+          "[LogFile][taskFlusher] %s: Received %zu bytes from buffer",
           self->filename_.c_str(), received);
 #endif
 
@@ -52,8 +53,8 @@ void LogFile::taskFlusher(void* arg) {
         if ((bytesSinceLastSync >= SYNC_THRESHOLD_BYTES ||
              (millis() - lastSyncTime) >= SYNC_INTERVAL_MS) &&
             bytesSinceLastSync > 0) {
-          Serial.printf(
-              "[LogFile][taskFlusher] %s: Forcing SD sync (close/reopen)...\n",
+          DLFLIB_LOG_INFO(
+              "[LogFile][taskFlusher] %s: Forcing SD sync (close/reopen)...",
               self->filename_.c_str());
 
           String fname = self->filename_;
@@ -63,12 +64,12 @@ void LogFile::taskFlusher(void* arg) {
           // Reopen in append mode
           self->file_ = self->fs_.open(fname, "a");
           if (!self->file_) {
-            Serial.printf(
+            DLFLIB_LOG_ERROR(
                 "[LogFile][taskFlusher] ERROR: Could not reopen file after "
-                "sync!\n");
+                "sync!");
           } else {
-            Serial.printf(
-                "[LogFile][taskFlusher] %s: SD sync complete, file reopened\n",
+            DLFLIB_LOG_INFO(
+                "[LogFile][taskFlusher] %s: SD sync complete, file reopened",
                 self->filename_.c_str());
           }
 
@@ -80,33 +81,33 @@ void LogFile::taskFlusher(void* arg) {
         }
 
 #ifdef DEBUG
-        Serial.printf(
-            "[LogFile][taskFlusher] %s: Wrote %zu bytes, total: %zu\n",
+        DLFLIB_LOG_DEBUG(
+            "[LogFile][taskFlusher] %s: Wrote %zu bytes, total: %zu",
             self->filename_.c_str(), received, totalBytesWritten);
 #endif
 
         xSemaphoreGive(self->fileMutex_);
       } else {
-        Serial.printf("[LogFile][taskFlusher] %s: FAILED to acquire mutex!\n",
-                      self->filename_.c_str());
+        DLFLIB_LOG_ERROR("[LogFile][taskFlusher] %s: FAILED to acquire mutex!",
+                         self->filename_.c_str());
       }
     }
   }
 
-  Serial.printf(
-      "[LogFile][taskFlusher] No longer in LOGGING state. Current state: %x\n",
+  DLFLIB_LOG_INFO(
+      "[LogFile][taskFlusher] No longer in LOGGING state. Current state: %x",
       self->state_);
 
   // If no need to flush, exit immediately
   if (self->state_ != FLUSHING) {
-    Serial.println(
+    DLFLIB_LOG_INFO(
         "[LogFile][taskFlusher] No need to flush. Terminating task.");
 
     vTaskDelete(NULL);
     return;
   }
 
-  Serial.println("[LogFile][taskFlusher] Flushing remaining bytes...");
+  DLFLIB_LOG_INFO("[LogFile][taskFlusher] Flushing remaining bytes...");
   // Flush remaining bytes
   while (xStreamBufferBytesAvailable(self->stream_) > 0 &&
          self->state_ == FLUSHING) {
@@ -127,7 +128,7 @@ void LogFile::taskFlusher(void* arg) {
   // SD card This must happen BEFORE we signal completion so closeFile doesn't
   // run yet
   if (xSemaphoreTake(self->fileMutex_, portMAX_DELAY) == pdTRUE) {
-    Serial.printf("[LogFile][taskFlusher] Performing final SD sync...\n");
+    DLFLIB_LOG_INFO("[LogFile][taskFlusher] Performing final SD sync...");
 
     String fname = self->filename_;
     self->file_.flush();
@@ -139,24 +140,24 @@ void LogFile::taskFlusher(void* arg) {
       // Seek to end so we know where data ends
       self->file_.seek(0, SeekEnd);
       size_t actualFileSize = self->file_.position();
-      Serial.printf(
+      DLFLIB_LOG_INFO(
           "[LogFile][taskFlusher] Final SD sync complete. Actual file size: "
-          "%zu bytes\n",
+          "%zu bytes",
           actualFileSize);
 
       // Close it - closeFile will reopen for header update
       self->file_.close();
     } else {
-      Serial.printf(
+      DLFLIB_LOG_ERROR(
           "[LogFile][taskFlusher] ERROR: Could not reopen file for final sync "
-          "verification!\n");
+          "verification!");
     }
 
     self->fileEndPosition_ = totalBytesWritten;
-    Serial.printf(
+    DLFLIB_LOG_INFO(
         "[LogFile][taskFlusher] Final flush complete. Total bytes written: "
         "%zu, file end "
-        "position: %zu\n",
+        "position: %zu",
         totalBytesWritten, self->fileEndPosition_);
     xSemaphoreGive(self->fileMutex_);
   }
@@ -164,8 +165,8 @@ void LogFile::taskFlusher(void* arg) {
   self->state_ = FLUSHED;
   xSemaphoreGive(self->syncSemaphore_);
 
-  Serial.printf("[LogFile][taskFlusher] Flusher exited cleanly w/ HWM %u\n",
-                uxTaskGetStackHighWaterMark(NULL));
+  DLFLIB_LOG_INFO("[LogFile][taskFlusher] Flusher exited cleanly w/ HWM %u",
+                  uxTaskGetStackHighWaterMark(NULL));
   vTaskDelete(NULL);
 }
 
@@ -241,16 +242,16 @@ void LogFile::sample(dlf_tick_t tick) {
 
 #ifdef DEBUG
       if (afterBytes > beforeBytes && tick % 100 == 0) {
-        Serial.printf(
+        DLFLIB_LOG_DEBUG(
             "[LogFile][sample] Tick %llu: Added %zu bytes to %s buffer (total: "
-            "%zu)\n",
+            "%zu)",
             tick, afterBytes - beforeBytes, filename_.c_str(), afterBytes);
       }
 #endif
 
       if (xStreamBufferIsFull(stream_)) {
-        Serial.printf(
-            "[LogFile][sample] Error: QUEUE_FULL for %s at tick %llu\n",
+        DLFLIB_LOG_ERROR(
+            "[LogFile][sample] Error: QUEUE_FULL for %s at tick %llu",
             filename_.c_str(), tick);
         state_ = QUEUE_FULL;
       }
@@ -275,7 +276,7 @@ void LogFile::close() {
 
   // Finally, update and close file
   closeFile();
-  Serial.println("[LogFile] Logfile closed cleanly");
+  DLFLIB_LOG_INFO("[LogFile] Logfile closed cleanly");
 }
 
 void LogFile::lock() { xSemaphoreTake(fileMutex_, portMAX_DELAY); }
@@ -294,8 +295,8 @@ void LogFile::writeHeader(dlf_stream_type_e streamType) {
 }
 
 void LogFile::closeFile() {
-  Serial.printf(
-      "[LogFile][closeFile] Closing file, tracked end position: %zu\n",
+  DLFLIB_LOG_INFO(
+      "[LogFile][closeFile] Closing file, tracked end position: %zu",
       fileEndPosition_);
 
   // Get file name for debugging
@@ -305,16 +306,16 @@ void LogFile::closeFile() {
   file_.flush();
   file_.close();
 
-  Serial.printf(
-      "[LogFile][closeFile] File closed, checking actual size on SD...\n");
+  DLFLIB_LOG_INFO(
+      "[LogFile][closeFile] File closed, checking actual size on SD...");
 
   // Check file size on SD before header update
   fs::File checkFile = fs_.open(fname, "r");
   if (checkFile) {
     size_t sizeBeforeUpdate = checkFile.size();
-    Serial.printf(
+    DLFLIB_LOG_INFO(
         "[LogFile][closeFile] File size on SD BEFORE header update: %zu "
-        "bytes\n",
+        "bytes",
         sizeBeforeUpdate);
     checkFile.close();
   }
@@ -322,9 +323,9 @@ void LogFile::closeFile() {
   // Reopen in read/write mode to update header
   file_ = fs_.open(fname, "r+");
   if (!file_) {
-    Serial.printf(
+    DLFLIB_LOG_ERROR(
         "[LogFile][closeFile] ERROR: Could not reopen file for header "
-        "update!\n");
+        "update!");
     return;
   }
 
@@ -338,13 +339,13 @@ void LogFile::closeFile() {
   checkFile = fs_.open(fname, "r");
   if (checkFile) {
     size_t sizeAfterUpdate = checkFile.size();
-    Serial.printf(
-        "[LogFile][closeFile] File size on SD AFTER header update: %zu bytes\n",
+    DLFLIB_LOG_INFO(
+        "[LogFile][closeFile] File size on SD AFTER header update: %zu bytes",
         sizeAfterUpdate);
     checkFile.close();
   }
 
-  Serial.printf("[LogFile][closeFile] Header update complete\n");
+  DLFLIB_LOG_INFO("[LogFile][closeFile] Header update complete");
 }
 
 void LogFile::flush() {

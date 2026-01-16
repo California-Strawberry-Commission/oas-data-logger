@@ -3,6 +3,7 @@
 #include <time.h>
 
 #include "dlflib/dlf_cfg.h"
+#include "dlflib/log.h"
 #include "dlflib/util/util.h"
 #include "dlflib/util/uuid.h"
 
@@ -18,7 +19,7 @@ Run::Run(fs::FS& fs, String fsDir, dlf::datastream::streams_t streams,
   lockfilePath_ = dlf::util::resolvePath({runDir_, LOCKFILE_NAME});
   syncSemaphore_ = xSemaphoreCreateCounting(1, 0);
 
-  Serial.printf("[Run] Starting run %s\n", uuid_.c_str());
+  DLFLIB_LOG_INFO("[Run] Starting run %s", uuid_.c_str());
 
   // Make directory to contain run files
   fs_.mkdir(runDir_);
@@ -34,7 +35,7 @@ Run::Run(fs::FS& fs, String fsDir, dlf::datastream::streams_t streams,
   createLogfile(POLLED);
   createLogfile(EVENT);
 
-  Serial.println("[Run] Logfiles inited");
+  DLFLIB_LOG_INFO("[Run] Logfiles inited");
 
   status_ = LOGGING;
 
@@ -43,7 +44,7 @@ Run::Run(fs::FS& fs, String fsDir, dlf::datastream::streams_t streams,
 }
 
 void Run::close() {
-  Serial.println("[Run] Closing run...");
+  DLFLIB_LOG_INFO("[Run] Closing run...");
   status_ = FLUSHING;
 
   // Wait for sampling task to cleanly exit.
@@ -56,31 +57,16 @@ void Run::close() {
 
   // Remove the lockfile last, as the presence of the lockfile indicates that
   // the run is incomplete and should not be uploaded
-  Serial.printf("[Run] Removing lockfile: %s\n", lockfilePath_.c_str());
+  DLFLIB_LOG_INFO("[Run] Removing lockfile: %s", lockfilePath_.c_str());
   bool lockfileRemoved = fs_.remove(lockfilePath_);
   if (lockfileRemoved) {
-    Serial.println("[Run] Lockfile successfully removed");
+    DLFLIB_LOG_INFO("[Run] Lockfile successfully removed");
   } else {
-    Serial.println("[Run] WARNING: Failed to remove lockfile!");
+    DLFLIB_LOG_ERROR("[Run] ERROR: Failed to remove lockfile!");
+    return;
   }
 
-  // Verify lockfile was actually deleted by listing directory contents
-  Serial.printf("[Run] Verifying run directory contents for %s:\n",
-                runDir_.c_str());
-  fs::File runDir = fs_.open(runDir_);
-  if (runDir && runDir.isDirectory()) {
-    fs::File file;
-    while (file = runDir.openNextFile()) {
-      Serial.printf("\t- %s (%d bytes)\n", file.name(), file.size());
-      file.close();
-    }
-    runDir.close();
-  } else {
-    Serial.println(
-        "[Run] WARNING: Could not open run directory for verification!");
-  }
-
-  Serial.println("[Run] Run closed cleanly");
+  DLFLIB_LOG_INFO("[Run] Run closed cleanly");
 }
 
 void Run::flushLogFiles() {
@@ -114,11 +100,11 @@ void Run::createMetafile(Encodable& meta) {
   h.meta_size = meta.dataSize;
 
 #ifdef DEBUG
-  Serial.printf(
+  DLFLIB_LOG_DEBUG(
       "[Run] Creating metafile\n"
       "\tepoch_time_s: %lu\n"
       "\ttick_base_us: %lu\n"
-      "\tmeta_structure: %s (hash: %x)\n",
+      "\tmeta_structure: %s (hash: %x)",
       h.epoch_time_s, h.tick_base_us, h.meta_structure, meta.typeHash);
 #endif
 
@@ -137,8 +123,8 @@ void Run::createMetafile(Encodable& meta) {
 
 void Run::createLogfile(dlf_stream_type_e t) {
 #ifdef DEBUG
-  Serial.printf("[Run] Creating %s logfile\n",
-                dlf::datastream::streamTypeToString(t));
+  DLFLIB_LOG_DEBUG("[Run] Creating %s logfile",
+                   dlf::datastream::streamTypeToString(t));
 #endif
   dlf::datastream::stream_handles_t handles;
 
@@ -158,7 +144,7 @@ void Run::taskSampler(void* arg) {
   const TickType_t interval =
       std::chrono::duration_cast<DLF_FREERTOS_DURATION>(self->tickInterval_)
           .count();
-  Serial.printf("[Run][taskSampler] Interval (RTOS ticks): %d\n", interval);
+  DLFLIB_LOG_INFO("[Run][taskSampler] Interval (RTOS ticks): %d", interval);
 
   TickType_t prev_run = xTaskGetTickCount();
 
@@ -170,7 +156,7 @@ void Run::taskSampler(void* arg) {
     xTaskDelayUntil(&prev_run, interval);
   }
 
-  Serial.println("[Run][taskSampler] Sampler task exiting cleanly");
+  DLFLIB_LOG_INFO("[Run][taskSampler] Sampler task exiting cleanly");
 
   xSemaphoreGive(self->syncSemaphore_);
   vTaskDelete(NULL);
@@ -178,7 +164,7 @@ void Run::taskSampler(void* arg) {
 
 void Run::createLockfile() {
 #ifdef DEBUG
-  Serial.println("[Run] Creating lockfile");
+  DLFLIB_LOG_DEBUG("[Run] Creating lockfile");
 #endif
 
   fs::File f = fs_.open(lockfilePath_, "w", true);
