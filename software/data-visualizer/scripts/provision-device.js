@@ -1,138 +1,187 @@
+const fs = require("fs");
+const path = require("path");
 const { SerialPort } = require("serialport");
 const { ReadlineParser } = require("@serialport/parser-readline");
-const axios = require("axios");
 const nodeCrypto = require("crypto");
 const dotenv = require("dotenv");
 
 /**
  * Device Provisioning Script (Host Side)
- * * PURPOSE:
- * Automates the secure pairing of a physical device (ESP32) with the backend server.
- * This script acts as the trusted bridge during the manufacturing/setup phase.
- * * WORKFLOW:
- * 1. LISTEN: Connects to the device via Serial (USB) and waits for it to broadcast its 'DEVICE_ID'.
- * 2. GENERATE: Creates a cryptographically strong 16-byte random secret (32-char Hex).
- * 3. REGISTER (Server): Sends { deviceId, secret } to the local Next.js API.
- * - The Server encrypts this secret (AES-256) and stores it in the DB.
- * 4. FLASH (Device): Sends 'PROV_SET:<secret>' to the device over Serial.
- * - The Device saves this secret to NVS (Non-Volatile Storage).
- * 5. VERIFY: Waits for 'PROV_SUCCESS' confirmation from the device.
- * * USAGE:
- * node scripts/provision-device.js <PORT_PATH>
- * Example: node scripts/provision-device.js /dev/ttyUSB0
+ * MODES:
+ * 1. Interactive (Default): Connects via Serial (USB), waits for the device to announce
+ * its ID, generates a secret, saves it to the DB, and flashes it to the device.
+ * 2. Manual (--db-only): Manually inserts a known device ID and secret into the database
+ * without requiring a physical device connection.
+ *
+ * CLI ARGUMENTS:
+ * @param {string} [port]   - The serial port path (e.g. /dev/ttyUSB0). Required for interactive mode.
+ * @param {string} --env    - The environment config to load (local, preview, prod). Defaults to 'local'.
+ * @param {flag}   --db-only - If present, skips serial connection and performs a direct DB update.
+ * @param {string} --id     - The Device ID (Required for --db-only mode).
+ * @param {string} --secret - The 32-byte Hex Secret (Required for --db-only mode).
+ *
+ * USAGE EXAMPLES:
+ * npx tsx scripts/provision-device.js /dev/ttyUSB0 --env=local
+ * npx tsx scripts/provision-device.js --db-only --id=device_123 --secret=abc...123 --env=prod
  */
 
-dotenv.config({ path: ".env.local" });
+const args = process.argv.slice(2);
+const getArg = (key) => {
+  const arg = args.find((a) => a.startsWith(`--${key}=`));
+  return arg ? arg.split("=")[1] : null;
+};
 
+const env = getArg("env") || "local";
+const dbOnly = args.includes("--db-only");
+const manualId = getArg("id");
+const manualSecret = getArg("secret");
+const portPath = args.find((arg) => !arg.startsWith("--"));
+
+const envPath = path.resolve(__dirname, `../.env.${env}`);
+console.log(`[Setup] Loading config from: ${envPath}`);
+dotenv.config({ path: envPath });
+
+const { encryptSecret } = require("@/lib/crypto");
+const { PrismaClient } = require("../generated/prisma/client");
+
+if (!process.env.DATABASE_URL) {
+  console.error("Error: DATABASE_URL is missing.");
+  process.exit(1);
+}
+
+let isProvisioning = false;
 const BAUD_RATE = 115200;
-const TARGET_API_URL = "https://oas-data-logger.vercel.app/api/admin/provision";
 
 function generateSecret() {
-  return nodeCrypto.randomBytes(16).toString("hex");
+  return nodeCrypto.randomBytes(16).toString("hex"); // 32 hex chars
+}
+
+async function registerDeviceInDB(prisma, deviceId, rawSecret) {
+  console.log(`[DB] Encrypting & saving secret for ${deviceId}...`);
+
+  const encryptedSecret = encryptSecret(rawSecret);
+
+  await prisma.device.upsert({
+    where: { id: deviceId },
+    update: {},
+    create: { id: deviceId },
+  });
+
+  await prisma.deviceSecret.upsert({
+    where: { deviceId },
+    update: {
+      secret: encryptedSecret,
+      encryptionKeyVersion: 1,
+    },
+    create: {
+      deviceId,
+      secret: encryptedSecret,
+      encryptionKeyVersion: 1,
+    },
+  });
+  console.log("[DB] Update successful.");
 }
 
 async function main() {
-  const args = process.argv.slice(2);
-  const portPath = args[0];
-
-  if (!portPath) {
-    console.error("Error: Please specify the serial port.");
-    console.error("Usage: node scripts/provision-device.js <PORT_PATH>");
-    process.exit(1);
-  }
-
-  console.log(`Connecting to device on ${portPath}...`);
-
-  const port = new SerialPort({
-    path: portPath,
-    baudRate: BAUD_RATE,
-    autoOpen: false,
-  });
-
-  const parser = port.pipe(new ReadlineParser({ delimiter: "\n" }));
+  const prisma = new PrismaClient();
 
   try {
+    if (dbOnly) {
+      if (!manualId || !manualSecret) {
+        throw new Error("Missing --id or --secret for --db-only mode.");
+      }
+
+      const hex64Regex = /^[0-9a-fA-F]{64}$/;
+      if (!hex64Regex.test(manualSecret)) {
+        throw new Error(
+          "Invalid secret format. Must be a 32-byte hex string (64 chars)."
+        );
+      }
+
+      console.log(`[Mode] Manual DB Update (${env})`);
+      await registerDeviceInDB(prisma, manualId, manualSecret);
+      return;
+    }
+
+    if (!portPath) {
+      throw new Error("Please specify the serial port (e.g., /dev/ttyUSB0).");
+    }
+
+    console.log(`[Mode] Interactive Serial Provisioning on ${portPath}`);
+    const port = new SerialPort({
+      path: portPath,
+      baudRate: BAUD_RATE,
+      autoOpen: false,
+    });
+    const parser = port.pipe(new ReadlineParser({ delimiter: "\n" }));
+
     await new Promise((resolve, reject) => {
-      port.open((err) => {
-        if (err) reject(err);
-        else resolve();
+      port.open((err) => (err ? reject(err) : resolve()));
+    });
+    console.log("Port open. Waiting for 'DEVICE_ID:'...");
+
+    await new Promise((resolve, reject) => {
+      let completed = false;
+
+      const timeout = setTimeout(() => {
+        if (!completed)
+          reject(new Error("Timeout: Device did not respond in 20s."));
+      }, 20000);
+
+      parser.on("data", async (line) => {
+        if (completed) return;
+        const cleanLine = line.toString().trim();
+
+        if (cleanLine.startsWith("DEVICE_ID:")) {
+
+          if (isProvisioning) return;
+          isProvisioning = true;
+
+          const deviceId = cleanLine.split(":")[1].trim();
+          console.log(`\nDetected Device ID: ${deviceId}`);
+
+          const secret = generateSecret();
+          console.log(`Generated Secret: ${secret}`);
+
+          try {
+            await registerDeviceInDB(prisma, deviceId, secret);
+
+            console.log("Pushing secret to device...");
+            setTimeout(() => {
+              port.write(`PROV_SET:${secret}\n`, (err) => {
+                if (err) console.error("Write error:", err);
+              });
+            }, 500);
+          } catch (err) {
+            completed = true;
+            clearTimeout(timeout);
+            reject(err);
+          }
+        }
+
+        if (cleanLine.includes("PROV_SUCCESS")) {
+          console.log("SUCCESS: Device accepted the secret.");
+          completed = true;
+          clearTimeout(timeout);
+          resolve();
+        }
+
+        if (cleanLine.includes("PROV_FAIL")) {
+          console.error("FAILURE: Device rejected the secret.");
+          completed = true;
+          clearTimeout(timeout);
+          reject(new Error("Device reported provisioning failure"));
+        }
       });
     });
+
+    port.close();
   } catch (err) {
-    console.error("Failed to open serial port:", err);
-    console.error("Make sure the device is plugged in!");
+    console.error("\n[Error]", err.message);
     process.exit(1);
+  } finally {
+    await prisma.$disconnect();
   }
-
-  console.log("Port open. Listening for boot message...");
-
-  let deviceId = null;
-  let secret = null;
-  let provisioningComplete = false;
-
-  parser.on("data", async (line) => {
-    if (line.startsWith("DEVICE_ID:") && !deviceId) {
-      deviceId = line.split(":")[1].trim();
-      console.log(`\nDetected Device ID: ${deviceId}`);
-
-      secret = generateSecret();
-      console.log(`Generated Secret: ${secret}`);
-
-      console.log(`Registering with API (${TARGET_API_URL})...`);
-
-      try {
-        await axios.post(TARGET_API_URL, {
-          deviceId: deviceId,
-          secret: secret,
-        });
-        console.log("API Registration Successful.");
-
-        console.log("Pushing secret to device NVS...");
-        setTimeout(() => {
-          port.write(`PROV_SET:${secret}\n`, (err) => {
-            if (err) console.error("Error writing to port:", err);
-          });
-        }, 500);
-      } catch (error) {
-        console.error("API Registration Failed.");
-        if (error.response) {
-          console.error(`Status: ${error.response.status}`);
-          console.error(`Data: ${JSON.stringify(error.response.data)}`);
-        } else {
-          console.error(`Error: ${error.message}`);
-        }
-        console.log("Aborting provisioning process.");
-        port.close();
-        process.exit(1);
-      }
-    }
-
-    if (line.includes("PROV_SUCCESS")) {
-      console.log("SUCCESS: Device accepted the secret.");
-      provisioningComplete = true;
-      port.close();
-      process.exit(0);
-    }
-
-    if (line.includes("PROV_FAIL")) {
-      console.error("FAILURE: Device rejected the secret.");
-      port.close();
-      process.exit(1);
-    }
-  });
-
-  setTimeout(() => {
-    if (!provisioningComplete) {
-      console.error(
-        "\n Timeout: Device did not respond within the time limit."
-      );
-      console.error(
-        "   (Try unplugging and replugging the device right before running the script)"
-      );
-      port.close();
-      process.exit(1);
-    }
-  }, 20000);
 }
 
 main();

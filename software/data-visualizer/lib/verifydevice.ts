@@ -28,7 +28,8 @@ import crypto from "crypto";
 export async function verifyDeviceSignature(
   deviceId: string,
   headers: Headers,
-  payloadToVerify: string
+  payloadToVerify: string,
+  maxTimestampSkewSeconds: number = 300
 ): Promise<{ success: boolean; message?: string }> {
   const timestamp = headers.get("x-timestamp");
   const nonce = headers.get("x-nonce");
@@ -40,7 +41,7 @@ export async function verifyDeviceSignature(
 
   const reqTime = parseInt(timestamp, 10);
   const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - reqTime) > 300) {
+  if (Math.abs(now - reqTime) > maxTimestampSkewSeconds) {
     return { success: false, message: "Request timestamp out of bounds" };
   }
 
@@ -66,18 +67,16 @@ export async function verifyDeviceSignature(
   const payloadHash = crypto
     .createHash("sha256")
     .update(payloadToVerify)
-    .digest("hex")
-    .toUpperCase();
+    .digest("hex");
 
   const stringToSign = `${deviceId}:${timestamp}:${nonce}:${payloadHash}`;
 
   const expectedSignature = crypto
     .createHmac("sha256", secret)
     .update(stringToSign)
-    .digest("hex")
-    .toUpperCase();
+    .digest("hex");
 
-  if (signature.toUpperCase() !== expectedSignature) {
+  if (signature !== expectedSignature) {
     console.warn(
       `[Auth] Fail for ${deviceId}.\nExpected: ${expectedSignature}\nGot: ${signature}`
     );
