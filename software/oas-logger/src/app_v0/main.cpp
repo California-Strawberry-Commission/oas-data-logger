@@ -14,6 +14,7 @@
 
 #include <Arduino.h>
 #include <ESP32Time.h>
+#include <Elog.h>
 #include <FS.h>
 #include <FastLED.h>
 #include <SD.h>
@@ -22,6 +23,10 @@
 #include <WiFiManager.h>
 #include <Wire.h>
 #include <dlflib/dlf_logger.h>
+
+#include "ota_updater/ota_updater.h"
+
+#define OAS_ELOG_ID 0
 
 // Various flags for testing purposes
 const bool USB_POWER_OVERRIDE{false};
@@ -33,7 +38,9 @@ const bool USE_LEGACY_GPIO_CONFIG{false};
 const int LOGGER_RUN_INTERVAL_S{0};
 const bool LOGGER_MARK_AFTER_UPLOAD{true};
 const bool LOGGER_DELETE_AFTER_UPLOAD{false};
-const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{0};
+const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{0};  // <= 0 means disabled
+const bool ELOG_TO_LITTLEFS{true};  // log to internal flash memory
+const bool ENABLE_OTA_UPDATE{false};
 
 // Serial
 const unsigned long SERIAL_BAUD_RATE{115200};
@@ -65,18 +72,22 @@ const gpio_num_t PIN_GPS_WAKE{GPIO_NUM_32};
 
 // WIFI
 const unsigned long WIFI_CONFIG_AP_TIMEOUT_S{120};
-const char* WIFI_CONFIG_AP_NAME{"OASDataLogger"};
 const int WIFI_RECONNECT_ATTEMPT_INTERVAL_MS{5000};
 
-// TODO: Configure upload endpoint in Access Point mode
+// Backend endpoints
 const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
+const char* OTA_MANIFEST_ENDPOINT{
+    "https://oas-data-logger.vercel.app/api/ota/manifest/%s/%s"};
+const char* OTA_FIRMWARE_ENDPOINT{
+    "https://oas-data-logger.vercel.app/api/ota/firmware/%s/%s/%d"};
 
 void waitForValidTime();
 void waitForSd();
 void initializeWifi();
 bool wifiCredentialsExist();
+bool runOtaUpdateIfAvailable();
 String getDeviceUid();
-void initializeLogger();
+void initializeDLFLogger();
 void startLoggerRun();
 void enableGps();
 void disableGps();
@@ -89,7 +100,7 @@ TinyGPSPlus gps;
 ESP32Time rtc;
 WiFiManager wifiManager;
 unsigned long lastWifiReconnectAttemptMillis{0};
-dlf::CSCLogger logger{SD};
+dlf::DLFLogger logger{SD};
 unsigned long lastLoggerStartRunMillis{0};
 dlf::run_handle_t runHandle{0};
 bool offloadMode{false};
@@ -110,6 +121,19 @@ void setup() {
 
   Serial.begin(SERIAL_BAUD_RATE);
 
+  // Configure Elog
+  Logger.configureInternalLogging(
+      Serial,
+      ELOG_LEVEL_DEBUG);  // for now, output Elog internal logs to Serial
+  Logger.registerSerial(DLFLIB_ELOG_ID, ELOG_LEVEL_DEBUG, "dlflib", Serial);
+  Logger.registerSerial(OAS_ELOG_ID, ELOG_LEVEL_DEBUG, "oas", Serial);
+  if (ELOG_TO_LITTLEFS) {
+    Logger.registerSpiffs(DLFLIB_ELOG_ID, ELOG_LEVEL_INFO, "dlflib");
+    Logger.registerSpiffs(OAS_ELOG_ID, ELOG_LEVEL_INFO, "oas");
+    Logger.enableQuery(Serial);  // press space when on Serial Monitor to be
+                                 // able to view the LittleFS log files
+  }
+
   // Configure pins
   // Read to indicate whether USB power is present
   pinMode(PIN_USB_POWER, INPUT_PULLDOWN);
@@ -120,6 +144,10 @@ void setup() {
 
   // Add delay to give time for serial to initialize
   vTaskDelay(pdMS_TO_TICKS(1000));
+
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+             "Firmware: version=%s build=%d device=%s channel=%s", FW_VERSION,
+             FW_BUILD_NUMBER, DEVICE_TYPE, OTA_CHANNEL);
 
   // Start sleep monitor task to trigger sleep mode when USB power is
   // disconnected, or sleep button is pressed
@@ -137,7 +165,10 @@ void setup() {
     // as the very last step.
     waitForSd();
     initializeWifi();
-    initializeLogger();
+    if (ENABLE_OTA_UPDATE) {
+      runOtaUpdateIfAvailable();
+    }
+    initializeDLFLogger();
 
     // Enable GPS, wait for valid time, and start GPS update task in that order.
     // Note that we need to enable GPS first as the time comes from the GPS
@@ -155,7 +186,7 @@ void setup() {
 
     waitForSd();
     initializeWifi();
-    initializeLogger();
+    initializeDLFLogger();
 
     FastLED.showColor(CRGB::Yellow);
 
@@ -177,7 +208,7 @@ void loop() {
   if (WiFi.status() != WL_CONNECTED && !wifiManager.getConfigPortalActive() &&
       millis() - lastWifiReconnectAttemptMillis >
           WIFI_RECONNECT_ATTEMPT_INTERVAL_MS) {
-    Serial.println("WiFi not connected, retrying...");
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "WiFi not connected, retrying...");
     WiFi.begin();  // reattempt connection with stored credentials (if any)
     lastWifiReconnectAttemptMillis = millis();
   }
@@ -191,6 +222,7 @@ void loop() {
 void waitForValidTime() {
   // GPS module is the source of epoch time. Ensure that the received time is
   // valid. The PA1010D returns a default/bogus time when there is no valid fix.
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Waiting for GPS time...");
   while (WAIT_FOR_VALID_TIME) {
     FastLED.showColor(CRGB::Yellow);
 
@@ -209,17 +241,20 @@ void waitForValidTime() {
         gps.date.year() >= 2025) {
       rtc.setTime(gps.time.second(), gps.time.minute(), gps.time.hour(),
                   gps.date.day(), gps.date.month(), gps.date.year());
-      Serial.println("Valid time received");
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Valid GPS time received");
       break;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(250));
+    vTaskDelay(pdMS_TO_TICKS(500));
     FastLED.showColor(CRGB::Black);
-    vTaskDelay(pdMS_TO_TICKS(250));
+    vTaskDelay(pdMS_TO_TICKS(500));
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+               "Still waiting for valid GPS time...");
   }
 }
 
 void waitForSd() {
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Initializing SD...");
   SPI.setFrequency(1000000);
   SPI.setDataMode(SPI_MODE0);
   SPI.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
@@ -229,17 +264,18 @@ void waitForSd() {
     FastLED.showColor(CRGB::Black);
     vTaskDelay(pdMS_TO_TICKS(500));
   }
-  Serial.println("SD card connected");
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "SD card connected");
 }
 
 void initializeWifi() {
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Initializing WiFi...");
   WiFi.mode(WIFI_STA);
   wifiManager.setConfigPortalBlocking(false);
   wifiManager.setConfigPortalTimeout(WIFI_CONFIG_AP_TIMEOUT_S);
-  if (!wifiManager.autoConnect(WIFI_CONFIG_AP_NAME)) {
-    Serial.println(
-        "Wi-Fi credentials missing or failed to connect. Starting "
-        "ConfigPortal");
+  if (!wifiManager.autoConnect()) {
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+               "Wi-Fi credentials missing or failed to connect. Starting "
+               "ConfigPortal");
   }
 }
 
@@ -248,12 +284,30 @@ bool wifiCredentialsExist() {
   esp_err_t result = esp_wifi_get_config(WIFI_IF_STA, &conf);
 
   if (result != ESP_OK) {
-    Serial.printf("esp_wifi_get_config failed: %d\n", result);
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_ERROR, "esp_wifi_get_config failed: %d",
+               result);
     return false;
   }
 
   // Check if SSID is non-empty
   return strlen((const char*)conf.sta.ssid) > 0;
+}
+
+bool runOtaUpdateIfAvailable() {
+  ota::OtaUpdater::Config otaConfig;
+  otaConfig.manifestEndpoint = OTA_MANIFEST_ENDPOINT;
+  otaConfig.firmwareEndpoint = OTA_FIRMWARE_ENDPOINT;
+  otaConfig.deviceType = DEVICE_TYPE;
+  otaConfig.channel = OTA_CHANNEL;
+  otaConfig.currentBuildNumber = FW_BUILD_NUMBER;
+  ota::OtaUpdater otaUpdater(otaConfig);
+  auto res{otaUpdater.updateIfAvailable(true)};
+  if (!res.ok) {
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_ERROR,
+               "[OTA] Error when updating firmware: %s", res.message.c_str());
+  }
+
+  return res.ok;
 }
 
 String getDeviceUid() {
@@ -263,7 +317,8 @@ String getDeviceUid() {
   return id;
 }
 
-void initializeLogger() {
+void initializeDLFLogger() {
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Initializing DLF logger...");
   auto satellitesLogInterval{std::chrono::seconds(5)};
   POLL(logger, pos.satellites, satellitesLogInterval);
 
@@ -283,6 +338,7 @@ void initializeLogger() {
   options.partialRunUploadIntervalSecs =
       LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS;
   logger.syncTo(UPLOAD_ENDPOINT, getDeviceUid(), options).begin();
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "DLF initialized");
 }
 
 void startLoggerRun() {
@@ -299,6 +355,8 @@ void enableGps() {
   if (gpsEnabled) {
     return;
   }
+
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Initializing GPS...");
 
   // Initialize I2C
   Wire.begin();
@@ -328,7 +386,7 @@ void enableGps() {
 
   digitalWrite(PIN_GPS_WAKE, LOW);
   gpsEnabled = true;
-  Serial.println("GPS enabled");
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "GPS enabled");
 }
 
 void disableGps() {
@@ -347,7 +405,7 @@ void disableGps() {
   Wire.end();
 
   gpsEnabled = false;
-  Serial.println("GPS disabled");
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "GPS disabled");
 }
 
 bool hasUsbPower() {
@@ -396,20 +454,23 @@ void sleepMonitorTask(void* args) {
   while (true) {
     bool sleepButtonPressed{!digitalRead(PIN_SLEEP_BUTTON)};
     if (sleepButtonPressed) {
-      Serial.println("[Sleep Monitor] Sleep button pressed. Going to sleep");
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+                 "[Sleep Monitor] Sleep button pressed. Going to sleep");
       break;
     }
 
     // Make sure USB power is gone for 2 cycles before triggering sleep.
     bool usbSleep{!offloadMode && !hasUsbPower()};
     if (usbSleep && usbSleepTriggered) {
-      Serial.println(
+      Logger.log(
+          OAS_ELOG_ID, ELOG_LEVEL_INFO,
           "[Sleep Monitor] USB power still disconnected. Going to sleep");
       break;
     }
     usbSleepTriggered = usbSleep;
     if (usbSleep) {
-      Serial.println("[Sleep Monitor] USB power disconnected");
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+                 "[Sleep Monitor] USB power disconnected");
     }
 
     vTaskDelay(pdMS_TO_TICKS(1000));
@@ -421,7 +482,8 @@ void sleepMonitorTask(void* args) {
   if (runHandle) {
     logger.stopRun(runHandle);
     runHandle = 0;
-    Serial.println("[Sleep Monitor] Stopped active run");
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+               "[Sleep Monitor] Stopped active run");
     // Just in case for logger sync/upload to start
     vTaskDelay(pdMS_TO_TICKS(100));
     logger.waitForSyncCompletion();
@@ -429,10 +491,10 @@ void sleepMonitorTask(void* args) {
 
   // Turn off peripherals
   SD.end();
-  Serial.println("[Sleep Monitor] Stopped SD");
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[Sleep Monitor] Stopped SD");
   if (gpsEnabled) {
     disableGps();
-    Serial.println("[Sleep Monitor] Stopped GPS");
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[Sleep Monitor] Stopped GPS");
   }
 
   // Turn off LED
@@ -444,7 +506,7 @@ void sleepMonitorTask(void* args) {
                                  ESP_EXT1_WAKEUP_ANY_HIGH);
   }
 
-  Serial.println("[Sleep Monitor] Goodnight");
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[Sleep Monitor] Goodnight");
   Serial.flush();
   Serial.end();
   esp_deep_sleep_start();

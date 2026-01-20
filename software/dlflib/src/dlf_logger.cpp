@@ -2,17 +2,18 @@
 
 #include "dlflib/components/uploader_component.h"
 #include "dlflib/dlf_cfg.h"
+#include "dlflib/log.h"
 
 namespace dlf {
 
-CSCLogger::CSCLogger(fs::FS& fs, String fsDir) : fs_(fs), fsDir_(fsDir) {
+DLFLogger::DLFLogger(fs::FS& fs, String fsDir) : fs_(fs), fsDir_(fsDir) {
   loggerEventGroup_ = xEventGroupCreate();
   this->setup(&components_);
   addComponent(this);
 }
 
-bool CSCLogger::begin() {
-  Serial.println("[CSCLogger] Begin");
+bool DLFLogger::begin() {
+  DLFLIB_LOG_INFO("[DLFLogger] Begin");
   prune();
 
   // Set subcomponent stores to enable component communication
@@ -33,7 +34,7 @@ bool CSCLogger::begin() {
   return true;
 }
 
-run_handle_t CSCLogger::startRun(Encodable meta,
+run_handle_t DLFLogger::startRun(Encodable meta,
                                  std::chrono::microseconds tickRate) {
   run_handle_t h = getAvailableHandle();
 
@@ -42,8 +43,8 @@ run_handle_t CSCLogger::startRun(Encodable meta,
     return h;
   }
 
-  Serial.printf("[CSCLogger] Starting logging with a cycle time-base of %dus\n",
-                tickRate);
+  DLFLIB_LOG_INFO("[DLFLogger] Starting logging with a cycle time-base of %dus",
+                  tickRate);
 
   // Initialize new run
   dlf::Run* run = new dlf::Run(fs_, fsDir_, streams_, tickRate, meta);
@@ -58,7 +59,7 @@ run_handle_t CSCLogger::startRun(Encodable meta,
   return h;
 }
 
-void CSCLogger::stopRun(run_handle_t h) {
+void DLFLogger::stopRun(run_handle_t h) {
   int runIdx = h - 1;
   if (runIdx < 0 || runIdx >= MAX_RUNS || !runs_[runIdx]) {
     return;
@@ -69,7 +70,7 @@ void CSCLogger::stopRun(run_handle_t h) {
   xEventGroupSetBits(loggerEventGroup_, NEW_RUN);
 }
 
-CSCLogger& CSCLogger::syncTo(
+DLFLogger& DLFLogger::syncTo(
     const String& endpoint, const String& deviceUid, const String& secret,
     const dlf::components::UploaderComponent::Options& options) {
   if (!hasComponent<dlf::components::UploaderComponent>()) {
@@ -82,13 +83,13 @@ CSCLogger& CSCLogger::syncTo(
   return *this;
 }
 
-void CSCLogger::waitForSyncCompletion() {
+void DLFLogger::waitForSyncCompletion() {
   if (hasComponent<dlf::components::UploaderComponent>()) {
     getComponent<dlf::components::UploaderComponent>()->waitForSyncCompletion();
   }
 }
 
-std::vector<run_handle_t> CSCLogger::getActiveRuns() {
+std::vector<run_handle_t> DLFLogger::getActiveRuns() {
   std::vector<run_handle_t> activeRuns;
   for (size_t i = 0; i < MAX_RUNS; ++i) {
     if (runs_[i]) {
@@ -99,7 +100,7 @@ std::vector<run_handle_t> CSCLogger::getActiveRuns() {
   return activeRuns;
 }
 
-Run* CSCLogger::getRun(run_handle_t h) {
+Run* DLFLogger::getRun(run_handle_t h) {
   int runIdx = h - 1;
   if (runIdx < 0 || runIdx >= MAX_RUNS || !runs_[runIdx]) {
     return nullptr;
@@ -108,7 +109,7 @@ Run* CSCLogger::getRun(run_handle_t h) {
   return runs_[runIdx].get();
 }
 
-CSCLogger& CSCLogger::watchInternal(Encodable value, String id,
+DLFLogger& DLFLogger::watchInternal(Encodable value, String id,
                                     const char* notes,
                                     SemaphoreHandle_t mutex) {
   dlf::datastream::AbstractStream* s =
@@ -118,7 +119,7 @@ CSCLogger& CSCLogger::watchInternal(Encodable value, String id,
   return *this;
 }
 
-CSCLogger& CSCLogger::pollInternal(Encodable value, String id,
+DLFLogger& DLFLogger::pollInternal(Encodable value, String id,
                                    std::chrono::microseconds sampleInterval,
                                    std::chrono::microseconds phase,
                                    const char* notes, SemaphoreHandle_t mutex) {
@@ -129,7 +130,7 @@ CSCLogger& CSCLogger::pollInternal(Encodable value, String id,
   return *this;
 }
 
-run_handle_t CSCLogger::getAvailableHandle() {
+run_handle_t DLFLogger::getAvailableHandle() {
   for (size_t i = 0; i < MAX_RUNS; i++) {
     if (!runs_[i]) {
       return i + 1;
@@ -139,7 +140,7 @@ run_handle_t CSCLogger::getAvailableHandle() {
   return 0;
 }
 
-void CSCLogger::prune() {
+void DLFLogger::prune() {
   fs::File root = fs_.open(fsDir_);
 
   fs::File runDir;
@@ -158,16 +159,16 @@ void CSCLogger::prune() {
     fs::File runFile;
     while (runFile = runDir.openNextFile()) {
       if (!strcmp(runFile.name(), LOCKFILE_NAME)) {
-        Serial.printf("[CSCLogger] Pruning %s\n", runDirPath.c_str());
+        DLFLIB_LOG_INFO("[DLFLogger] Pruning %s", runDirPath.c_str());
 
         String lockfilePath{
             dlf::util::resolvePath({runDirPath, LOCKFILE_NAME})};
         if (fs_.remove(lockfilePath)) {
-          Serial.printf("[CSCLogger] Successfully removed lockfile: %s\n",
-                        lockfilePath.c_str());
+          DLFLIB_LOG_INFO("[DLFLogger] Successfully removed lockfile: %s",
+                          lockfilePath.c_str());
         } else {
-          Serial.printf("[CSCLogger] ERROR: Failed to remove lockfile: %s\n",
-                        lockfilePath.c_str());
+          DLFLIB_LOG_ERROR("[DLFLogger] ERROR: Failed to remove lockfile: %s",
+                           lockfilePath.c_str());
         }
         break;
       }
