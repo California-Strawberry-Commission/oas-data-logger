@@ -11,6 +11,8 @@
 #include <driver/sdmmc_host.h>
 #include <esp_log.h>
 
+#include "ota_updater/ota_updater.h"
+
 #define OAS_ELOG_ID 0
 
 // Configuration
@@ -18,8 +20,10 @@ const int SERIAL_BAUD_RATE{115200};
 const int LOGGER_RUN_INTERVAL_S{0};
 const bool LOGGER_MARK_AFTER_UPLOAD{true};
 const bool LOGGER_DELETE_AFTER_UPLOAD{false};
-const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{0};
+const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{0};  // <= 0 means disabled
 const int WIFI_RECONFIG_BUTTON_HOLD_TIME_MS{2000};
+const bool ELOG_TO_LITTLEFS{true};  // log to internal flash memory
+const bool ENABLE_OTA_UPDATE{false};
 
 // Testing overrides
 const bool WAIT_FOR_VALID_TIME{true};
@@ -61,20 +65,24 @@ const uint32_t GPS_UPDATE_RATE_MS{100};  // 10Hz update rate
 #define mySerial Serial1                 // GPS Serial port
 
 // WiFi Configuration
-const char* WIFI_CONFIG_AP_NAME{"OASDataLogger"};
 const int WIFI_RECONNECT_BACKOFF_MS{2000};
 const int WIFI_MAX_BACKOFF_MS{30000};
 static volatile bool wifiConnecting = false;
 static uint32_t wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;
 
-// TODO: Be able to configure upload endpoint in Access Point mode
+// Backend endpoints
 const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
+const char* OTA_MANIFEST_ENDPOINT{
+    "https://oas-data-logger.vercel.app/api/ota/manifest/%s/%s"};
+const char* OTA_FIRMWARE_ENDPOINT{
+    "https://oas-data-logger.vercel.app/api/ota/firmware/%s/%s/%d"};
 
 // State Machine States
 enum class SystemState {
   INIT,
   WAIT_SD,
   WAIT_WIFI,
+  OTA_UPDATE,
   WAIT_GPS,
   WAIT_TIME,
   RUNNING,
@@ -136,6 +144,7 @@ void transitionToState(SystemState newState);
 void handleInitState();
 void handleWaitSdState();
 void handleWaitWifiState();
+void handleOtaUpdate();
 void handleWaitGpsState();
 void handleWaitTimeState();
 void handleRunningState();
@@ -161,11 +170,13 @@ void setup() {
       Serial,
       ELOG_LEVEL_DEBUG);  // for now, output Elog internal logs to Serial
   Logger.registerSerial(DLFLIB_ELOG_ID, ELOG_LEVEL_DEBUG, "dlflib", Serial);
-  Logger.registerSpiffs(DLFLIB_ELOG_ID, ELOG_LEVEL_INFO, "dlflib");
   Logger.registerSerial(OAS_ELOG_ID, ELOG_LEVEL_DEBUG, "oas", Serial);
-  Logger.registerSpiffs(OAS_ELOG_ID, ELOG_LEVEL_INFO, "oas");
-  Logger.enableQuery(Serial);  // press space when on Serial Monitor to be able
-                               // to view the log files
+  if (ELOG_TO_LITTLEFS) {
+    Logger.registerSpiffs(DLFLIB_ELOG_ID, ELOG_LEVEL_INFO, "dlflib");
+    Logger.registerSpiffs(OAS_ELOG_ID, ELOG_LEVEL_INFO, "oas");
+    Logger.enableQuery(Serial);  // press space when on Serial Monitor to be
+                                 // able to view the LittleFS log files
+  }
 
   // Initialize LED first for status indication
   initializeLeds();
@@ -220,6 +231,9 @@ void loop() {
       break;
     case SystemState::WAIT_WIFI:
       handleWaitWifiState();
+      break;
+    case SystemState::OTA_UPDATE:
+      handleOtaUpdate();
       break;
     case SystemState::WAIT_GPS:
       handleWaitGpsState();
@@ -313,6 +327,10 @@ void updateLedPattern() {
       }
       break;
 
+    case SystemState::OTA_UPDATE:
+      FastLED.showColor(CRGB::Orange);
+      break;
+
     case SystemState::RUNNING:
       FastLED.showColor(CRGB::Green);
       break;
@@ -362,13 +380,7 @@ void transitionToState(SystemState newState) {
   lastLedToggleMillis = millis();
 }
 
-void handleInitState() {
-  if (offloadMode) {
-    transitionToState(SystemState::WAIT_SD);
-  } else {
-    transitionToState(SystemState::WAIT_SD);
-  }
-}
+void handleInitState() { transitionToState(SystemState::WAIT_SD); }
 
 void handleWaitSdState() {
   Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Initializing SDIO for SD card...");
@@ -422,7 +434,7 @@ void handleWaitWifiState() {
   if (WiFi.SSID().length() == 0) {
     Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
                "No WiFi credentials saved. Starting WiFi Manager...");
-    wifiManager.autoConnect(WIFI_CONFIG_AP_NAME);
+    wifiManager.autoConnect();
   } else {
     Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Connecting to saved WiFi: %s",
                WiFi.SSID().c_str());
@@ -436,23 +448,41 @@ void handleWaitWifiState() {
     vTaskDelay(pdMS_TO_TICKS(100));
   }
 
-  if (WiFi.status() == WL_CONNECTED) {
+  bool wifiConnected = (WiFi.status() == WL_CONNECTED);
+  if (wifiConnected) {
     Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "WiFi connected successfully");
   } else {
     Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
                "WiFi not connected; continuing without network.");
   }
 
+  if (offloadMode) {
+    transitionToState(SystemState::OFFLOAD);
+  } else if (ENABLE_OTA_UPDATE && wifiConnected) {
+    transitionToState(SystemState::OTA_UPDATE);
+  } else {
+    transitionToState(SystemState::WAIT_GPS);
+  }
+}
+
+void handleOtaUpdate() {
+  ota::OtaUpdater::Config otaConfig;
+  otaConfig.manifestEndpoint = OTA_MANIFEST_ENDPOINT;
+  otaConfig.firmwareEndpoint = OTA_FIRMWARE_ENDPOINT;
+  otaConfig.deviceType = DEVICE_TYPE;
+  otaConfig.channel = OTA_CHANNEL;
+  otaConfig.currentBuildNumber = FW_BUILD_NUMBER;
+  ota::OtaUpdater otaUpdater(otaConfig);
+  auto res{otaUpdater.updateIfAvailable(true)};
+  if (!res.ok) {
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_ERROR,
+               "[OTA] Error when updating firmware: %s", res.message.c_str());
+  }
+
   transitionToState(SystemState::WAIT_GPS);
 }
 
 void handleWaitGpsState() {
-  if (offloadMode) {
-    // Skip GPS in offload mode
-    transitionToState(SystemState::OFFLOAD);
-    return;
-  }
-
   enableGps();
 
   if (gpsEnabled) {

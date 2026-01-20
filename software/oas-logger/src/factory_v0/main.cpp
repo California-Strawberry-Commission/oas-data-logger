@@ -17,6 +17,12 @@ const gpio_num_t PIN_USER_BUTTON{GPIO_NUM_35};
 const int NUM_LEDS{1};
 const uint8_t LED_BRIGHTNESS{10};
 
+// Backend endpoints
+const char* OTA_MANIFEST_ENDPOINT{
+    "https://oas-data-logger.vercel.app/api/ota/manifest/%s/%s"};
+const char* OTA_FIRMWARE_ENDPOINT{
+    "https://oas-data-logger.vercel.app/api/ota/firmware/%s/%s/%d"};
+
 CRGB leds[NUM_LEDS];
 WiFiManager wifiManager;
 
@@ -67,10 +73,8 @@ void setup() {
                 FW_VERSION, FW_BUILD_NUMBER, DEVICE_TYPE, OTA_CHANNEL);
 
   ota::OtaUpdater::Config otaConfig;
-  otaConfig.manifestEndpoint =
-      "https://oas-data-logger.vercel.app/api/ota/manifest/%s/%s";
-  otaConfig.firmwareEndpoint =
-      "https://oas-data-logger.vercel.app/api/ota/firmware/%s/%s/%d";
+  otaConfig.manifestEndpoint = OTA_MANIFEST_ENDPOINT;
+  otaConfig.firmwareEndpoint = OTA_FIRMWARE_ENDPOINT;
   otaConfig.deviceType = DEVICE_TYPE;
   otaConfig.channel = OTA_CHANNEL;
   otaConfig.currentBuildNumber = FW_BUILD_NUMBER;

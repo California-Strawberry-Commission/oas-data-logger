@@ -40,7 +40,7 @@ const bool LOGGER_MARK_AFTER_UPLOAD{true};
 const bool LOGGER_DELETE_AFTER_UPLOAD{false};
 const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{0};  // <= 0 means disabled
 const bool ELOG_TO_LITTLEFS{true};  // log to internal flash memory
-const bool ENABLE_OTA{false};
+const bool ENABLE_OTA_UPDATE{false};
 
 // Serial
 const unsigned long SERIAL_BAUD_RATE{115200};
@@ -72,7 +72,6 @@ const gpio_num_t PIN_GPS_WAKE{GPIO_NUM_32};
 
 // WIFI
 const unsigned long WIFI_CONFIG_AP_TIMEOUT_S{120};
-const char* WIFI_CONFIG_AP_NAME{"OASDataLogger"};
 const int WIFI_RECONNECT_ATTEMPT_INTERVAL_MS{5000};
 
 // Backend endpoints
@@ -166,7 +165,7 @@ void setup() {
     // as the very last step.
     waitForSd();
     initializeWifi();
-    if (ENABLE_OTA) {
+    if (ENABLE_OTA_UPDATE) {
       runOtaUpdateIfAvailable();
     }
     initializeDLFLogger();
@@ -187,9 +186,6 @@ void setup() {
 
     waitForSd();
     initializeWifi();
-    if (ENABLE_OTA) {
-      runOtaUpdateIfAvailable();
-    }
     initializeDLFLogger();
 
     FastLED.showColor(CRGB::Yellow);
@@ -276,7 +272,7 @@ void initializeWifi() {
   WiFi.mode(WIFI_STA);
   wifiManager.setConfigPortalBlocking(false);
   wifiManager.setConfigPortalTimeout(WIFI_CONFIG_AP_TIMEOUT_S);
-  if (!wifiManager.autoConnect(WIFI_CONFIG_AP_NAME)) {
+  if (!wifiManager.autoConnect()) {
     Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
                "Wi-Fi credentials missing or failed to connect. Starting "
                "ConfigPortal");
