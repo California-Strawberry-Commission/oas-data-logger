@@ -69,7 +69,7 @@ static uint32_t wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;
 String deviceSecret;  // Populated from NVS at boot
 
 // TODO: Be able to configure upload endpoint in Access Point mode
-const char* UPLOAD_ENDPOINT{"http://129.65.102.78:3000/api/upload/%s"};
+const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
 
 // State Machine States
 enum class SystemState {
