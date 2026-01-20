@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "DeviceSecret" ADD COLUMN     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ADD COLUMN     "encryptionKeyVersion" INTEGER NOT NULL DEFAULT 1;

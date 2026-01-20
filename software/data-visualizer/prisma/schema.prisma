@@ -53,6 +53,9 @@ model DeviceSecret {
   // This stores the encrypted secret.
   secret   String 
 
+  encryptionKeyVersion Int @default(1)
+
+  createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Relation fields
