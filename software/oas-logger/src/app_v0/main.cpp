@@ -24,6 +24,8 @@
 #include <Wire.h>
 #include <dlflib/dlf_logger.h>
 
+#include "ota_updater/ota_updater.h"
+
 #define OAS_ELOG_ID 0
 
 // Various flags for testing purposes
@@ -36,7 +38,9 @@ const bool USE_LEGACY_GPIO_CONFIG{false};
 const int LOGGER_RUN_INTERVAL_S{0};
 const bool LOGGER_MARK_AFTER_UPLOAD{true};
 const bool LOGGER_DELETE_AFTER_UPLOAD{false};
-const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{0};
+const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{0};  // <= 0 means disabled
+const bool ELOG_TO_LITTLEFS{true};  // log to internal flash memory
+const bool ENABLE_OTA{false};
 
 // Serial
 const unsigned long SERIAL_BAUD_RATE{115200};
@@ -71,13 +75,18 @@ const unsigned long WIFI_CONFIG_AP_TIMEOUT_S{120};
 const char* WIFI_CONFIG_AP_NAME{"OASDataLogger"};
 const int WIFI_RECONNECT_ATTEMPT_INTERVAL_MS{5000};
 
-// TODO: Configure upload endpoint in Access Point mode
+// Backend endpoints
 const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
+const char* OTA_MANIFEST_ENDPOINT{
+    "https://oas-data-logger.vercel.app/api/ota/manifest/%s/%s"};
+const char* OTA_FIRMWARE_ENDPOINT{
+    "https://oas-data-logger.vercel.app/api/ota/firmware/%s/%s/%d"};
 
 void waitForValidTime();
 void waitForSd();
 void initializeWifi();
 bool wifiCredentialsExist();
+bool runOtaUpdateIfAvailable();
 String getDeviceUid();
 void initializeDLFLogger();
 void startLoggerRun();
@@ -118,11 +127,13 @@ void setup() {
       Serial,
       ELOG_LEVEL_DEBUG);  // for now, output Elog internal logs to Serial
   Logger.registerSerial(DLFLIB_ELOG_ID, ELOG_LEVEL_DEBUG, "dlflib", Serial);
-  Logger.registerSpiffs(DLFLIB_ELOG_ID, ELOG_LEVEL_INFO, "dlflib");
   Logger.registerSerial(OAS_ELOG_ID, ELOG_LEVEL_DEBUG, "oas", Serial);
-  Logger.registerSpiffs(OAS_ELOG_ID, ELOG_LEVEL_INFO, "oas");
-  Logger.enableQuery(Serial);  // press space when on Serial Monitor to be able
-                               // to view the log files
+  if (ELOG_TO_LITTLEFS) {
+    Logger.registerSpiffs(DLFLIB_ELOG_ID, ELOG_LEVEL_INFO, "dlflib");
+    Logger.registerSpiffs(OAS_ELOG_ID, ELOG_LEVEL_INFO, "oas");
+    Logger.enableQuery(Serial);  // press space when on Serial Monitor to be
+                                 // able to view the LittleFS log files
+  }
 
   // Configure pins
   // Read to indicate whether USB power is present
@@ -134,6 +145,10 @@ void setup() {
 
   // Add delay to give time for serial to initialize
   vTaskDelay(pdMS_TO_TICKS(1000));
+
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+             "Firmware: version=%s build=%d device=%s channel=%s", FW_VERSION,
+             FW_BUILD_NUMBER, DEVICE_TYPE, OTA_CHANNEL);
 
   // Start sleep monitor task to trigger sleep mode when USB power is
   // disconnected, or sleep button is pressed
@@ -151,6 +166,9 @@ void setup() {
     // as the very last step.
     waitForSd();
     initializeWifi();
+    if (ENABLE_OTA) {
+      runOtaUpdateIfAvailable();
+    }
     initializeDLFLogger();
 
     // Enable GPS, wait for valid time, and start GPS update task in that order.
@@ -169,6 +187,9 @@ void setup() {
 
     waitForSd();
     initializeWifi();
+    if (ENABLE_OTA) {
+      runOtaUpdateIfAvailable();
+    }
     initializeDLFLogger();
 
     FastLED.showColor(CRGB::Yellow);
@@ -274,6 +295,23 @@ bool wifiCredentialsExist() {
 
   // Check if SSID is non-empty
   return strlen((const char*)conf.sta.ssid) > 0;
+}
+
+bool runOtaUpdateIfAvailable() {
+  ota::OtaUpdater::Config otaConfig;
+  otaConfig.manifestEndpoint = OTA_MANIFEST_ENDPOINT;
+  otaConfig.firmwareEndpoint = OTA_FIRMWARE_ENDPOINT;
+  otaConfig.deviceType = DEVICE_TYPE;
+  otaConfig.channel = OTA_CHANNEL;
+  otaConfig.currentBuildNumber = FW_BUILD_NUMBER;
+  ota::OtaUpdater otaUpdater(otaConfig);
+  auto res{otaUpdater.updateIfAvailable(true)};
+  if (!res.ok) {
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_ERROR,
+               "[OTA] Error when updating firmware: %s", res.message.c_str());
+  }
+
+  return res.ok;
 }
 
 String getDeviceUid() {
