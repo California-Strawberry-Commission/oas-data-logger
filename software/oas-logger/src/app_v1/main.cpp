@@ -67,10 +67,9 @@ static uint32_t wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;
 
 // Security and Provisioning
 String deviceSecret;  // Populated from NVS at boot
-DeviceAuth* secureAuth = nullptr;
 
 // TODO: Be able to configure upload endpoint in Access Point mode
-const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
+const char* UPLOAD_ENDPOINT{"http://129.65.102.78:3000/api/upload/%s"};
 
 // State Machine States
 enum class SystemState {
@@ -162,22 +161,18 @@ void setup() {
   initializeLeds();
 
   // Temp instance to load credentials
-  DeviceAuth tempAuth(getDeviceUid(), "");
+  DeviceAuth auth(getDeviceUid());
 
-  if (!tempAuth.loadSecret(deviceSecret)) {
+  if (!auth.loadSecret(deviceSecret)) {
     // If no secret, BLOCK here until provisioned
     // Check NVS -> Wait if empty
-    deviceSecret = tempAuth.awaitProvisioning();
+    deviceSecret = auth.awaitProvisioning();
     Serial.println("System: Provisioned. Rebooting in 3s...");
     delay(3000);
     ESP.restart();
   }
 
-  // Create signer instance
-  secureAuth = new DeviceAuth(getDeviceUid(), deviceSecret);
-  Serial.println("Security: Enabled");
-
-  logger.setSecurity(secureAuth);
+  Serial.println("Security: Secret loaded from NVS");
 
   // Create mutex for GPS data protection
   gpsDataMutex = xSemaphoreCreateMutex();
@@ -711,7 +706,7 @@ void initializeLogger() {
   options.deleteAfterUpload = LOGGER_DELETE_AFTER_UPLOAD;
   options.partialRunUploadIntervalSecs =
       LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS;
-  logger.syncTo(UPLOAD_ENDPOINT, getDeviceUid(), options).begin();
+  logger.syncTo(UPLOAD_ENDPOINT, getDeviceUid(), deviceSecret, options).begin();
 
   Serial.println("Logger initialized");
 }
