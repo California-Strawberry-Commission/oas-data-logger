@@ -70,15 +70,12 @@ void CSCLogger::stopRun(run_handle_t h) {
 }
 
 CSCLogger& CSCLogger::syncTo(
-    const String& endpoint, const String& deviceUid,
+    const String& endpoint, const String& deviceUid, const String& secret,
     const dlf::components::UploaderComponent::Options& options) {
   if (!hasComponent<dlf::components::UploaderComponent>()) {
-    auto* uploader{new dlf::components::UploaderComponent(fs_, fsDir_, endpoint,
-                                                          deviceUid, options)};
+    auto* uploader{new dlf::components::UploaderComponent(
+        fs_, fsDir_, endpoint, deviceUid, secret, options)};
 
-    if (_auth != nullptr) {
-      uploader->setSecurity(_auth);
-    }
     addComponent(uploader);
   }
 

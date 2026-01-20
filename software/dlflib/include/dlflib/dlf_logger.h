@@ -7,7 +7,6 @@
 #include <chrono>
 #include <vector>
 
-#include "../../oas-logger/lib/provision/include/DeviceAuth.h"
 #include "dlflib/components/dlf_component.h"
 #include "dlflib/components/uploader_component.h"
 #include "dlflib/datastream/event_stream.h"
@@ -56,8 +55,6 @@ class CSCLogger : public dlf::components::DlfComponent {
 
   CSCLogger(fs::FS& fs, String fsDir = "/");
 
-  void setSecurity(DeviceAuth* auth) { _auth = auth; }
-
   bool begin();
 
   run_handle_t startRun(Encodable meta, std::chrono::microseconds tickRate =
@@ -90,6 +87,7 @@ class CSCLogger : public dlf::components::DlfComponent {
   POLL(float)
 
   CSCLogger& syncTo(const String& endpoint, const String& deviceUid,
+                    const String& secret,
                     const dlf::components::UploaderComponent::Options& options);
 
   void waitForSyncCompletion();
@@ -115,8 +113,6 @@ class CSCLogger : public dlf::components::DlfComponent {
   run_handle_t getAvailableHandle();
 
   void prune();
-
-  DeviceAuth* _auth = nullptr;
 
   std::unique_ptr<Run> runs_[MAX_RUNS];
   // Todo: Figure out how to do this with unique_ptrs
