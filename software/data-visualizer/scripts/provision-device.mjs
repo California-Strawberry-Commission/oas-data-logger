@@ -104,7 +104,6 @@ async function main() {
     return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
   };
 
-  let timeout;
   let parser;
   let port;
   try {
@@ -173,7 +172,6 @@ async function main() {
 
     const provisioningTask = new Promise((resolve, reject) => {
       parser.on("data", async (line) => {
-        if (completed) return;
         const cleanLine = line.toString().trim();
 
         if (cleanLine.startsWith("DEVICE_ID:")) {
@@ -196,8 +194,6 @@ async function main() {
               if (err) console.error("Write error:", err);
             });
           } catch (err) {
-            completed = true;
-            clearTimeout(timeout);
             reject(err);
           }
         }
@@ -224,7 +220,6 @@ async function main() {
     console.error("\n[Error]", err.message);
     process.exitCode = 1;
   } finally {
-    clearTimeout(timeout);
 
     if (parser) parser.removeAllListeners("data");
 
