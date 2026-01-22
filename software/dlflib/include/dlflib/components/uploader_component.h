@@ -4,6 +4,7 @@
 #include <FS.h>
 #include <WiFi.h>
 
+#include "dlflib/auth/request_signer.h"
 #include "dlflib/components/dlf_component.h"
 
 namespace dlf::components {
@@ -20,7 +21,9 @@ class UploaderComponent : public DlfComponent {
     int partialRunUploadIntervalSecs = 0;
   };
   UploaderComponent(fs::FS& fs, const String& fsDir, const String& endpoint,
-                    const String& deviceUid, const Options& options);
+                    const String& deviceUid, const String& secret,
+                    const Options& options);
+
   bool begin();
   bool uploadRun(fs::File runDir, const String& runUuid, bool isActive = false);
   void waitForSyncCompletion();
@@ -40,6 +43,7 @@ class UploaderComponent : public DlfComponent {
   void onWifiDisconnected(arduino_event_id_t event, arduino_event_info_t info);
   void onWifiConnected(arduino_event_id_t event, arduino_event_info_t info);
 
+  RequestSigner signer_;
   fs::FS& fs_;
   String dir_;
   String endpoint_;

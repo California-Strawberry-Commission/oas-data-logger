@@ -96,12 +96,14 @@ namespace dlf::components {
 UploaderComponent::UploaderComponent(fs::FS& fs, const String& fsDir,
                                      const String& endpoint,
                                      const String& deviceUid,
+                                     const String& secret,
                                      const Options& options)
     : fs_(fs),
       dir_(fsDir),
       endpoint_(endpoint),
       deviceUid_(deviceUid),
-      options_(options) {}
+      options_(options),
+      signer_(deviceUid, secret) {}
 
 bool UploaderComponent::begin() {
   DLFLIB_LOG_INFO("[UploaderComponent] begin");
@@ -231,6 +233,9 @@ bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
 
   client->printf("POST %s HTTP/1.1\r\n", parts.path.c_str());
   client->printf("Host: %s\r\n", parts.host.c_str());
+
+  signer_.writeAuthHeaders(*client, runUuid);
+
   client->printf("Content-Type: multipart/form-data; boundary=%s\r\n",
                  boundary);
   client->printf("Content-Length: %zu\r\n", contentLength);

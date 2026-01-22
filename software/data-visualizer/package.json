@@ -41,6 +41,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@serialport/parser-readline": "^13.0.0",
     "@tailwindcss/postcss": "^4",
     "@types/leaflet": "^1.9.17",
     "@types/node": "^20",
@@ -52,6 +53,7 @@
     "eslint": "^9",
     "eslint-config-next": "15.3.1",
     "prisma": "^6.6.0",
+    "serialport": "^13.0.0",
     "tailwindcss": "^4",
     "tsx": "^4.20.6",
     "tw-animate-css": "^1.2.8",

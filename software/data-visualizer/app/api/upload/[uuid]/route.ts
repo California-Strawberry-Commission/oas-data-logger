@@ -3,6 +3,7 @@ import { FSAdapter } from "dlflib-js";
 import { mkdirSync, rmSync, writeFileSync } from "fs";
 import { NextRequest, NextResponse } from "next/server";
 import { resolve } from "path";
+import { verifyDeviceSignature } from "@/lib/verifydevice";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,31 @@ export async function POST(
   { params }: { params: Promise<{ uuid: string }> }
 ) {
   const { uuid } = await params;
+
+  const headerDeviceId = request.headers.get("x-device-id");
+
+  if (!headerDeviceId) {
+    return NextResponse.json(
+      { error: "Unauthorized: Missing device ID header" },
+      { status: 401 }
+    );
+  }
+
+  // Verify the signature against the UUID (that is what the firmware signs)
+  const authResult = await verifyDeviceSignature(
+    headerDeviceId,
+    request.headers,
+    uuid 
+  );
+
+  if (!authResult.success) {
+    console.error(`[api/upload] Auth failed for ${uuid}: ${authResult.message}`);
+    return NextResponse.json(
+      { error: "Unauthorized", details: "Invalid request signature" },
+      { status: 401 }
+    );
+  }
+
   const uploadDir = getRunUploadDir(uuid);
 
   try {

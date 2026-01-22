@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <DeviceAuth.h>
 #include <ESP32Time.h>
 #include <Elog.h>
 #include <FastLED.h>
@@ -69,6 +70,9 @@ const int WIFI_RECONNECT_BACKOFF_MS{2000};
 const int WIFI_MAX_BACKOFF_MS{30000};
 static volatile bool wifiConnecting = false;
 static uint32_t wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;
+
+// Security and Provisioning
+String deviceSecret;  // Populated from NVS at boot
 
 // Backend endpoints
 const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
@@ -165,21 +169,48 @@ void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info);
 void setup() {
   Serial.begin(SERIAL_BAUD_RATE);
 
-  // Configure Elog
-  Logger.configureInternalLogging(
-      Serial,
-      ELOG_LEVEL_DEBUG);  // for now, output Elog internal logs to Serial
-  Logger.registerSerial(DLFLIB_ELOG_ID, ELOG_LEVEL_DEBUG, "dlflib", Serial);
-  Logger.registerSerial(OAS_ELOG_ID, ELOG_LEVEL_DEBUG, "oas", Serial);
+  // We initialize the file system logging so we capture the provisioning
+  // steps while keeping Serial quiet.
   if (ELOG_TO_LITTLEFS) {
     Logger.registerSpiffs(DLFLIB_ELOG_ID, ELOG_LEVEL_INFO, "dlflib");
     Logger.registerSpiffs(OAS_ELOG_ID, ELOG_LEVEL_INFO, "oas");
-    Logger.enableQuery(Serial);  // press space when on Serial Monitor to be
-                                 // able to view the LittleFS log files
   }
 
   // Initialize LED first for status indication
   initializeLeds();
+
+  device_auth::DeviceAuth auth(getDeviceUid());
+
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+             "System Boot: Checking provisioning status...");
+
+  if (!auth.loadSecret(deviceSecret)) {
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_WARNING,
+               "Device unprovisioned. Waiting for script...");
+
+    deviceSecret = auth.awaitProvisioning();
+
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+               "Provisioning successful. Rebooting.");
+    Serial.println("System: Provisioned. Rebooting in 3s...");
+    delay(3000);
+    ESP.restart();
+  }
+
+  Serial.println("Security: Secret loaded from NVS");
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+             "Secret loaded. Enabling Serial logging.");
+
+  Logger.configureInternalLogging(Serial, ELOG_LEVEL_DEBUG);
+
+  // This enables the standard log output to Serial
+  Logger.registerSerial(DLFLIB_ELOG_ID, ELOG_LEVEL_DEBUG, "dlflib", Serial);
+  Logger.registerSerial(OAS_ELOG_ID, ELOG_LEVEL_DEBUG, "oas", Serial);
+
+  // Enable query mode now that we are running normally
+  if (ELOG_TO_LITTLEFS) {
+    Logger.enableQuery(Serial);
+  }
 
   // Create mutex for GPS data protection
   gpsDataMutex = xSemaphoreCreateMutex();
@@ -746,7 +777,7 @@ void initializeDLFLogger() {
   options.deleteAfterUpload = LOGGER_DELETE_AFTER_UPLOAD;
   options.partialRunUploadIntervalSecs =
       LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS;
-  logger.syncTo(UPLOAD_ENDPOINT, getDeviceUid(), options).begin();
+  logger.syncTo(UPLOAD_ENDPOINT, getDeviceUid(), deviceSecret, options).begin();
 
   Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "DLF logger initialized");
 }

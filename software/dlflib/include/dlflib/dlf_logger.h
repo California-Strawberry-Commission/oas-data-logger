@@ -89,6 +89,10 @@ class DLFLogger : public dlf::components::DlfComponent {
   DLFLogger& syncTo(const String& endpoint, const String& deviceUid,
                     const dlf::components::UploaderComponent::Options& options);
 
+  DLFLogger& syncTo(const String& endpoint, const String& deviceUid,
+                    const String& secret,
+                    const dlf::components::UploaderComponent::Options& options);
+
   void waitForSyncCompletion();
 
   EventBits_t waitForNewRun(TickType_t ticksToWait = portMAX_DELAY) {
