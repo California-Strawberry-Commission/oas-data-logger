@@ -11,8 +11,8 @@
  * library to perform SHA-256 hashing and HMAC signing.
  *
  * WORKFLOW:
- * 1. SETUP: Call setCredentials() once at startup with the provisioned
- * Device ID and Secret.
+ * 1. SETUP: Instantiate the RequestSigner with the provisioned Device ID
+ * and Secret (passed directly to the constructor).
  * 2. SIGNING: Before sending an HTTP request, call writeAuthHeaders().
  * - Captures the current timestamp (requires NTP sync beforehand).
  * - Generates a random nonce using esp_random().
@@ -22,10 +22,8 @@
  * other security headers directly to the open WiFiClient stream.
  */
 
-void RequestSigner::setCredentials(String deviceId, String secret) {
-  deviceId_ = deviceId;
-  secret_ = secret;
-}
+RequestSigner::RequestSigner(const String& deviceId, const String& secret)
+    : deviceId_(deviceId), secret_(secret) {}
 
 bool RequestSigner::writeAuthHeaders(WiFiClient& client,
                                      const String& payload) {
@@ -50,7 +48,7 @@ bool RequestSigner::writeAuthHeaders(WiFiClient& client,
   return true;
 }
 
-String RequestSigner::sha256(String data) {
+String RequestSigner::sha256(const String& data) {
   byte result[32];
   mbedtls_md_context_t ctx;
   mbedtls_md_init(&ctx);
@@ -69,7 +67,7 @@ String RequestSigner::sha256(String data) {
   return hashStr;
 }
 
-String RequestSigner::hmacSha256(String key, String payload) {
+String RequestSigner::hmacSha256(const String& key, const String& payload) {
   byte hmacResult[32];
   mbedtls_md_context_t ctx;
   mbedtls_md_type_t md_type = MBEDTLS_MD_SHA256;
