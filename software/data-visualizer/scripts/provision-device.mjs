@@ -94,6 +94,16 @@ async function main() {
     datasources: { db: { url: process.env.DATABASE_URL } },
   });
 
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const withTimeout = (promise, ms, msg) => {
+    let t;
+    const timeout = new Promise((_, reject) => {
+      t = setTimeout(() => reject(new Error(msg)), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+  };
+
   let timeout;
   let parser;
   let port;
@@ -161,14 +171,7 @@ async function main() {
     });
     console.log("Port open. Waiting for 'DEVICE_ID:'...");
 
-    await new Promise((resolve, reject) => {
-      let completed = false;
-
-      timeout = setTimeout(() => {
-        if (!completed)
-          reject(new Error("Timeout: Device did not respond in 20s."));
-      }, 20000);
-
+    const provisioningTask = new Promise((resolve, reject) => {
       parser.on("data", async (line) => {
         if (completed) return;
         const cleanLine = line.toString().trim();
@@ -187,11 +190,11 @@ async function main() {
             await registerDeviceInDB(prisma, deviceId, secret);
 
             console.log("Pushing secret to device...");
-            setTimeout(() => {
-              port.write(`PROV_SET:${secret}\n`, (err) => {
-                if (err) console.error("Write error:", err);
-              });
-            }, 500);
+            await sleep(500); // Needed to allow hardware to catch up
+
+            port.write(`PROV_SET:${secret}\n`, (err) => {
+              if (err) console.error("Write error:", err);
+            });
           } catch (err) {
             completed = true;
             clearTimeout(timeout);
@@ -201,20 +204,21 @@ async function main() {
 
         if (cleanLine.includes("PROV_SUCCESS")) {
           console.log("SUCCESS: Device accepted the secret.");
-          completed = true;
-          clearTimeout(timeout);
           resolve();
         }
 
         if (cleanLine.includes("PROV_FAIL")) {
           console.error("FAILURE: Device rejected the secret.");
-          completed = true;
-          clearTimeout(timeout);
           reject(new Error("Device reported provisioning failure"));
         }
       });
     });
 
+    await withTimeout(
+      provisioningTask,
+      20000,
+      "Timeout: Device did not respond in 20s.",
+    );
     port.close();
   } catch (err) {
     console.error("\n[Error]", err.message);

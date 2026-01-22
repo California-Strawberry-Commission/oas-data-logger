@@ -5,11 +5,11 @@ const ALGORITHM = "aes-256-gcm";
 
 // Lazily load secret
 function getSecretKey(): Buffer {
-  const SECRET_KEY = Buffer.from(
+  const secretKey = Buffer.from(
     process.env.DEVICE_SECRET_ENCRYPTION_KEY || "",
     "hex"
   );
-  return SECRET_KEY;
+  return secretKey;
 }
 
 /**
@@ -24,9 +24,9 @@ function getSecretKey(): Buffer {
  */
 
 export function encryptSecret(text: string) {
-  const SECRET_KEY = getSecretKey();
+  const secretKey = getSecretKey();
   const iv = randomBytes(12);
-  const cipher = createCipheriv(ALGORITHM, SECRET_KEY, iv);
+  const cipher = createCipheriv(ALGORITHM, secretKey, iv);
 
   let encrypted = cipher.update(text, "utf8", "hex");
   encrypted += cipher.final("hex");
@@ -48,7 +48,7 @@ export function encryptSecret(text: string) {
  */
 
 export function decryptSecret(packedSecret: string) {
-  const SECRET_KEY = getSecretKey();
+  const secretKey = getSecretKey();
   const [ivHex, authTagHex, encryptedHex] = packedSecret.split(":");
 
   if (!ivHex || !authTagHex || !encryptedHex) {
@@ -57,7 +57,7 @@ export function decryptSecret(packedSecret: string) {
 
   const decipher = createDecipheriv(
     ALGORITHM,
-    SECRET_KEY,
+    secretKey,
     Buffer.from(ivHex, "hex")
   );
 

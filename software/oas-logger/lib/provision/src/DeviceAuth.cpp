@@ -24,7 +24,7 @@
 
 namespace device_auth {
 
-DeviceAuth::DeviceAuth(String deviceId) { deviceId_ = deviceId; }
+DeviceAuth::DeviceAuth(const String& deviceId) : deviceId_(deviceId) {}
 
 bool DeviceAuth::loadSecret(String& secretBuffer) {
   Preferences preferences;

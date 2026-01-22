@@ -9,7 +9,7 @@ constexpr const char* PREF_KEY_SECRET = "secret";
 
 class DeviceAuth {
  public:
-  DeviceAuth(String deviceId);
+  DeviceAuth(const String& deviceId);
 
   bool loadSecret(String& secretBuffer);
 
