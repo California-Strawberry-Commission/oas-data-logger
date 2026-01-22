@@ -29,7 +29,6 @@ export async function verifyDeviceSignature(
   deviceId: string,
   headers: Headers,
   payloadToVerify: string,
-  maxTimestampSkewSeconds: number = 300
 ): Promise<{ success: boolean; message?: string }> {
   const timestamp = headers.get("x-timestamp");
   const nonce = headers.get("x-nonce");
@@ -39,12 +38,6 @@ export async function verifyDeviceSignature(
     return { success: false, message: "Missing security headers" };
   }
 
-  const reqTime = parseInt(timestamp, 10);
-  const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - reqTime) > maxTimestampSkewSeconds) {
-    return { success: false, message: "Request timestamp out of bounds" };
-  }
-
   const deviceRecord = await prisma.deviceSecret.findUnique({
     where: { deviceId },
   });
@@ -52,7 +45,7 @@ export async function verifyDeviceSignature(
   if (!deviceRecord) {
     return {
       success: false,
-      message: "Device not provisioned or secret missing",
+      message: "Device not provisioned",
     };
   }
 

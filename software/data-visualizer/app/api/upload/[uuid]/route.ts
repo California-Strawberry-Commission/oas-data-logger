@@ -45,7 +45,7 @@ export async function POST(
   if (!authResult.success) {
     console.error(`[api/upload] Auth failed for ${uuid}: ${authResult.message}`);
     return NextResponse.json(
-      { error: "Unauthorized", details: authResult.message },
+      { error: "Unauthorized", details: "Invalid request signature" },
       { status: 401 }
     );
   }
