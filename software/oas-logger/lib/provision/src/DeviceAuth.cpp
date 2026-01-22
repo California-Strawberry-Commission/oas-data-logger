@@ -22,6 +22,8 @@
  * - Preferences: For persistent storage (NVS) under the "oas_config" namespace.
  */
 
+namespace device_auth {
+
 DeviceAuth::DeviceAuth(String deviceId) { deviceId_ = deviceId; }
 
 bool DeviceAuth::loadSecret(String& secretBuffer) {
@@ -45,7 +47,6 @@ void DeviceAuth::saveSecret(const String& secret) {
 }
 
 String DeviceAuth::awaitProvisioning() {
-  Serial.println("[Auth] NO SECRET FOUND - Device unprovisioned");
   Serial.println("[Auth] Waiting for command: PROV_SET:<SECRET>");
 
   // !!! BLOCKING LOOP !!!
@@ -54,7 +55,7 @@ String DeviceAuth::awaitProvisioning() {
     static unsigned long lastPrint = 0;
     if (millis() - lastPrint > 1000) {
       lastPrint = millis();
-      Serial.printf("DEVICE_ID:%s\n", deviceId_);
+      Serial.printf("DEVICE_ID:%s\n", deviceId_.c_str());
     }
 
     if (Serial.available()) {
@@ -64,7 +65,10 @@ String DeviceAuth::awaitProvisioning() {
       if (input.startsWith("PROV_SET:")) {
         String newSecret = input.substring(9);
 
-        if (newSecret.length() >= 16) {
+        // This validates the length is 64 chars and strspn returns a count of
+        // valid chars, i.e. 64 if all are valid hex.
+        if (newSecret.length() == 64 &&
+            strspn(newSecret.c_str(), "0123456789abcdefABCDEF") == 64) {
           saveSecret(newSecret);
           Serial.println("PROV_SUCCESS");
           delay(1000);
@@ -77,3 +81,4 @@ String DeviceAuth::awaitProvisioning() {
     delay(10);
   }
 }
+}  // namespace device_auth

@@ -2,8 +2,10 @@
 #include <Arduino.h>
 #include <Preferences.h>
 
-#define PREF_NAMESPACE "oas_config"
-#define PREF_KEY_SECRET "secret"
+namespace device_auth {
+
+constexpr const char* PREF_NAMESPACE = "oas_config";
+constexpr const char* PREF_KEY_SECRET = "secret";
 
 class DeviceAuth {
  public:
@@ -18,3 +20,4 @@ class DeviceAuth {
 
   void saveSecret(const String& secret);
 };
+}  // namespace device_auth
