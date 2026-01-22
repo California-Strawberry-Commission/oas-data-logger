@@ -71,6 +71,12 @@ void DLFLogger::stopRun(run_handle_t h) {
 }
 
 DLFLogger& DLFLogger::syncTo(
+    const String& endpoint, const String& deviceUid,
+    const dlf::components::UploaderComponent::Options& options) {
+  return syncTo(endpoint, deviceUid, "", options);
+}
+
+DLFLogger& DLFLogger::syncTo(
     const String& endpoint, const String& deviceUid, const String& secret,
     const dlf::components::UploaderComponent::Options& options) {
   if (!hasComponent<dlf::components::UploaderComponent>()) {

@@ -102,9 +102,8 @@ UploaderComponent::UploaderComponent(fs::FS& fs, const String& fsDir,
       dir_(fsDir),
       endpoint_(endpoint),
       deviceUid_(deviceUid),
-      options_(options) {
-  signer_.setCredentials(deviceUid, secret);
-}
+      options_(options),
+      signer_(deviceUid, secret) {}
 
 bool UploaderComponent::begin() {
   DLFLIB_LOG_INFO("[UploaderComponent] begin");

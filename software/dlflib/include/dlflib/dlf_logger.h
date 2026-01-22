@@ -86,7 +86,11 @@ class DLFLogger : public dlf::components::DlfComponent {
   POLL(double)
   POLL(float)
 
-  DLFLogger& syncTo(const String& endpoint, const String& deviceUid, const String& secret,
+  DLFLogger& syncTo(const String& endpoint, const String& deviceUid,
+                    const dlf::components::UploaderComponent::Options& options);
+
+  DLFLogger& syncTo(const String& endpoint, const String& deviceUid,
+                    const String& secret,
                     const dlf::components::UploaderComponent::Options& options);
 
   void waitForSyncCompletion();
