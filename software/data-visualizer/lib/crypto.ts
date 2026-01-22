@@ -2,10 +2,15 @@ import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
 
 // Key must be 32 bytes (64 hex characters)
 const ALGORITHM = "aes-256-gcm";
-const SECRET_KEY = Buffer.from(
-  process.env.DEVICE_SECRET_ENCRYPTION_KEY || "",
-  "hex"
-);
+
+// Lazily load secret
+function getSecretKey(): Buffer {
+  const SECRET_KEY = Buffer.from(
+    process.env.DEVICE_SECRET_ENCRYPTION_KEY || "",
+    "hex"
+  );
+  return SECRET_KEY;
+}
 
 /**
  * Encrypts a raw device secret using AES-256-GCM.
@@ -19,6 +24,7 @@ const SECRET_KEY = Buffer.from(
  */
 
 export function encryptSecret(text: string) {
+  const SECRET_KEY = getSecretKey();
   const iv = randomBytes(12);
   const cipher = createCipheriv(ALGORITHM, SECRET_KEY, iv);
 
@@ -42,6 +48,7 @@ export function encryptSecret(text: string) {
  */
 
 export function decryptSecret(packedSecret: string) {
+  const SECRET_KEY = getSecretKey();
   const [ivHex, authTagHex, encryptedHex] = packedSecret.split(":");
 
   if (!ivHex || !authTagHex || !encryptedHex) {
