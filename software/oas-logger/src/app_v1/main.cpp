@@ -179,7 +179,7 @@ void setup() {
   // Initialize LED first for status indication
   initializeLeds();
 
-  DeviceAuth auth(getDeviceUid());
+  device_auth::DeviceAuth auth(getDeviceUid());
 
   Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
              "System Boot: Checking provisioning status...");
