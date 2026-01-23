@@ -383,6 +383,31 @@ void handleWaitSdState() {
   vTaskDelay(pdMS_TO_TICKS(100));
 }
 
+bool wifiCredentialsExist() {
+  wifi_config_t conf;
+  esp_err_t result = esp_wifi_get_config(WIFI_IF_STA, &conf);
+
+  if (result != ESP_OK) {
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_ERROR, "esp_wifi_get_config failed: %d",
+               result);
+    return false;
+  }
+
+  // Check if SSID is non-empty
+  return strlen((const char*)conf.sta.ssid) > 0;
+}
+
+bool getSavedSSID(char* out, size_t len) {
+  wifi_config_t conf;
+  if (esp_wifi_get_config(WIFI_IF_STA, &conf) != ESP_OK) {
+    return false;
+  }
+
+  strncpy(out, (const char*)conf.sta.ssid, len);
+  out[len - 1] = '\0';
+  return strlen(out) > 0;
+}
+
 void handleWaitWifiState() {
   Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Initializing WiFi...");
 
@@ -392,15 +417,18 @@ void handleWaitWifiState() {
   WiFi.setAutoReconnect(false);  // we'll handle reconnection ourselves
 
   // Check if we have saved credentials
-  if (WiFi.SSID().length() == 0) {
-    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
-               "No WiFi credentials saved. Starting WiFi Manager...");
-    wifiManager.autoConnect();
-  } else {
+  char ssid[33];
+  if (getSavedSSID(ssid, sizeof(ssid))) {
+    // If we have saved credentials, attempt to connect to it
     Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Connecting to saved WiFi: %s",
-               WiFi.SSID().c_str());
-    WiFi.begin();  // Use saved credentials
+               ssid);
+    WiFi.begin();
     wifiConnecting = true;
+  } else {
+    // If we don't have saved credentials, start Config Portal
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+               "No saved WiFi credentials found. Starting WiFi Manager...");
+    wifiManager.autoConnect();
   }
 
   // Wait up to 15 seconds for connection
@@ -429,27 +457,23 @@ void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
     case ARDUINO_EVENT_WIFI_STA_START:
       Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[WiFi] STA started");
       break;
-    case ARDUINO_EVENT_WIFI_STA_CONNECTED:
-      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[WiFi] Connected to AP");
+    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+      // Note: only consider connection as successful when we got the IP, not on
+      // ARDUINO_EVENT_WIFI_STA_CONNECTED
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[WiFi] Got IP");
       wifiConnecting = false;
       wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;  // Reset backoff
-      break;
-    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[WiFi] Got IP: %s",
-                 WiFi.localIP().toString().c_str());
-      wifiConnecting = false;
       break;
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
       Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
                  "[WiFi] Disconnected, reason: %d",
                  info.wifi_sta_disconnected.reason);
 
-      // Handle auth failures differently
-      if (info.wifi_sta_disconnected.reason == 201) {  // AUTH_FAIL
-        Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
-                   "[WiFi] Authentication failed - check credentials");
-        // Don't auto-reconnect on auth failure
-        wifiConnecting = false;
+      if (info.wifi_sta_disconnected.reason == WIFI_REASON_AUTH_FAIL) {
+        // Annoyingly, sometimes a disconnect with AUTH_FAIL will fire on the
+        // first connection attempt even though credentials are valid. Just
+        // ignore this event for now. If invalid credentials are indeed stored
+        // on the device, then we'll eventually continue.
       } else {
         // For other disconnection reasons, use backoff and reconnect
         vTaskDelay(pdMS_TO_TICKS(wifiReconnectBackoff));

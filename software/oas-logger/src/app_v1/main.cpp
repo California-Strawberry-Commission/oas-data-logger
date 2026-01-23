@@ -157,7 +157,6 @@ void handleOffloadState();
 void handleErrorState();
 void handleSleepState();
 bool hasUsbPower();
-bool wifiCredentialsExist();
 void enableGps();
 void disableGps();
 String getDeviceUid();
@@ -276,27 +275,23 @@ void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
     case ARDUINO_EVENT_WIFI_STA_START:
       Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[WiFi] STA started");
       break;
-    case ARDUINO_EVENT_WIFI_STA_CONNECTED:
-      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[WiFi] Connected to AP");
+    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+      // Note: only consider connection as successful when we got the IP, not on
+      // ARDUINO_EVENT_WIFI_STA_CONNECTED
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[WiFi] Got IP");
       wifiConnecting = false;
       wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;  // Reset backoff
-      break;
-    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[WiFi] Got IP: %s",
-                 WiFi.localIP().toString().c_str());
-      wifiConnecting = false;
       break;
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
       Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
                  "[WiFi] Disconnected, reason: %d",
                  info.wifi_sta_disconnected.reason);
 
-      // Handle auth failures differently
-      if (info.wifi_sta_disconnected.reason == 201) {  // AUTH_FAIL
-        Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
-                   "[WiFi] Authentication failed - check credentials");
-        // Don't auto-reconnect on auth failure
-        wifiConnecting = false;
+      if (info.wifi_sta_disconnected.reason == WIFI_REASON_AUTH_FAIL) {
+        // Annoyingly, sometimes a disconnect with AUTH_FAIL will fire on the
+        // first connection attempt even though credentials are valid. Just
+        // ignore this event for now. If invalid credentials are indeed stored
+        // on the device, then we'll eventually continue.
       } else {
         // For other disconnection reasons, use backoff and reconnect
         vTaskDelay(pdMS_TO_TICKS(wifiReconnectBackoff));
@@ -462,18 +457,21 @@ void handleWaitWifiState() {
   // Set WiFi mode and register event handler
   WiFi.mode(WIFI_STA);
   WiFi.onEvent(onWiFiEvent);
-  WiFi.setAutoReconnect(false);  // We'll handle reconnection ourselves
+  WiFi.setAutoReconnect(false);  // we'll handle reconnection ourselves
 
   // Check if we have saved credentials
-  if (WiFi.SSID().length() == 0) {
-    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
-               "No WiFi credentials saved. Starting WiFi Manager...");
-    wifiManager.autoConnect();
-  } else {
+  char ssid[33];
+  if (getSavedSSID(ssid, sizeof(ssid))) {
+    // If we have saved credentials, attempt to connect to it
     Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Connecting to saved WiFi: %s",
-               WiFi.SSID().c_str());
-    WiFi.begin();  // Use saved credentials
+               ssid);
+    WiFi.begin();
     wifiConnecting = true;
+  } else {
+    // If we don't have saved credentials, start Config Portal
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+               "No saved WiFi credentials found. Starting WiFi Manager...");
+    wifiManager.autoConnect();
   }
 
   // Wait up to 15 seconds for connection
@@ -630,8 +628,6 @@ bool hasUsbPower() {
   }
   return digitalRead(PIN_USB_POWER);
 }
-
-bool wifiCredentialsExist() { return WiFi.SSID().length() > 0; }
 
 void enableGps() {
   if (gpsEnabled) {
