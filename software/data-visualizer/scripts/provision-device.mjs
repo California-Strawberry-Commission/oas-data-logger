@@ -1,12 +1,13 @@
-import path from "node:path";
-import nodeCrypto from "node:crypto";
-import dotenv from "dotenv";
-import { SerialPort } from "serialport";
+#!/usr/bin/env node
 import { ReadlineParser } from "@serialport/parser-readline";
-import { encryptSecret } from "../lib/crypto.js";
-import { PrismaClient } from "../generated/prisma/client/index.js";
+import dotenv from "dotenv";
+import nodeCrypto from "node:crypto";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { SerialPort } from "serialport";
+import { PrismaClient } from "../generated/prisma/client/index.js";
+import { encryptSecret } from "../lib/crypto.ts";
 
 /**
  * Device Provisioning Script (Host Side)
@@ -24,8 +25,8 @@ import { parseArgs } from "node:util";
  * @param {string} --secret - The 32-byte Hex Secret (Required for --db-only mode).
  *
  * USAGE EXAMPLES:
- * npx tsx scripts/provision-device.js /dev/ttyUSB0 --env=local
- * npx tsx scripts/provision-device.js --db-only --id=device_123 --secret=abc...123 --env=prod
+ * node scripts/provision-device.mjs /dev/ttyUSB0 --env=local
+ * node scripts/provision-device.mjs --db-only --id=device_123 --secret=abc...123 --env=prod
  */
 
 const {
