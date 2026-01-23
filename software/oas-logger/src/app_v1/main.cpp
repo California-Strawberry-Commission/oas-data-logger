@@ -63,7 +63,7 @@ const uint8_t LED_BRIGHTNESS{10};
 // GPS Configuration
 const int GPS_BAUD_RATE{38400};          // SAM-M10Q default
 const uint32_t GPS_UPDATE_RATE_MS{100};  // 10Hz update rate
-#define mySerial Serial1                 // GPS Serial port
+#define GPS_SERIAL Serial1               // GPS Serial port
 
 // WiFi Configuration
 const int WIFI_RECONNECT_BACKOFF_MS{2000};
@@ -142,7 +142,8 @@ GpsData gpsData{0.0, 0.0, 0.0, 0};
 SemaphoreHandle_t gpsDataMutex;
 
 // Function Prototypes
-void initializeLeds();
+void initializeLed();
+void provisionDevice();
 void updateLedPattern();
 void transitionToState(SystemState newState);
 void handleInitState();
@@ -177,40 +178,21 @@ void setup() {
   }
 
   // Initialize LED first for status indication
-  initializeLeds();
+  initializeLed();
 
-  device_auth::DeviceAuth auth(getDeviceUid());
+  provisionDevice();
 
-  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
-             "System Boot: Checking provisioning status...");
-
-  if (!auth.loadSecret(deviceSecret)) {
-    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_WARNING,
-               "Device unprovisioned. Waiting for script...");
-
-    deviceSecret = auth.awaitProvisioning();
-
-    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
-               "Provisioning successful. Rebooting.");
-    Serial.println("System: Provisioned. Rebooting in 3s...");
-    delay(3000);
-    ESP.restart();
-  }
-
-  Serial.println("Security: Secret loaded from NVS");
-  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
-             "Secret loaded. Enabling Serial logging.");
-
+  // Enable Serial log after provisioning is complete
   Logger.configureInternalLogging(Serial, ELOG_LEVEL_DEBUG);
-
-  // This enables the standard log output to Serial
   Logger.registerSerial(DLFLIB_ELOG_ID, ELOG_LEVEL_DEBUG, "dlflib", Serial);
   Logger.registerSerial(OAS_ELOG_ID, ELOG_LEVEL_DEBUG, "oas", Serial);
-
-  // Enable query mode now that we are running normally
   if (ELOG_TO_LITTLEFS) {
     Logger.enableQuery(Serial);
   }
+
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+             "Firmware: version=%s build=%d device=%s channel=%s", FW_VERSION,
+             FW_BUILD_NUMBER, DEVICE_TYPE, OTA_CHANNEL);
 
   // Create mutex for GPS data protection
   gpsDataMutex = xSemaphoreCreateMutex();
@@ -301,7 +283,7 @@ void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
       break;
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
       Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[WiFi] Got IP: %s",
-                 WiFi.localIP());
+                 WiFi.localIP().toString().c_str());
       wifiConnecting = false;
       break;
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
@@ -332,10 +314,29 @@ void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   }
 }
 
-void initializeLeds() {
+void initializeLed() {
   FastLED.addLeds<LED_TYPE, LED_PIN, LED_COLOR_ORDER>(leds, NUM_LEDS);
   FastLED.setBrightness(LED_BRIGHTNESS);
   FastLED.showColor(CRGB::White);
+}
+
+void provisionDevice() {
+  device_auth::DeviceAuth auth(getDeviceUid());
+
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+             "System Boot: Checking provisioning status...");
+
+  if (!auth.loadSecret(deviceSecret)) {
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_WARNING,
+               "Device unprovisioned. Waiting for script...");
+
+    deviceSecret = auth.awaitProvisioning();
+
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+               "Provisioning successful. Rebooting in 3s...");
+    delay(3000);
+    ESP.restart();
+  }
 }
 
 void updateLedPattern() {
@@ -402,7 +403,7 @@ void updateLedPattern() {
 }
 
 void transitionToState(SystemState newState) {
-  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_DEBUG, "State transition: %d -> %d\n",
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_DEBUG, "State transition: %d -> %d",
              (int)currentState, (int)newState);
   currentState = newState;
 
@@ -479,8 +480,7 @@ void handleWaitWifiState() {
     vTaskDelay(pdMS_TO_TICKS(100));
   }
 
-  bool wifiConnected = (WiFi.status() == WL_CONNECTED);
-  if (wifiConnected) {
+  if (WiFi.status() == WL_CONNECTED) {
     Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "WiFi connected successfully");
   } else {
     Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
@@ -489,14 +489,17 @@ void handleWaitWifiState() {
 
   if (offloadMode) {
     transitionToState(SystemState::OFFLOAD);
-  } else if (ENABLE_OTA_UPDATE && wifiConnected) {
-    transitionToState(SystemState::OTA_UPDATE);
   } else {
-    transitionToState(SystemState::WAIT_GPS);
+    transitionToState(SystemState::OTA_UPDATE);
   }
 }
 
 void handleOtaUpdate() {
+  if (!ENABLE_OTA_UPDATE || WiFi.status() != WL_CONNECTED) {
+    transitionToState(SystemState::WAIT_GPS);
+    return;
+  }
+
   ota::OtaUpdater::Config otaConfig;
   otaConfig.manifestEndpoint = OTA_MANIFEST_ENDPOINT;
   otaConfig.firmwareEndpoint = OTA_FIRMWARE_ENDPOINT;
@@ -561,7 +564,7 @@ void handleRunningState() {
     // Try to get GPS data with mutex protection
     if (xSemaphoreTake(gpsDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
       Logger.log(OAS_ELOG_ID, ELOG_LEVEL_DEBUG,
-                 "[GPS] Lat: %.6f, Lng: %.6f, Alt: %.1fm, Sats: %d, Fix: %d\n",
+                 "[GPS] Lat: %.6f, Lng: %.6f, Alt: %.1fm, Sats: %d, Fix: %d",
                  gpsData.lat, gpsData.lng, gpsData.alt, gpsData.satellites,
                  gpsFixType);
       Logger.log(OAS_ELOG_ID, ELOG_LEVEL_DEBUG,
@@ -590,7 +593,7 @@ void handleOffloadState() {
 void handleErrorState() {
   // Error state is handled by LED pattern
   Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
-             "System in ERROR state. Error type: %d\n", (int)currentError);
+             "System in ERROR state. Error type: %d", (int)currentError);
 
   // For critical errors, restart after 10 seconds
   static unsigned long errorStartMillis = millis();
@@ -644,17 +647,17 @@ void enableGps() {
   vTaskDelay(pdMS_TO_TICKS(1000));   // GPS needs time to boot
 
   // Bind UART to the selected pins
-  mySerial.end();
-  mySerial.begin(38400, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
-  bool connected = myGNSS.begin(mySerial);
+  GPS_SERIAL.end();
+  GPS_SERIAL.begin(38400, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
+  bool connected = myGNSS.begin(GPS_SERIAL);
 
   if (!connected) {
-    mySerial.updateBaudRate(9600);
-    connected = myGNSS.begin(mySerial);
+    GPS_SERIAL.updateBaudRate(9600);
+    connected = myGNSS.begin(GPS_SERIAL);
     if (connected) {
       myGNSS.setSerialRate(38400);
       vTaskDelay(pdMS_TO_TICKS(100));
-      mySerial.updateBaudRate(38400);
+      GPS_SERIAL.updateBaudRate(38400);
     }
   }
   if (!connected) {
@@ -748,7 +751,7 @@ void disableGps() {
   digitalWrite(PIN_GPS_WAKE, LOW);
 
   // Close UART
-  mySerial.end();
+  GPS_SERIAL.end();
 
   gpsEnabled = false;
   Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "GPS disabled");
@@ -817,6 +820,7 @@ void sleepMonitorTask(void* args) {
 
         while (!digitalRead(PIN_SLEEP_BUTTON)) {
           if (millis() - start >= WIFI_RECONFIG_BUTTON_HOLD_TIME_MS) {
+            // Sleep button has been long pressed
             Logger.log(
                 OAS_ELOG_ID, ELOG_LEVEL_INFO,
                 "[WiFi Reconfiguration] WiFi reconfiguration mode entered...");
@@ -837,6 +841,7 @@ void sleepMonitorTask(void* args) {
         }
 
         if (millis() - start < WIFI_RECONFIG_BUTTON_HOLD_TIME_MS) {
+          // Sleep button has been short pressed
           sleepCleanup();
           transitionToState(SystemState::OFFLOAD);
           break;
