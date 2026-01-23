@@ -383,20 +383,6 @@ void handleWaitSdState() {
   vTaskDelay(pdMS_TO_TICKS(100));
 }
 
-bool wifiCredentialsExist() {
-  wifi_config_t conf;
-  esp_err_t result = esp_wifi_get_config(WIFI_IF_STA, &conf);
-
-  if (result != ESP_OK) {
-    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_ERROR, "esp_wifi_get_config failed: %d",
-               result);
-    return false;
-  }
-
-  // Check if SSID is non-empty
-  return strlen((const char*)conf.sta.ssid) > 0;
-}
-
 bool getSavedSSID(char* out, size_t len) {
   wifi_config_t conf;
   if (esp_wifi_get_config(WIFI_IF_STA, &conf) != ESP_OK) {

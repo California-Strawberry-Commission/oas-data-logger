@@ -451,6 +451,17 @@ void handleWaitSdState() {
   }
 }
 
+bool getSavedSSID(char* out, size_t len) {
+  wifi_config_t conf;
+  if (esp_wifi_get_config(WIFI_IF_STA, &conf) != ESP_OK) {
+    return false;
+  }
+
+  strncpy(out, (const char*)conf.sta.ssid, len);
+  out[len - 1] = '\0';
+  return strlen(out) > 0;
+}
+
 void handleWaitWifiState() {
   Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Initializing WiFi (STA)...");
 
