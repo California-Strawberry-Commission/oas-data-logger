@@ -327,7 +327,7 @@ void provisionDevice() {
              "System Boot: Checking provisioning status...");
 
   if (!auth.loadSecret(deviceSecret)) {
-    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_WARNING,
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
                "Device unprovisioned. Waiting for script...");
 
     deviceSecret = auth.awaitProvisioning();
@@ -336,6 +336,8 @@ void provisionDevice() {
                "Provisioning successful. Rebooting in 3s...");
     delay(3000);
     ESP.restart();
+  } else {
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Device already provisioned");
   }
 }
 

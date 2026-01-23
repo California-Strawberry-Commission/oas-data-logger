@@ -24,33 +24,36 @@
 #include <Wire.h>
 #include <dlflib/dlf_logger.h>
 
+#include "DeviceAuth.h"
 #include "ota_updater/ota_updater.h"
 
 #define OAS_ELOG_ID 0
 
-// Various flags for testing purposes
-const bool USB_POWER_OVERRIDE{false};
-const bool USB_POWER_OVERRIDE_VALUE{false};
-const bool WAIT_FOR_VALID_TIME{true};
-const bool USE_LEGACY_GPIO_CONFIG{false};
+// Configuration
+const unsigned long SERIAL_BAUD_RATE{115200};
 // Every X seconds, start a new run. Negative or zero means do not cut a run
 // (except when going to sleep).
 const int LOGGER_RUN_INTERVAL_S{0};
 const bool LOGGER_MARK_AFTER_UPLOAD{true};
 const bool LOGGER_DELETE_AFTER_UPLOAD{false};
 const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{0};  // <= 0 means disabled
+const int WIFI_RECONFIG_BUTTON_HOLD_TIME_MS{2000};
 const bool ELOG_TO_LITTLEFS{true};  // log to internal flash memory
 const bool ENABLE_OTA_UPDATE{false};
+const int WIFI_RECONNECT_ATTEMPT_INTERVAL_MS{5000};
 
-// Serial
-const unsigned long SERIAL_BAUD_RATE{115200};
+// Testing overrides
+const bool WAIT_FOR_VALID_TIME{true};
+const bool USE_LEGACY_GPIO_CONFIG{false};
+const bool USB_POWER_OVERRIDE{false};
+const bool USB_POWER_OVERRIDE_VALUE{false};
+const int GPS_PRINT_INTERVAL_MS{1000};
 
-// Input pins
+// Input pin definitions
 // Note: GPIO13 is also shared with the built-in LED (not the NeoPixel LED). The
 // built-in LED is used as a USB power indicator.
 const gpio_num_t PIN_USB_POWER{GPIO_NUM_13};
 const gpio_num_t PIN_SLEEP_BUTTON{GPIO_NUM_35};
-
 // SD (SPI)
 const gpio_num_t PIN_SD_SCK{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_8 : GPIO_NUM_19};
 const gpio_num_t PIN_SD_MOSI{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_33
@@ -58,6 +61,9 @@ const gpio_num_t PIN_SD_MOSI{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_33
 const gpio_num_t PIN_SD_MISO{USE_LEGACY_GPIO_CONFIG ? GPIO_NUM_32
                                                     : GPIO_NUM_22};
 const gpio_num_t PIN_SD_CS{GPIO_NUM_14};
+// GPS
+const int I2C_ADDR_GPS{0x10};
+const gpio_num_t PIN_GPS_WAKE{GPIO_NUM_32};
 
 // NeoPixel LED
 #define LED_PIN PIN_NEOPIXEL
@@ -66,13 +72,14 @@ const gpio_num_t PIN_SD_CS{GPIO_NUM_14};
 const int NUM_LEDS{1};
 const uint8_t LED_BRIGHTNESS{10};
 
-// GPS
-const int I2C_ADDR_GPS{0x10};
-const gpio_num_t PIN_GPS_WAKE{GPIO_NUM_32};
+// WiFi Configuration
+const int WIFI_RECONNECT_BACKOFF_MS{2000};
+const int WIFI_MAX_BACKOFF_MS{30000};
+static volatile bool wifiConnecting = false;
+static uint32_t wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;
 
-// WIFI
-const unsigned long WIFI_CONFIG_AP_TIMEOUT_S{120};
-const int WIFI_RECONNECT_ATTEMPT_INTERVAL_MS{5000};
+// Security and Provisioning
+String deviceSecret;  // Populated from NVS at boot
 
 // Backend endpoints
 const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
@@ -81,57 +88,117 @@ const char* OTA_MANIFEST_ENDPOINT{
 const char* OTA_FIRMWARE_ENDPOINT{
     "https://oas-data-logger.vercel.app/api/ota/firmware/%s/%s/%d"};
 
-void waitForValidTime();
-void waitForSd();
-void initializeWifi();
-bool wifiCredentialsExist();
-bool runOtaUpdateIfAvailable();
-String getDeviceUid();
-void initializeDLFLogger();
-void startLoggerRun();
-void enableGps();
-void disableGps();
-bool hasUsbPower();
-void gpsTask(void* args);
-void sleepMonitorTask(void* args);
+// State Machine States
+enum class SystemState {
+  INIT,
+  WAIT_SD,
+  WAIT_WIFI,
+  OTA_UPDATE,
+  WAIT_GPS,
+  WAIT_TIME,
+  RUNNING,
+  OFFLOAD,
+  ERROR,
+  SLEEP
+};
+
+// Error Types for LED Patterns
+enum class ErrorType {
+  NONE,
+  SD_INIT_FAILED,
+  GPS_NOT_RESPONDING,
+  WIFI_CONFIG_FAILED,
+  LOGGER_INIT_FAILED
+};
 
 CRGB leds[NUM_LEDS];
 TinyGPSPlus gps;
 ESP32Time rtc;
 WiFiManager wifiManager;
-unsigned long lastWifiReconnectAttemptMillis{0};
 dlf::DLFLogger logger{SD};
-unsigned long lastLoggerStartRunMillis{0};
+// Runtime state
+TaskHandle_t gpsTaskHandle{NULL};
 dlf::run_handle_t runHandle{0};
 bool offloadMode{false};
 bool gpsEnabled{false};
+unsigned long lastWifiReconnectAttemptMillis{0};
+unsigned long lastLoggerStartRunMillis{0};
+unsigned long lastLedToggleMillis{0};
+unsigned long lastGpsPrintMillis{0};
+bool ledToggleState{false};
+// State machine
+SystemState currentState{SystemState::INIT};
+ErrorType currentError{ErrorType::NONE};
 
-// Logger data
-struct {
+// GPS Data Structure with Mutex Protection
+struct GpsData {
   double lat;
   double lng;
   double alt;
   uint32_t satellites;
-} pos{0.0, 0.0, 0.0, 0};
+};
+GpsData gpsData{0.0, 0.0, 0.0, 0};
+SemaphoreHandle_t gpsDataMutex;
+
+// Function forward declarations
+void initializeLed();
+void updateLedPattern();
+void provisionDevice();
+void transitionToState(SystemState newState);
+void handleInitState();
+void handleWaitSdState();
+void handleWaitWifiState();
+void handleOtaUpdate();
+void handleWaitGpsState();
+void handleWaitTimeState();
+void handleRunningState();
+void handleOffloadState();
+void handleErrorState();
+void handleSleepState();
+bool hasUsbPower();
+void enableGps();
+void disableGps();
+String getDeviceUid();
+void initializeDLFLogger();
+void startLoggerRun();
+void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info);
+void gpsTask(void* args);
+void sleepMonitorTask(void* args);
+void sleepCleanup();
 
 void setup() {
-  FastLED.addLeds<LED_TYPE, LED_PIN, LED_COLOR_ORDER>(leds, NUM_LEDS);
-  FastLED.setBrightness(LED_BRIGHTNESS);
-  FastLED.showColor(CRGB::White);
-
   Serial.begin(SERIAL_BAUD_RATE);
 
-  // Configure Elog
-  Logger.configureInternalLogging(
-      Serial,
-      ELOG_LEVEL_DEBUG);  // for now, output Elog internal logs to Serial
-  Logger.registerSerial(DLFLIB_ELOG_ID, ELOG_LEVEL_DEBUG, "dlflib", Serial);
-  Logger.registerSerial(OAS_ELOG_ID, ELOG_LEVEL_DEBUG, "oas", Serial);
+  // We initialize the file system logging so we capture the provisioning
+  // steps while keeping Serial quiet.
   if (ELOG_TO_LITTLEFS) {
     Logger.registerSpiffs(DLFLIB_ELOG_ID, ELOG_LEVEL_INFO, "dlflib");
     Logger.registerSpiffs(OAS_ELOG_ID, ELOG_LEVEL_INFO, "oas");
-    Logger.enableQuery(Serial);  // press space when on Serial Monitor to be
-                                 // able to view the LittleFS log files
+  }
+
+  // Initialize LED first for status indication
+  initializeLed();
+
+  provisionDevice();
+
+  // Enable Serial log after provisioning is complete
+  Logger.configureInternalLogging(Serial, ELOG_LEVEL_DEBUG);
+  Logger.registerSerial(DLFLIB_ELOG_ID, ELOG_LEVEL_DEBUG, "dlflib", Serial);
+  Logger.registerSerial(OAS_ELOG_ID, ELOG_LEVEL_DEBUG, "oas", Serial);
+  if (ELOG_TO_LITTLEFS) {
+    Logger.enableQuery(Serial);
+  }
+
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+             "Firmware: version=%s build=%d device=%s channel=%s", FW_VERSION,
+             FW_BUILD_NUMBER, DEVICE_TYPE, OTA_CHANNEL);
+
+  // Create mutex for GPS data protection
+  gpsDataMutex = xSemaphoreCreateMutex();
+  if (gpsDataMutex == NULL) {
+    currentError = ErrorType::LOGGER_INIT_FAILED;
+    transitionToState(SystemState::ERROR);
+    return;
   }
 
   // Configure pins
@@ -145,86 +212,295 @@ void setup() {
   // Add delay to give time for serial to initialize
   vTaskDelay(pdMS_TO_TICKS(1000));
 
-  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
-             "Firmware: version=%s build=%d device=%s channel=%s", FW_VERSION,
-             FW_BUILD_NUMBER, DEVICE_TYPE, OTA_CHANNEL);
-
   // Start sleep monitor task to trigger sleep mode when USB power is
   // disconnected, or sleep button is pressed
   xTaskCreate(sleepMonitorTask, "sleep_monitor", 4096, NULL, 5, NULL);
 
   // If the device was turned on with USB power, enter standard mode.
   // Otherwise, enter offload mode.
-  if (hasUsbPower()) {
-    // Standard mode (create a new run on the logger and poll messages from GPS)
-    offloadMode = false;
+  offloadMode = !hasUsbPower();
 
-    // We initialize as much as possible before enabling the GPS and waiting for
-    // valid time, as it can take a while to acquire a fix. The logger can be
-    // initialized here (which starts the upload task), but only start the run
-    // as the very last step.
-    waitForSd();
-    initializeWifi();
-    if (ENABLE_OTA_UPDATE) {
-      runOtaUpdateIfAvailable();
-    }
-    initializeDLFLogger();
-
-    // Enable GPS, wait for valid time, and start GPS update task in that order.
-    // Note that we need to enable GPS first as the time comes from the GPS
-    // module.
-    enableGps();
-    waitForValidTime();
-    xTaskCreate(gpsTask, "gps", 4096, NULL, 5, NULL);
-
-    startLoggerRun();
-
-    FastLED.showColor(CRGB::Green);
-  } else {
-    // Offload mode (upload any available run data)
-    offloadMode = true;
-
-    waitForSd();
-    initializeWifi();
-    initializeDLFLogger();
-
-    FastLED.showColor(CRGB::Yellow);
-
-    // Just in case for logger sync/upload to start
-    vTaskDelay(pdMS_TO_TICKS(100));
-
-    logger.waitForSyncCompletion();
-    FastLED.showColor(CRGB::Blue);
-    // TODO: Maybe go back to sleep after sync complete
-  }
+  // Start state machine
+  transitionToState(SystemState::INIT);
 }
 
 void loop() {
-  // Required when using WiFiManager in non-blocking mode
-  wifiManager.process();
+  // Update LED pattern based on current state
+  updateLedPattern();
 
-  // If disconnected, try reconnecting periodically
-  // TODO: Add a way to enter Access Point mode on demand
-  if (WiFi.status() != WL_CONNECTED && !wifiManager.getConfigPortalActive() &&
-      millis() - lastWifiReconnectAttemptMillis >
-          WIFI_RECONNECT_ATTEMPT_INTERVAL_MS) {
-    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "WiFi not connected, retrying...");
-    WiFi.begin();  // reattempt connection with stored credentials (if any)
-    lastWifiReconnectAttemptMillis = millis();
+  // State machine logic
+  switch (currentState) {
+    case SystemState::INIT:
+      handleInitState();
+      break;
+    case SystemState::WAIT_SD:
+      handleWaitSdState();
+      break;
+    case SystemState::WAIT_WIFI:
+      handleWaitWifiState();
+      break;
+    case SystemState::OTA_UPDATE:
+      handleOtaUpdate();
+      break;
+    case SystemState::WAIT_GPS:
+      handleWaitGpsState();
+      break;
+    case SystemState::WAIT_TIME:
+      handleWaitTimeState();
+      break;
+    case SystemState::RUNNING:
+      handleRunningState();
+      break;
+    case SystemState::OFFLOAD:
+      handleOffloadState();
+      break;
+    case SystemState::ERROR:
+      handleErrorState();
+      break;
+    case SystemState::SLEEP:
+      handleSleepState();
+      break;
   }
 
-  if (runHandle && LOGGER_RUN_INTERVAL_S > 0 &&
-      millis() - lastLoggerStartRunMillis > LOGGER_RUN_INTERVAL_S * 1000) {
-    startLoggerRun();
+  vTaskDelay(pdMS_TO_TICKS(10));
+}
+
+void initializeLed() {
+  FastLED.addLeds<LED_TYPE, LED_PIN, LED_COLOR_ORDER>(leds, NUM_LEDS);
+  FastLED.setBrightness(LED_BRIGHTNESS);
+  FastLED.showColor(CRGB::White);
+}
+
+void updateLedPattern() {
+  unsigned long currentMillis = millis();
+
+  switch (currentState) {
+    case SystemState::INIT:
+      FastLED.showColor(CRGB::White);
+      break;
+
+    case SystemState::WAIT_SD:
+    case SystemState::WAIT_WIFI:
+    case SystemState::WAIT_GPS:
+    case SystemState::WAIT_TIME:
+      // Yellow blinking for waiting states
+      if (currentMillis - lastLedToggleMillis > 500) {
+        lastLedToggleMillis = currentMillis;
+        ledToggleState = !ledToggleState;
+        FastLED.showColor(ledToggleState ? CRGB::Yellow : CRGB::Black);
+      }
+      break;
+
+    case SystemState::OTA_UPDATE:
+      FastLED.showColor(CRGB::Orange);
+      break;
+
+    case SystemState::RUNNING:
+      FastLED.showColor(CRGB::Green);
+      break;
+
+    case SystemState::OFFLOAD:
+      FastLED.showColor(CRGB::Blue);
+      break;
+
+    case SystemState::ERROR:
+      // Different blink patterns for different errors
+      uint32_t blinkInterval;
+      switch (currentError) {
+        case ErrorType::SD_INIT_FAILED:
+          blinkInterval = 200;  // Fast blink
+          break;
+        case ErrorType::GPS_NOT_RESPONDING:
+          blinkInterval = 400;  // Medium blink
+          break;
+        case ErrorType::WIFI_CONFIG_FAILED:
+          blinkInterval = 800;  // Very slow blink
+          break;
+        default:
+          blinkInterval = 1000;  // Default slow blink
+          break;
+      }
+
+      if (currentMillis - lastLedToggleMillis > blinkInterval) {
+        lastLedToggleMillis = currentMillis;
+        ledToggleState = !ledToggleState;
+        FastLED.showColor(ledToggleState ? CRGB::Red : CRGB::Black);
+      }
+      break;
+
+    case SystemState::SLEEP:
+      FastLED.showColor(CRGB::Black);
+      break;
   }
 }
 
-void waitForValidTime() {
-  // GPS module is the source of epoch time. Ensure that the received time is
-  // valid. The PA1010D returns a default/bogus time when there is no valid fix.
-  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Waiting for GPS time...");
-  while (WAIT_FOR_VALID_TIME) {
-    FastLED.showColor(CRGB::Yellow);
+void provisionDevice() {
+  device_auth::DeviceAuth auth(getDeviceUid());
+
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+             "System Boot: Checking provisioning status...");
+
+  if (!auth.loadSecret(deviceSecret)) {
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_WARNING,
+               "Device unprovisioned. Waiting for script...");
+
+    deviceSecret = auth.awaitProvisioning();
+
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+               "Provisioning successful. Rebooting in 3s...");
+    delay(3000);
+    ESP.restart();
+  } else {
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Device already provisioned");
+  }
+}
+
+void transitionToState(SystemState newState) {
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_DEBUG, "State transition: %d -> %d",
+             (int)currentState, (int)newState);
+  currentState = newState;
+
+  // Reset LED toggle state on transition
+  ledToggleState = false;
+  lastLedToggleMillis = millis();
+}
+
+void handleInitState() { transitionToState(SystemState::WAIT_SD); }
+
+void handleWaitSdState() {
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Initializing SD...");
+  SPI.setFrequency(1000000);
+  SPI.setDataMode(SPI_MODE0);
+  SPI.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
+
+  if (SD.begin(PIN_SD_CS)) {
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "SD card connected");
+    transitionToState(SystemState::WAIT_WIFI);
+    return;
+  }
+
+  // SD card not yet connected. Try again after some delay
+  vTaskDelay(pdMS_TO_TICKS(100));
+}
+
+void handleWaitWifiState() {
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Initializing WiFi...");
+
+  // Set WiFi mode and register event handler
+  WiFi.mode(WIFI_STA);
+  WiFi.onEvent(onWiFiEvent);
+  WiFi.setAutoReconnect(false);  // we'll handle reconnection ourselves
+
+  // Check if we have saved credentials
+  if (WiFi.SSID().length() == 0) {
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+               "No WiFi credentials saved. Starting WiFi Manager...");
+    wifiManager.autoConnect();
+  } else {
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Connecting to saved WiFi: %s",
+               WiFi.SSID().c_str());
+    WiFi.begin();  // Use saved credentials
+    wifiConnecting = true;
+  }
+
+  // Wait up to 15 seconds for connection
+  unsigned long startTime = millis();
+  while (wifiConnecting && (millis() - startTime < 15000)) {
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+
+  bool wifiConnected = (WiFi.status() == WL_CONNECTED);
+  if (WiFi.status() == WL_CONNECTED) {
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "WiFi connected successfully");
+  } else {
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+               "WiFi not connected; continuing without network.");
+  }
+
+  if (offloadMode) {
+    transitionToState(SystemState::OFFLOAD);
+  } else {
+    transitionToState(SystemState::OTA_UPDATE);
+  }
+}
+
+void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+  switch (event) {
+    case ARDUINO_EVENT_WIFI_STA_START:
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[WiFi] STA started");
+      break;
+    case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[WiFi] Connected to AP");
+      wifiConnecting = false;
+      wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;  // Reset backoff
+      break;
+    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[WiFi] Got IP: %s",
+                 WiFi.localIP().toString().c_str());
+      wifiConnecting = false;
+      break;
+    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+                 "[WiFi] Disconnected, reason: %d",
+                 info.wifi_sta_disconnected.reason);
+
+      // Handle auth failures differently
+      if (info.wifi_sta_disconnected.reason == 201) {  // AUTH_FAIL
+        Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+                   "[WiFi] Authentication failed - check credentials");
+        // Don't auto-reconnect on auth failure
+        wifiConnecting = false;
+      } else {
+        // For other disconnection reasons, use backoff and reconnect
+        vTaskDelay(pdMS_TO_TICKS(wifiReconnectBackoff));
+        wifiReconnectBackoff =
+            min<uint32_t>(wifiReconnectBackoff * 2, WIFI_MAX_BACKOFF_MS);
+
+        if (!wifiConnecting) {
+          WiFi.reconnect();
+          wifiConnecting = true;
+        }
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+void handleOtaUpdate() {
+  if (ENABLE_OTA_UPDATE && WiFi.status() == WL_CONNECTED) {
+    ota::OtaUpdater::Config otaConfig;
+    otaConfig.manifestEndpoint = OTA_MANIFEST_ENDPOINT;
+    otaConfig.firmwareEndpoint = OTA_FIRMWARE_ENDPOINT;
+    otaConfig.deviceType = DEVICE_TYPE;
+    otaConfig.channel = OTA_CHANNEL;
+    otaConfig.currentBuildNumber = FW_BUILD_NUMBER;
+    ota::OtaUpdater otaUpdater(otaConfig);
+    auto res{otaUpdater.updateIfAvailable(true)};
+    if (!res.ok) {
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_ERROR,
+                 "[OTA] Error when updating firmware: %s", res.message.c_str());
+    }
+  }
+
+  transitionToState(SystemState::WAIT_GPS);
+}
+
+void handleWaitGpsState() {
+  enableGps();
+
+  if (gpsEnabled) {
+    transitionToState(SystemState::WAIT_TIME);
+    return;
+  }
+}
+
+void handleWaitTimeState() {
+  if (WAIT_FOR_VALID_TIME) {
+    // GPS module is the source of epoch time. Ensure that the received time is
+    // valid. The PA1010D returns a default/bogus time when there is no valid
+    // fix.
+    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Waiting for GPS time...");
 
     // Request up to 32 bytes of data (enough for a NMEA sentence) from GPS and
     // feed into TinyGPS++
@@ -242,72 +518,91 @@ void waitForValidTime() {
       rtc.setTime(gps.time.second(), gps.time.minute(), gps.time.hour(),
                   gps.date.day(), gps.date.month(), gps.date.year());
       Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Valid GPS time received");
-      break;
+    } else {
+      // If we still don't have a valid GPS time, try again after a delay
+      static unsigned long lastPrintTime = 0;
+      if (millis() - lastPrintTime > 5000) {
+        lastPrintTime = millis();
+        Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+                   "Waiting for valid GPS time...");
+      }
+      vTaskDelay(pdMS_TO_TICKS(1000));
+      return;
     }
+  }
 
-    vTaskDelay(pdMS_TO_TICKS(500));
-    FastLED.showColor(CRGB::Black);
-    vTaskDelay(pdMS_TO_TICKS(500));
-    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
-               "Still waiting for valid GPS time...");
+  xTaskCreate(gpsTask, "gps", 4096, NULL, 5, &gpsTaskHandle);
+  // Initialize logger and start run
+  initializeDLFLogger();
+  startLoggerRun();
+  transitionToState(SystemState::RUNNING);
+  return;
+}
+
+void handleRunningState() {
+  // GPS printing logic with enhanced diagnostics
+  // Only print if GPS is still enabled (prevents printing during shutdown)
+  if (gpsEnabled && millis() - lastGpsPrintMillis > GPS_PRINT_INTERVAL_MS) {
+    lastGpsPrintMillis = millis();
+
+    // Try to get GPS data with mutex protection
+    if (xSemaphoreTake(gpsDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_DEBUG,
+                 "[GPS] Lat: %.6f, Lng: %.6f, Alt: %.1fm, Sats: %d",
+                 gpsData.lat, gpsData.lng, gpsData.alt, gpsData.satellites);
+      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_DEBUG,
+                 "[DIAG] RunHandle: %d, Uptime: %lu ms", runHandle, millis());
+      xSemaphoreGive(gpsDataMutex);
+    }
+  }
+
+  // Run interval logic - only if LOGGER_RUN_INTERVAL_S > 0
+  if (runHandle && LOGGER_RUN_INTERVAL_S > 0 &&
+      millis() - lastLoggerStartRunMillis > LOGGER_RUN_INTERVAL_S * 1000) {
+    startLoggerRun();
   }
 }
 
-void waitForSd() {
-  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Initializing SD...");
-  SPI.setFrequency(1000000);
-  SPI.setDataMode(SPI_MODE0);
-  SPI.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
-  while (!SD.begin(PIN_SD_CS)) {
-    FastLED.showColor(CRGB::Red);
-    vTaskDelay(pdMS_TO_TICKS(500));
-    FastLED.showColor(CRGB::Black);
-    vTaskDelay(pdMS_TO_TICKS(500));
-  }
-  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "SD card connected");
+void handleOffloadState() {
+  // Give logger sync/upload time to start
+  vTaskDelay(pdMS_TO_TICKS(100));
+
+  logger.waitForSyncCompletion();
+
+  // After sync completion, either sleep or continue
+  transitionToState(SystemState::SLEEP);
 }
 
-void initializeWifi() {
-  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Initializing WiFi...");
-  WiFi.mode(WIFI_STA);
-  wifiManager.setConfigPortalBlocking(false);
-  wifiManager.setConfigPortalTimeout(WIFI_CONFIG_AP_TIMEOUT_S);
-  if (!wifiManager.autoConnect()) {
-    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
-               "Wi-Fi credentials missing or failed to connect. Starting "
-               "ConfigPortal");
+void handleErrorState() {
+  // Error state is handled by LED pattern
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+             "System in ERROR state. Error type: %d", (int)currentError);
+
+  // For critical errors, restart after 10 seconds
+  static unsigned long errorStartMillis = millis();
+  if (millis() - errorStartMillis > 10000) {
+    ESP.restart();
   }
 }
 
-bool wifiCredentialsExist() {
-  wifi_config_t conf;
-  esp_err_t result = esp_wifi_get_config(WIFI_IF_STA, &conf);
+void handleSleepState() {
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Entering deep sleep...");
 
-  if (result != ESP_OK) {
-    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_ERROR, "esp_wifi_get_config failed: %d",
-               result);
-    return false;
+  // Stop all tasks
+  disableGps();
+
+  // Turn off LED
+  FastLED.showColor(CRGB::Black);
+
+  // Configure wake on USB power only if unconnected, else wake on reset
+  if (!hasUsbPower()) {
+    esp_sleep_enable_ext0_wakeup(PIN_USB_POWER, 1);
+  } else {
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
   }
 
-  // Check if SSID is non-empty
-  return strlen((const char*)conf.sta.ssid) > 0;
-}
-
-bool runOtaUpdateIfAvailable() {
-  ota::OtaUpdater::Config otaConfig;
-  otaConfig.manifestEndpoint = OTA_MANIFEST_ENDPOINT;
-  otaConfig.firmwareEndpoint = OTA_FIRMWARE_ENDPOINT;
-  otaConfig.deviceType = DEVICE_TYPE;
-  otaConfig.channel = OTA_CHANNEL;
-  otaConfig.currentBuildNumber = FW_BUILD_NUMBER;
-  ota::OtaUpdater otaUpdater(otaConfig);
-  auto res{otaUpdater.updateIfAvailable(true)};
-  if (!res.ok) {
-    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_ERROR,
-               "[OTA] Error when updating firmware: %s", res.message.c_str());
-  }
-
-  return res.ok;
+  // Enter deep sleep
+  esp_deep_sleep_start();
 }
 
 String getDeviceUid() {
@@ -319,26 +614,23 @@ String getDeviceUid() {
 
 void initializeDLFLogger() {
   Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "Initializing DLF logger...");
+
   auto satellitesLogInterval{std::chrono::seconds(5)};
-  POLL(logger, pos.satellites, satellitesLogInterval);
+  POLL(logger, gpsData.satellites, satellitesLogInterval, gpsDataMutex);
 
   auto gpsDataLogInterval{std::chrono::seconds(1)};
-  POLL(logger, pos.lat, gpsDataLogInterval);
-  POLL(logger, pos.lng, gpsDataLogInterval);
-  POLL(logger, pos.alt, gpsDataLogInterval);
-
-  uint64_t raw = ESP.getEfuseMac();
-  char id[13];
-  sprintf(id, "%012llX", raw);
-  String deviceUid = id;
+  POLL(logger, gpsData.lat, gpsDataLogInterval, gpsDataMutex);
+  POLL(logger, gpsData.lng, gpsDataLogInterval, gpsDataMutex);
+  POLL(logger, gpsData.alt, gpsDataLogInterval, gpsDataMutex);
 
   dlf::components::UploaderComponent::Options options;
   options.markAfterUpload = LOGGER_MARK_AFTER_UPLOAD;
   options.deleteAfterUpload = LOGGER_DELETE_AFTER_UPLOAD;
   options.partialRunUploadIntervalSecs =
       LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS;
-  logger.syncTo(UPLOAD_ENDPOINT, getDeviceUid(), options).begin();
-  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "DLF initialized");
+  logger.syncTo(UPLOAD_ENDPOINT, getDeviceUid(), deviceSecret, options).begin();
+
+  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "DLF logger initialized");
 }
 
 void startLoggerRun() {
@@ -367,7 +659,6 @@ void enableGps() {
   // Wait until GPS starts sending NMEA data
   bool gpsResponding{false};
   while (!gpsResponding) {
-    FastLED.showColor(CRGB::Yellow);
     Wire.requestFrom(I2C_ADDR_GPS, 32);
     while (Wire.available()) {
       char c = Wire.read();
@@ -379,9 +670,7 @@ void enableGps() {
       break;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(500));
-    FastLED.showColor(CRGB::Black);
-    vTaskDelay(pdMS_TO_TICKS(500));
+    vTaskDelay(pdMS_TO_TICKS(1000));
   }
 
   digitalWrite(PIN_GPS_WAKE, LOW);
@@ -429,14 +718,18 @@ void gpsTask(void* args) {
       gps.encode(c);
     }
 
-    if (gps.satellites.isUpdated() && gps.satellites.isValid()) {
-      pos.satellites = gps.satellites.value();
-    }
+    if (xSemaphoreTake(gpsDataMutex, portMAX_DELAY) == pdTRUE) {
+      if (gps.satellites.isUpdated() && gps.satellites.isValid()) {
+        gpsData.satellites = gps.satellites.value();
+      }
 
-    if (gps.location.isUpdated() && gps.location.isValid()) {
-      pos.lat = gps.location.lat();
-      pos.lng = gps.location.lng();
-      pos.alt = gps.altitude.meters();
+      if (gps.location.isUpdated() && gps.location.isValid()) {
+        gpsData.lat = gps.location.lat();
+        gpsData.lng = gps.location.lng();
+        gpsData.alt = gps.altitude.meters();
+      }
+
+      xSemaphoreGive(gpsDataMutex);
     }
 
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -452,62 +745,67 @@ void sleepMonitorTask(void* args) {
 
   bool usbSleepTriggered{false};
   while (true) {
-    bool sleepButtonPressed{!digitalRead(PIN_SLEEP_BUTTON)};
-    if (sleepButtonPressed) {
-      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
-                 "[Sleep Monitor] Sleep button pressed. Going to sleep");
-      break;
+    // Only check sleep conditions if we're in RUNNING state
+    if (currentState == SystemState::RUNNING) {
+      // Check sleep button
+      bool sleepButtonPressed = !digitalRead(PIN_SLEEP_BUTTON);
+      if (sleepButtonPressed) {
+        unsigned long pressStart{millis()};
+        while (!digitalRead(PIN_SLEEP_BUTTON)) {
+          if (millis() - pressStart >= WIFI_RECONFIG_BUTTON_HOLD_TIME_MS) {
+            // Sleep button has been long pressed
+            Logger.log(
+                OAS_ELOG_ID, ELOG_LEVEL_INFO,
+                "[WiFi Reconfiguration] WiFi reconfiguration mode entered...");
+
+            sleepCleanup();
+            vTaskDelay(pdMS_TO_TICKS(100));
+            logger.waitForSyncCompletion();
+            Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
+                       "[WiFi Reconfiguration] Resetting WiFiManager...");
+            wifiManager.resetSettings();  // uses vTaskDelay internally
+            Logger.log(
+                OAS_ELOG_ID, ELOG_LEVEL_INFO,
+                "[WiFi Reconfiguration] Rebooting device into AP mode...");
+            ESP.restart();  // soft reboot
+            break;
+          }
+          yield();
+        }
+
+        if (millis() - pressStart < WIFI_RECONFIG_BUTTON_HOLD_TIME_MS) {
+          // Sleep button has been short pressed
+          sleepCleanup();
+          transitionToState(SystemState::OFFLOAD);
+          break;
+        }
+      }
     }
 
     // Make sure USB power is gone for 2 cycles before triggering sleep.
     bool usbSleep{!offloadMode && !hasUsbPower()};
     if (usbSleep && usbSleepTriggered) {
-      Logger.log(
-          OAS_ELOG_ID, ELOG_LEVEL_INFO,
-          "[Sleep Monitor] USB power still disconnected. Going to sleep");
+      sleepCleanup();
+      transitionToState(SystemState::OFFLOAD);
       break;
-    }
-    usbSleepTriggered = usbSleep;
-    if (usbSleep) {
-      Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
-                 "[Sleep Monitor] USB power disconnected");
+    } else if (usbSleep) {
+      usbSleepTriggered = true;
+    } else {
+      usbSleepTriggered = false;
     }
 
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 
-  FastLED.showColor(CRGB::Orange);
+  // Task will be deleted when system enters sleep
+  vTaskDelete(NULL);
+}
 
-  // If there is an active run, stop it and attempt to upload its data
+void sleepCleanup() {
+  disableGps();
+  vTaskDelay(pdMS_TO_TICKS(100));
   if (runHandle) {
     logger.stopRun(runHandle);
     runHandle = 0;
-    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO,
-               "[Sleep Monitor] Stopped active run");
-    // Just in case for logger sync/upload to start
-    vTaskDelay(pdMS_TO_TICKS(100));
-    logger.waitForSyncCompletion();
   }
-
-  // Turn off peripherals
-  SD.end();
-  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[Sleep Monitor] Stopped SD");
-  if (gpsEnabled) {
-    disableGps();
-    Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[Sleep Monitor] Stopped GPS");
-  }
-
-  // Turn off LED
-  FastLED.showColor(CRGB::Black);
-
-  if (!hasUsbPower()) {
-    // Plugging in USB power will wake
-    esp_sleep_enable_ext1_wakeup((1ULL << PIN_USB_POWER),
-                                 ESP_EXT1_WAKEUP_ANY_HIGH);
-  }
-
-  Logger.log(OAS_ELOG_ID, ELOG_LEVEL_INFO, "[Sleep Monitor] Goodnight");
-  Serial.flush();
-  Serial.end();
-  esp_deep_sleep_start();
 }
