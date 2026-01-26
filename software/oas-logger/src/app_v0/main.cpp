@@ -167,6 +167,8 @@ void restart();
 void setup() {
   Serial.begin(SERIAL_BAUD_RATE);
 
+  vTaskDelay(pdMS_TO_TICKS(5000));
+
   // Initialize AdvancedLogger
   if (!LittleFS.begin(true)) {
     Serial.println(
@@ -177,13 +179,14 @@ void setup() {
   AdvancedLogger::setPrintLevel(LogLevel::INFO);
   AdvancedLogger::setSaveLevel(LogLevel::INFO);
 
+  LOG_INFO("****System Boot****");
+  LOG_INFO("Firmware: version=%s build=%d device=%s channel=%s", FW_VERSION,
+           FW_BUILD_NUMBER, DEVICE_TYPE, OTA_CHANNEL);
+
   // Initialize LED first for status indication
   initializeLed();
 
   provisionDevice();
-
-  LOG_INFO("Firmware: version=%s build=%d device=%s channel=%s", FW_VERSION,
-           FW_BUILD_NUMBER, DEVICE_TYPE, OTA_CHANNEL);
 
   // Create mutex for GPS data protection
   gpsDataMutex = xSemaphoreCreateMutex();
@@ -328,9 +331,6 @@ void updateLedPattern() {
 
 void provisionDevice() {
   device_auth::DeviceAuth auth(getDeviceUid());
-
-  LOG_INFO("System Boot: Checking provisioning status...");
-
   if (!auth.loadSecret(deviceSecret)) {
     LOG_INFO("Device unprovisioned. Waiting for script...");
 
