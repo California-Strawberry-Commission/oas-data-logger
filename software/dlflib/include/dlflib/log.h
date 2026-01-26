@@ -1,32 +1,16 @@
 #pragma once
 
-#if defined(DLFLIB_USE_ELOG) && DLFLIB_USE_ELOG
+#ifdef DLFLIB_USE_ADVANCED_LOGGER
 
-#include <Elog.h>
+#include <AdvancedLogger.h>
 
-#ifndef DLFLIB_ELOG_ID
-#define DLFLIB_ELOG_ID 42
-#endif
+#define DLFLIB_LOG_ERROR(fmt, ...) LOG_ERROR(fmt, ##__VA_ARGS__)
 
-#define DLFLIB_LOG_ERROR(fmt, ...)                                      \
-  do {                                                                  \
-    Logger.log(DLFLIB_ELOG_ID, ELOG_LEVEL_ERROR, (fmt), ##__VA_ARGS__); \
-  } while (0)
+#define DLFLIB_LOG_WARNING(fmt, ...) LOG_WARNING(fmt, ##__VA_ARGS__)
 
-#define DLFLIB_LOG_WARNING(fmt, ...)                                      \
-  do {                                                                    \
-    Logger.log(DLFLIB_ELOG_ID, ELOG_LEVEL_WARNING, (fmt), ##__VA_ARGS__); \
-  } while (0)
+#define DLFLIB_LOG_INFO(fmt, ...) LOG_INFO(fmt, ##__VA_ARGS__)
 
-#define DLFLIB_LOG_INFO(fmt, ...)                                      \
-  do {                                                                 \
-    Logger.log(DLFLIB_ELOG_ID, ELOG_LEVEL_INFO, (fmt), ##__VA_ARGS__); \
-  } while (0)
-
-#define DLFLIB_LOG_DEBUG(fmt, ...)                                      \
-  do {                                                                  \
-    Logger.log(DLFLIB_ELOG_ID, ELOG_LEVEL_DEBUG, (fmt), ##__VA_ARGS__); \
-  } while (0)
+#define DLFLIB_LOG_DEBUG(fmt, ...) LOG_DEBUG(fmt, ##__VA_ARGS__)
 
 #else
 
