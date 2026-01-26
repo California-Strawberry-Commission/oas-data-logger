@@ -167,6 +167,12 @@ void restart();
 void setup() {
   Serial.begin(SERIAL_BAUD_RATE);
 
+  // Initialize LED first for status indication
+  initializeLed();
+
+  // Delay here to give dev some time to connect to Serial Monitor
+  vTaskDelay(pdMS_TO_TICKS(3000));
+
   // Initialize AdvancedLogger
   if (!LittleFS.begin(true)) {
     Serial.println(
@@ -179,9 +185,6 @@ void setup() {
   LOG_INFO("****System Boot****");
   LOG_INFO("Firmware: version=%s build=%d device=%s channel=%s", FW_VERSION,
            FW_BUILD_NUMBER, DEVICE_TYPE, OTA_CHANNEL);
-
-  // Initialize LED first for status indication
-  initializeLed();
 
   provisionDevice();
 
@@ -196,13 +199,6 @@ void setup() {
   // Configure pins
   pinMode(PIN_USB_POWER, INPUT_PULLDOWN);
   pinMode(PIN_SLEEP_BUTTON, INPUT_PULLUP);
-
-  // CRITICAL: GPIO 3 is a strapping pin - configure it after boot delay
-  // This pin powers BOTH SD card and GPS module
-  // We need SD card active from the start, GPS will be enabled later
-  vTaskDelay(pdMS_TO_TICKS(
-      1000));  // Wait for boot to complete before configuring GPIO 3
-
   pinMode(PIN_GPS_ENABLE, OUTPUT);
   pinMode(PIN_GPS_WAKE, OUTPUT);
   digitalWrite(PIN_GPS_ENABLE,

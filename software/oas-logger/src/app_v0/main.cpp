@@ -167,14 +167,17 @@ void restart();
 void setup() {
   Serial.begin(SERIAL_BAUD_RATE);
 
-  vTaskDelay(pdMS_TO_TICKS(5000));
+  // Initialize LED first for status indication
+  initializeLed();
+
+  // Delay here to give dev some time to connect to Serial Monitor
+  vTaskDelay(pdMS_TO_TICKS(3000));
 
   // Initialize AdvancedLogger
   if (!LittleFS.begin(true)) {
     Serial.println(
         "LittleFS mount failed! AdvancedLogger will not log to LittleFS.");
   }
-
   AdvancedLogger::begin();
   AdvancedLogger::setPrintLevel(LogLevel::INFO);
   AdvancedLogger::setSaveLevel(LogLevel::INFO);
@@ -182,9 +185,6 @@ void setup() {
   LOG_INFO("****System Boot****");
   LOG_INFO("Firmware: version=%s build=%d device=%s channel=%s", FW_VERSION,
            FW_BUILD_NUMBER, DEVICE_TYPE, OTA_CHANNEL);
-
-  // Initialize LED first for status indication
-  initializeLed();
 
   provisionDevice();
 
@@ -203,9 +203,6 @@ void setup() {
   pinMode(PIN_SLEEP_BUTTON, INPUT_PULLUP);
   // Write to wake GPS from standby mode
   pinMode(PIN_GPS_WAKE, OUTPUT);
-
-  // Add delay to give time for serial to initialize
-  vTaskDelay(pdMS_TO_TICKS(1000));
 
   // Start sleep monitor task to trigger sleep mode when USB power is
   // disconnected, or sleep button is pressed
