@@ -21,6 +21,7 @@ import { useFormStatus } from "react-dom";
 type Device = {
   id: string;
   name: string | null;
+  isProvisioned: boolean;
 };
 
 function UpdateDeviceSubmitButton() {
@@ -42,7 +43,7 @@ function UpdateDeviceForm({
   const initialState: UpdateDeviceFormState = { success: false };
   const [formState, formAction] = useActionState(
     updateDeviceAction,
-    initialState
+    initialState,
   );
   const [hasSubmitted, setHasSubmitted] = useState(false);
 
@@ -138,10 +139,17 @@ export default function DeviceList({ devices }: { devices: Device[] }) {
             >
               <div className="flex justify-between items-center">
                 <span className="font-medium">{device.id}</span>
-                <span className="text-xs text-muted-foreground">
-                  {device.name}
-                </span>
+                {!device.isProvisioned && (
+                  <span className="text-xs text-destructive">
+                    {"unprovisioned"}
+                  </span>
+                )}
               </div>
+              {device.name && (
+                <div className="text-sm text-muted-foreground">
+                  {device.name}
+                </div>
+              )}
             </button>
           ))}
         </div>
