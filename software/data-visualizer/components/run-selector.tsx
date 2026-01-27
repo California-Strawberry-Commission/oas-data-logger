@@ -1,7 +1,7 @@
 "use client";
 
 import Combobox from "@/components/ui/combobox";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Run = {
   uuid: string;
@@ -66,46 +66,62 @@ function getRunLabel(run: Run): string {
 
 export default function RunSelector({
   deviceId,
-  onSelect,
+  value,
+  onValueChange,
 }: {
   deviceId: string;
-  onSelect?: (runUuid: string) => void;
+  value: string;
+  onValueChange: (runUuid: string) => void;
 }) {
   const [runs, setRuns] = useState<Run[]>([]);
 
   useEffect(() => {
+    let cancelled = false;
+
     fetch(`/api/runs?device_id=${deviceId}`)
       .then((res) => res.json())
       .then((data) => {
-        console.log(data);
+        if (cancelled) {
+          return;
+        }
+
         const runs: Run[] = data.map((r: any) => ({
           uuid: r.uuid,
           epochTimeS: BigInt(r.epochTimeS),
           lastDataTimeS: BigInt(r.lastDataTimeS),
           isActive: r.isActive,
         }));
-        const sorted = runs.sort((a: Run, b: Run) =>
-          Number(b.epochTimeS - a.epochTimeS),
-        );
-        setRuns(sorted);
+        setRuns(runs.sort((a, b) => Number(b.epochTimeS - a.epochTimeS)));
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [deviceId]);
 
-  const runItems = runs.map((run: Run) => {
-    return {
-      value: run.uuid,
-      label: getRunLabel(run),
-      isActive: run.isActive,
-    };
-  });
+  // If the selected run no longer exists, clear it
+  useEffect(() => {
+    if (value && !runs.some((r) => r.uuid === value)) {
+      onValueChange("");
+    }
+  }, [value, runs, onValueChange]);
+
+  const items = useMemo(
+    () =>
+      runs.map((run) => ({
+        value: run.uuid,
+        label: getRunLabel(run),
+      })),
+    [runs],
+  );
 
   return (
     <Combobox
-      key={deviceId} // reset (unmount/remount) combobox when device changes
-      items={runItems}
+      items={items}
+      value={value}
+      onValueChange={onValueChange}
       placeholder={"Select run..."}
       searchPlaceholder={"Search run..."}
-      onSelect={onSelect}
     />
   );
 }

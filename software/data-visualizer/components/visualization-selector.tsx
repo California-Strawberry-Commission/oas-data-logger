@@ -2,7 +2,7 @@
 
 import GpsPositionVisualization from "@/components/gps-position-visualization";
 import Combobox from "@/components/ui/combobox";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Run = {
   uuid: string;
@@ -30,7 +30,7 @@ function hasGpsData(run: Run): boolean {
 function renderVisualization(
   run: Run,
   visualization: string,
-  refreshKey: number
+  refreshKey: number,
 ) {
   switch (visualization) {
     case "gps":
@@ -49,12 +49,14 @@ function renderVisualization(
 
 export default function VisualizationSelector({
   runUuid,
+  value,
+  onValueChange,
 }: {
   runUuid: string;
+  value: string;
+  onValueChange: (viz: string) => void;
 }) {
   const [run, setRun] = useState<Run>();
-  const [selectedVisualization, setSelectedVisualization] =
-    useState<string>("");
   const [refreshKey, setRefreshKey] = useState(0);
 
   const fetchRunData = useCallback(async () => {
@@ -98,27 +100,36 @@ export default function VisualizationSelector({
     return () => clearInterval(pollInterval);
   }, [runUuid, run?.isActive, fetchRunData]);
 
-  // Auto-select the first available visualization when run data is loaded
-  useEffect(() => {
-    if (run && hasGpsData(run) && selectedVisualization === "") {
-      setSelectedVisualization("gps");
+  const items = useMemo(() => {
+    const out: { value: string; label: string }[] = [];
+    if (run && hasGpsData(run)) {
+      out.push({ value: "gps", label: "GPS position" });
     }
-  }, [run, selectedVisualization]);
+    return out;
+  }, [run]);
 
-  const items = [];
-  if (run && hasGpsData(run)) {
-    items.push({ value: "gps", label: "GPS position" });
-  }
+  // Auto-select first available visualization (controlled)
+  useEffect(() => {
+    if (items.length === 0) {
+      return;
+    }
+
+    // If current selection is empty or no longer valid, pick the first option
+    const isValid = value && items.some((i) => i.value === value);
+    if (!isValid) {
+      onValueChange(items[0].value);
+    }
+  }, [items, value, onValueChange]);
 
   return (
     <>
       <div className="flex items-center gap-2">
         <Combobox
           items={items}
+          value={value}
+          onValueChange={onValueChange}
           placeholder={"Select visualization..."}
           searchPlaceholder={"Search visualization..."}
-          onSelect={(viz) => setSelectedVisualization(viz)}
-          defaultSelected={items[0]?.value}
         />
         {run?.isActive && (
           <span className="flex items-center gap-1 text-sm text-green-600">
@@ -130,7 +141,7 @@ export default function VisualizationSelector({
           </span>
         )}
       </div>
-      {run && renderVisualization(run, selectedVisualization, refreshKey)}
+      {run && renderVisualization(run, value, refreshKey)}
     </>
   );
 }

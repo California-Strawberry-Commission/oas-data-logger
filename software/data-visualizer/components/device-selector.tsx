@@ -1,7 +1,7 @@
 "use client";
 
 import Combobox from "@/components/ui/combobox";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Device = {
   id: string;
@@ -13,16 +13,24 @@ function getDeviceLabel(device: Device): string {
 }
 
 export default function DeviceSelector({
-  onSelect,
+  value,
+  onValueChange,
 }: {
-  onSelect?: (deviceId: string) => void;
+  value: string;
+  onValueChange: (deviceId: string) => void;
 }) {
   const [devices, setDevices] = useState<Device[]>([]);
 
   useEffect(() => {
+    let cancelled = false;
+
     fetch("/api/devices")
       .then((res) => res.json())
       .then((data) => {
+        if (cancelled) {
+          return;
+        }
+
         const devices: Device[] = data.map((d: any) => ({
           id: d.id,
           name: d.name,
@@ -51,21 +59,35 @@ export default function DeviceSelector({
         });
         setDevices(sorted);
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const deviceItems = devices.map((device: Device) => {
-    return {
-      value: device.id,
-      label: getDeviceLabel(device),
-    };
-  });
+  // If the selected device no longer exists, clear it
+  useEffect(() => {
+    if (value && !devices.some((d) => d.id === value)) {
+      onValueChange("");
+    }
+  }, [value, devices, onValueChange]);
+
+  const items = useMemo(
+    () =>
+      devices.map((device) => ({
+        value: device.id,
+        label: getDeviceLabel(device),
+      })),
+    [devices],
+  );
 
   return (
     <Combobox
-      items={deviceItems}
+      items={items}
+      value={value}
+      onValueChange={onValueChange}
       placeholder={"Select device..."}
       searchPlaceholder={"Search device..."}
-      onSelect={onSelect}
     />
   );
 }
