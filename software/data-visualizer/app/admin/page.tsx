@@ -27,9 +27,14 @@ export default async function AdminPage() {
     );
   }
 
-  const [devices, users] = await Promise.all([
+  const [devicesRaw, users] = await Promise.all([
     prisma.device.findMany({
       orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        secret: { select: { deviceId: true } }, // only need existence
+      },
     }),
     prisma.user.findMany({
       orderBy: { createdAt: "desc" },
@@ -40,6 +45,12 @@ export default async function AdminPage() {
       },
     }),
   ]);
+
+  const devices = devicesRaw.map((d) => ({
+    id: d.id,
+    name: d.name,
+    isProvisioned: !!d.secret,
+  }));
 
   return (
     <main className="max-w-3xl mx-auto p-6 space-y-8">
