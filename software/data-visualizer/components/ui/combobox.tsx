@@ -16,37 +16,86 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { Check, ChevronsUpDown } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export type Item = {
   value: string;
   label: string;
 };
 
+/**
+ * Combobox can operate in two modes:
+ *
+ * 1) Controlled mode
+ *    - Pass `value` and `onValueChange`
+ *    - Parent is the single source of truth
+ *
+ *      <Combobox
+ *        items={items}
+ *        value={selectedRun}
+ *        onValueChange={setSelectedRun}
+ *      />
+ *
+ * 2) Uncontrolled mode
+ *    - Omit `value`
+ *    - Combobox maintains internal state for the selected value
+ *    - Optionally pass `defaultSelected` for initial selection
+ *
+ *      <Combobox
+ *        items={items}
+ *        defaultSelected="gps"
+ *      />
+ *
+ * Important notes:
+ * - If `value` is provided, internal state is ignored.
+ * - `defaultSelected` only applies in uncontrolled mode.
+ */
 export default function Combobox({
   items,
   placeholder = "",
   searchPlaceholder = "",
-  onSelect,
+  value, // controlled if defined
+  onValueChange,
   defaultSelected,
 }: {
   items: Item[];
   placeholder?: string;
   searchPlaceholder?: string;
-  onSelect?: (value: string) => void;
+  value?: string;
+  onValueChange?: (value: string) => void;
   defaultSelected?: string;
 }) {
   const [open, setOpen] = useState<boolean>(false);
-  const [value, setValue] = useState<string>("");
+  const [internalValue, setInternalValue] = useState(""); // selected value when uncontrolled
 
+  const isControlled = value !== undefined;
+  const selectedValue = isControlled ? value : internalValue;
+
+  // If uncontrolled, apply defaultSelected once
   useEffect(() => {
-    if (!value && defaultSelected) {
-      setValue(defaultSelected);
-      if (onSelect) {
-        onSelect(defaultSelected);
-      }
+    if (isControlled) {
+      return;
     }
-  }, [onSelect, defaultSelected, value, setValue]);
+
+    if (!selectedValue && defaultSelected) {
+      setInternalValue(defaultSelected);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isControlled, defaultSelected]);
+
+  const selectedItem = useMemo(
+    () => items.find((i) => i.value === selectedValue),
+    [items, selectedValue],
+  );
+
+  function setSelected(newValue: string) {
+    if (isControlled) {
+      onValueChange?.(newValue);
+    } else {
+      setInternalValue(newValue);
+      onValueChange?.(newValue);
+    }
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -55,17 +104,15 @@ export default function Combobox({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="max-w-[400px] w-full justify-between"
+          className="max-w-100 w-full justify-between"
         >
           <span className="min-w-0 flex-1 truncate text-left">
-            {value
-              ? items.find((item) => item.value === value)?.label
-              : placeholder}
+            {selectedItem ? selectedItem.label : placeholder}
           </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="max-w-[400px] w-full p-0 z-1000">
+      <PopoverContent className="max-w-100 w-full p-0 z-1000">
         <Command>
           <CommandInput placeholder={searchPlaceholder} />
           <CommandList>
@@ -76,12 +123,11 @@ export default function Combobox({
                   key={item.value}
                   value={item.value}
                   onSelect={(currentValue) => {
-                    const newValue = currentValue === value ? "" : currentValue;
-                    setValue(newValue);
+                    // If we re-select the currently selected value, we want to effectively deselect it
+                    const newValue =
+                      currentValue === selectedValue ? "" : currentValue;
+                    setSelected(newValue);
                     setOpen(false);
-                    if (onSelect) {
-                      onSelect(newValue);
-                    }
                   }}
                 >
                   <Check
