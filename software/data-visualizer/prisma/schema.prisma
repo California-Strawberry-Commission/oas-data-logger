@@ -49,9 +49,9 @@ model Device {
 
 model DeviceSecret {
   deviceId String @id
-  
+
   // This stores the encrypted secret.
-  secret   String 
+  secret String
 
   encryptionKeyVersion Int @default(1)
 
@@ -105,7 +105,7 @@ model Run {
 
 model RunData {
   id         Int        @id @default(autoincrement())
-  run        Run        @relation(fields: [runId], references: [id])
+  run        Run        @relation(fields: [runId], references: [id], onDelete: Cascade)
   runId      Int // relation field
   streamType StreamType
   streamId   String

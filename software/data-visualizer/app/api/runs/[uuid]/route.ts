@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ uuid: string }> }
+  { params }: { params: Promise<{ uuid: string }> },
 ) {
   const { uuid } = await params;
 
@@ -60,7 +60,56 @@ export async function GET(
     console.error("GET /api/runs/[uuid] error:", err);
     return NextResponse.json(
       { error: "Failed to fetch run data" },
-      { status: 500 }
+      { status: 500 },
     );
   }
+}
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ uuid: string }> },
+) {
+  const { uuid } = await params;
+
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // ADMINs can view everything
+    // USERs can only view runs for devices they are associated with
+    const where =
+      user.role === "ADMIN"
+        ? { uuid }
+        : {
+            uuid,
+            device: {
+              userDevices: {
+                some: {
+                  userId: user.id,
+                },
+              },
+            },
+          };
+    const run = await prisma.run.findFirst({
+      where,
+      select: { id: true, uuid: true },
+    });
+
+    if (!run) {
+      // Either run doesn't exist, or user has no access to it
+      return NextResponse.json({ error: "Run not found" }, { status: 404 });
+    }
+
+    await prisma.run.delete({ where: { id: run.id } });
+  } catch (err) {
+    console.error("DELETE /api/runs/[uuid] error:", err);
+    return NextResponse.json(
+      { error: "Failed to delete run" },
+      { status: 500 },
+    );
+  }
+
+  return new NextResponse(null, { status: 204 });
 }
