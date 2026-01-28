@@ -37,7 +37,6 @@ const bool LOGGER_DELETE_AFTER_UPLOAD{false};
 const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{0};  // <= 0 means disabled
 const int WIFI_RECONFIG_BUTTON_HOLD_TIME_MS{2000};
 const bool ENABLE_OTA_UPDATE{false};
-const int WIFI_RECONNECT_ATTEMPT_INTERVAL_MS{5000};
 
 // Testing overrides
 const bool WAIT_FOR_VALID_TIME{true};
@@ -490,7 +489,6 @@ void handleWaitTimeState() {
     // GPS module is the source of epoch time. Ensure that the received time is
     // valid. The PA1010D returns a default/bogus time when there is no valid
     // fix.
-    LOG_INFO("Waiting for GPS time...");
 
     // Request up to 32 bytes of data (enough for a NMEA sentence) from GPS and
     // feed into TinyGPS++
@@ -509,12 +507,14 @@ void handleWaitTimeState() {
                   gps.date.day(), gps.date.month(), gps.date.year());
       LOG_INFO("Valid GPS time received");
     } else {
-      // If we still don't have a valid GPS time, try again after a delay
+      // If we still don't have a valid GPS time, print waiting status and try
+      // again after a delay
       static unsigned long lastPrintTime = 0;
       if (millis() - lastPrintTime > 5000) {
         lastPrintTime = millis();
         LOG_INFO("Waiting for valid GPS time...");
       }
+
       vTaskDelay(pdMS_TO_TICKS(1000));
       return;
     }
