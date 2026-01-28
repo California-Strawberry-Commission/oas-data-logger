@@ -25,13 +25,14 @@
 #include <dlflib/dlf_logger.h>
 
 #include "DeviceAuth.h"
+#include "memory_monitor/memory_monitor.h"
 #include "ota_updater/ota_updater.h"
 
 // Configuration
 const unsigned long SERIAL_BAUD_RATE{115200};
 // Every X seconds, start a new run. Negative or zero means do not cut a run
 // (except when going to sleep).
-const int LOGGER_RUN_INTERVAL_S{0};
+const int LOGGER_RUN_INTERVAL_S{0};  // <= 0 means disabled
 const bool LOGGER_MARK_AFTER_UPLOAD{true};
 const bool LOGGER_DELETE_AFTER_UPLOAD{false};
 const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{0};  // <= 0 means disabled
@@ -43,7 +44,8 @@ const bool WAIT_FOR_VALID_TIME{true};
 const bool USE_LEGACY_GPIO_CONFIG{false};
 const bool USB_POWER_OVERRIDE{false};
 const bool USB_POWER_OVERRIDE_VALUE{false};
-const int GPS_PRINT_INTERVAL_MS{1000};
+const int GPS_PRINT_INTERVAL_SECS{0};         // <= 0 means disabled
+const int PRINT_HEAP_USAGE_INTERVAL_SECS{0};  // <= 0 means disabled
 
 // Input pin definitions
 // Note: GPIO13 is also shared with the built-in LED (not the NeoPixel LED). The
@@ -216,6 +218,16 @@ void setup() {
 }
 
 void loop() {
+  // Print heap usage if needed
+  if (PRINT_HEAP_USAGE_INTERVAL_SECS > 0) {
+    static unsigned long lastHeapLoggedMillis{0};
+    const unsigned long now{millis()};
+    if (now - lastHeapLoggedMillis >= PRINT_HEAP_USAGE_INTERVAL_SECS * 1000) {
+      lastHeapLoggedMillis = now;
+      memory_monitor::logHeap("mem");
+    }
+  }
+
   // Update LED pattern based on current state
   updateLedPattern();
 
@@ -531,21 +543,23 @@ void handleWaitTimeState() {
 void handleRunningState() {
   // GPS printing logic with enhanced diagnostics
   // Only print if GPS is still enabled (prevents printing during shutdown)
-  if (gpsEnabled && millis() - lastGpsPrintMillis > GPS_PRINT_INTERVAL_MS) {
-    lastGpsPrintMillis = millis();
+  const unsigned long now{millis()};
+  if (gpsEnabled && GPS_PRINT_INTERVAL_SECS > 0 &&
+      now - lastGpsPrintMillis > GPS_PRINT_INTERVAL_SECS * 1000) {
+    lastGpsPrintMillis = now;
 
     // Try to get GPS data with mutex protection
     if (xSemaphoreTake(gpsDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
       LOG_DEBUG("[GPS] Lat: %.6f, Lng: %.6f, Alt: %.1fm, Sats: %d", gpsData.lat,
                 gpsData.lng, gpsData.alt, gpsData.satellites);
-      LOG_DEBUG("[DIAG] RunHandle: %d, Uptime: %lu ms", runHandle, millis());
+      LOG_DEBUG("[DIAG] RunHandle: %d, Uptime: %lu ms", runHandle, now);
       xSemaphoreGive(gpsDataMutex);
     }
   }
 
   // Run interval logic - only if LOGGER_RUN_INTERVAL_S > 0
   if (runHandle && LOGGER_RUN_INTERVAL_S > 0 &&
-      millis() - lastLoggerStartRunMillis > LOGGER_RUN_INTERVAL_S * 1000) {
+      now - lastLoggerStartRunMillis > LOGGER_RUN_INTERVAL_S * 1000) {
     startLoggerRun();
   }
 }
