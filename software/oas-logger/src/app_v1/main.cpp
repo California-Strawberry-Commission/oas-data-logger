@@ -65,10 +65,7 @@ const uint32_t GPS_UPDATE_RATE_MS{100};  // 10Hz update rate
 #define GPS_SERIAL Serial1               // GPS Serial port
 
 // WiFi Configuration
-const int WIFI_RECONNECT_BACKOFF_MS{2000};
-const int WIFI_MAX_BACKOFF_MS{30000};
 static volatile bool wifiConnecting = false;
-static uint32_t wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;
 
 // Security and Provisioning
 String deviceSecret;  // Populated from NVS at boot
@@ -182,7 +179,9 @@ void setup() {
   }
   AdvancedLogger::begin();
   AdvancedLogger::setPrintLevel(LogLevel::INFO);
-  AdvancedLogger::setSaveLevel(LogLevel::INFO);
+  AdvancedLogger::setSaveLevel(
+      LogLevel::WARNING);  // Minimizes writes which may interfere with SD card
+                           // syncing
 
   LOG_INFO("****System Boot****");
   LOG_INFO("Firmware: version=%s build=%d device=%s channel=%s", FW_VERSION,
@@ -270,38 +269,13 @@ void loop() {
   vTaskDelay(pdMS_TO_TICKS(10));
 }
 
+// The actual reconnection is now handled by the Polling Loop.
 void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   switch (event) {
-    case ARDUINO_EVENT_WIFI_STA_START:
-      LOG_INFO("[WiFi] STA started");
-      break;
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-      // Note: only consider connection as successful when we got the IP, not on
-      // ARDUINO_EVENT_WIFI_STA_CONNECTED
-      LOG_INFO("[WiFi] Got IP");
+      //  This flag release allows handleWaitWifiState to exit
+      //  immediately
       wifiConnecting = false;
-      wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;  // Reset backoff
-      break;
-    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-      LOG_INFO("[WiFi] Disconnected, reason: %d",
-               info.wifi_sta_disconnected.reason);
-
-      if (info.wifi_sta_disconnected.reason == WIFI_REASON_AUTH_FAIL) {
-        // Annoyingly, sometimes a disconnect with AUTH_FAIL will fire on the
-        // first connection attempt even though credentials are valid. Just
-        // ignore this event for now. If invalid credentials are indeed stored
-        // on the device, then we'll eventually continue.
-      } else {
-        // For other disconnection reasons, use backoff and reconnect
-        vTaskDelay(pdMS_TO_TICKS(wifiReconnectBackoff));
-        wifiReconnectBackoff =
-            min<uint32_t>(wifiReconnectBackoff * 2, WIFI_MAX_BACKOFF_MS);
-
-        if (!wifiConnecting) {
-          WiFi.reconnect();
-          wifiConnecting = true;
-        }
-      }
       break;
     default:
       break;
@@ -450,6 +424,16 @@ bool getSavedSSID(char* out, size_t len) {
   return strlen(out) > 0;
 }
 
+// fires a reconnect if no WiFi connection
+void pollWiFiConnection() {
+  if (WiFi.status() != WL_CONNECTED) {
+    LOG_INFO("[WiFi Poll] Connection lost. Reconnecting...");
+    WiFi.disconnect();
+    WiFi.reconnect();  // Avoids possible WiFi.begin() reinitialization,
+                       // resuses existing STA config in RAM
+  }
+}
+
 void handleWaitWifiState() {
   LOG_INFO("Initializing WiFi (STA)...");
 
@@ -576,8 +560,13 @@ void handleRunningState() {
 }
 
 void handleOffloadState() {
-  // Give logger sync/upload time to start
-  vTaskDelay(pdMS_TO_TICKS(100));
+  // Check for internet connection before offloading.
+  pollWiFiConnection();
+
+  vTaskDelay(
+      pdMS_TO_TICKS(15000));  // wait for 15 seconds to allow WiFi radio to
+                              // diminish power draw. Required for prevention of
+                              // brownout of SD card on USB power.
 
   logger.waitForSyncCompletion();
 
