@@ -7,9 +7,16 @@ import { cookies } from "next/headers";
 const alg = "HS256";
 const secret = new TextEncoder().encode(process.env.AUTH_SECRET);
 
+export type User = {
+  id: string;
+  role: "USER" | "ADMIN";
+  email: string;
+};
+
 export async function hashPassword(pw: string) {
   return bcrypt.hash(pw, 12);
 }
+
 export async function verifyPassword(pw: string, hash: string) {
   return bcrypt.compare(pw, hash);
 }
@@ -56,7 +63,7 @@ export async function clearSession(cookies: ResponseCookies) {
   cookies.delete("session");
 }
 
-export async function getCurrentUser() {
+export async function getCurrentUser(): Promise<User | null> {
   const session = await getSession();
   if (!session) {
     return null;

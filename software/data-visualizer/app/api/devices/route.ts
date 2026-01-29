@@ -1,6 +1,7 @@
-import prisma from "@/lib/prisma";
-import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import prisma from "@/lib/prisma";
+import { devicesWhereForUser } from "@/lib/query-helpers";
+import { NextResponse } from "next/server";
 
 export async function GET() {
   try {
@@ -9,18 +10,7 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // ADMINs can view everything
-    // USERs can only view devices they are associated with
-    const where =
-      user.role === "ADMIN"
-        ? {}
-        : {
-            userDevices: {
-              some: {
-                userId: user.id,
-              },
-            },
-          };
+    const where = devicesWhereForUser(user);
     const devices = await prisma.device.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -36,7 +26,7 @@ export async function GET() {
     console.error("GET /api/devices error:", err);
     return NextResponse.json(
       { error: "Failed to fetch devices" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
