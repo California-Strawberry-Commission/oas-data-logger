@@ -207,7 +207,7 @@ LogFile::LogFile(dlf::datastream::stream_handles_t handles,
   // Init data flusher
   state_ = LOGGING;
 
-  // Increased stack size from 2048 to 4096 to handle deep SD card call stack
+  // Increased stack size from 4096 to 8192 to handle deep SD card call stack
   // (especially for file_.size() and file_.position() which trigger
   // vfs/fatfs/sdmmc operations)
   if (xTaskCreate(taskFlusher, "Flusher", 8192, this, 5, NULL) != pdTRUE) {
