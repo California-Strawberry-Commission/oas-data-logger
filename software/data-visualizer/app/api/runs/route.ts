@@ -1,5 +1,6 @@
 import { getCurrentUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { runsWhereForUser } from "@/lib/query-helpers";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(req: NextRequest) {
@@ -12,21 +13,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const deviceId = searchParams.get("device_id");
 
-    // ADMINs can view everything
-    // USERs can only view runs for devices they are associated with
-    const authWhere =
-      user.role === "ADMIN"
-        ? {}
-        : {
-            device: {
-              userDevices: {
-                some: {
-                  userId: user.id,
-                },
-              },
-            },
-          };
-
+    const authWhere = runsWhereForUser(user);
     // Device filter if deviceId query param exists
     const deviceWhere = deviceId
       ? {
