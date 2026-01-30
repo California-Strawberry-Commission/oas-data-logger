@@ -1,16 +1,16 @@
 #pragma once
 
-#ifdef DLFLIB_USE_ADVANCED_LOGGER
+#ifdef DLFLIB_USE_EZLOG
 
-#include <AdvancedLogger.h>
+#include <EzLog.h>
 
-#define DLFLIB_LOG_ERROR(fmt, ...) LOG_ERROR(fmt, ##__VA_ARGS__)
+#define DLFLIB_LOG_ERROR(fmt, ...) EZLOG_ERROR(fmt, ##__VA_ARGS__)
 
-#define DLFLIB_LOG_WARNING(fmt, ...) LOG_WARNING(fmt, ##__VA_ARGS__)
+#define DLFLIB_LOG_WARNING(fmt, ...) EZLOG_WARN(fmt, ##__VA_ARGS__)
 
-#define DLFLIB_LOG_INFO(fmt, ...) LOG_INFO(fmt, ##__VA_ARGS__)
+#define DLFLIB_LOG_INFO(fmt, ...) EZLOG_INFO(fmt, ##__VA_ARGS__)
 
-#define DLFLIB_LOG_DEBUG(fmt, ...) LOG_DEBUG(fmt, ##__VA_ARGS__)
+#define DLFLIB_LOG_DEBUG(fmt, ...) EZLOG_DEBUG(fmt, ##__VA_ARGS__)
 
 #else
 
