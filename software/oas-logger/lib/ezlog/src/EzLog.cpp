@@ -9,31 +9,42 @@ namespace ezlog {
 
 #pragma region Static state
 
+/////////
 // Config
+/////////
 static uint16_t g_queueDepth{64};
 static uint16_t g_maxMsgLen{192};
 static uint32_t g_taskStackWords{4096};
 static UBaseType_t g_taskPriority{1};
 static BaseType_t g_taskCore{-1};
-static uint32_t g_flushEveryMs{5000};
-static Level g_flushImmediateLevel{Level::ERROR};
-static uint32_t g_lastFlushMs{0};
+static uint32_t g_lfsFlushEveryMs{5000};
+static Level g_lfsFlushImmediateLevel{Level::ERROR};
+// Log file rotation
 static size_t g_maxLogFileBytes = 512 * 1024;  // 512 KB default
 static uint8_t g_logFileCount = 2;             // keep current + 1 old
 
+/////////////////////////////
+// Internal handles and state
+/////////////////////////////
 static bool g_started{false};
 static QueueHandle_t g_queue{nullptr};
 static TaskHandle_t g_task{nullptr};
+static volatile uint32_t g_droppedCount{0};
 
-static StaticSemaphore_t g_logFmtMutexBuf;
-static SemaphoreHandle_t g_logFmtMutex{nullptr};
+///////////
+// Producer
+///////////
 // In order to avoid allocation on the caller's stack, use one shared queue-item
 // buffer.
 static uint8_t* g_queueItemBuf{nullptr};
 static size_t g_queueItemBufSize{0};
-static volatile uint32_t g_droppedCount = 0;
+// Locks access to the queue-item buffer
+static StaticSemaphore_t g_logFmtMutexBuf;
+static SemaphoreHandle_t g_logFmtMutex{nullptr};
 
+////////
 // Sinks
+////////
 static bool g_serialEnabled{false};
 static Level g_serialMinLevel{Level::INFO};
 static bool g_lfsEnabled{false};
@@ -41,6 +52,7 @@ static Level g_lfsMinLevel{Level::INFO};
 static const char* g_lfsPath{"/ezlog.txt"};
 static File g_lfsFile;
 static bool g_lfsDirty{false};
+static uint32_t g_lfsLastFlushMs{0};
 
 #pragma endregion
 
@@ -136,8 +148,8 @@ void setLittleFSFlushPolicy(uint32_t flushEveryMs, Level flushImmediateLevel) {
   if (flushEveryMs < 250) {
     flushEveryMs = 250;
   }
-  g_flushEveryMs = flushEveryMs;
-  g_flushImmediateLevel = flushImmediateLevel;
+  g_lfsFlushEveryMs = flushEveryMs;
+  g_lfsFlushImmediateLevel = flushImmediateLevel;
 }
 
 #pragma endregion
@@ -180,7 +192,7 @@ void ensureStarted() {
     return;
   }
 
-  g_lastFlushMs = millis();
+  g_lfsLastFlushMs = millis();
   g_started = true;
 }
 
@@ -349,7 +361,7 @@ static void rotateLogsIfNeeded() {
 
   // Open new log file
   g_lfsFile = LittleFS.open(base, FILE_APPEND);
-  g_lastFlushMs = millis();
+  g_lfsLastFlushMs = millis();
   g_lfsDirty = false;
 }
 
@@ -403,9 +415,9 @@ void taskFn(void*) {
         rotateLogsIfNeeded();
 
         // Immediate flush for high severity
-        if ((uint8_t)header->level >= (uint8_t)g_flushImmediateLevel) {
+        if ((uint8_t)header->level >= (uint8_t)g_lfsFlushImmediateLevel) {
           g_lfsFile.flush();
-          g_lastFlushMs = now;
+          g_lfsLastFlushMs = now;
           g_lfsDirty = false;
         }
       }
@@ -413,9 +425,9 @@ void taskFn(void*) {
 
     // Periodic flush
     if (g_lfsEnabled && g_lfsFile && g_lfsDirty &&
-        (uint32_t)(now - g_lastFlushMs) >= g_flushEveryMs) {
+        (uint32_t)(now - g_lfsLastFlushMs) >= g_lfsFlushEveryMs) {
       g_lfsFile.flush();
-      g_lastFlushMs = now;
+      g_lfsLastFlushMs = now;
       g_lfsDirty = false;
     }
   }
