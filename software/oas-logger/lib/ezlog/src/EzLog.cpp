@@ -20,8 +20,8 @@ static BaseType_t g_taskCore{-1};
 static uint32_t g_lfsFlushEveryMs{5000};
 static Level g_lfsFlushImmediateLevel{Level::ERROR};
 // Log file rotation
-static size_t g_maxLogFileBytes = 512 * 1024;  // 512 KB default
-static uint8_t g_logFileCount = 2;             // keep current + 1 old
+static size_t g_maxLogFileBytes{512 * 1024};  // 512 KB default
+static uint8_t g_logFileCount{2};             // keep current + 1 old
 
 /////////////////////////////
 // Internal handles and state
@@ -104,6 +104,11 @@ static void internalLog(Level level, const char* fmt, ...) {
   Serial.printf("[%lu][%s][ezlog] %s\n", millis(), levelToStr(level), buf);
 }
 
+static const char* baseName(const char* path) {
+  const char* slash{strrchr(path, '/')};
+  return slash ? slash + 1 : path;
+}
+
 #pragma endregion
 
 #pragma region Public config
@@ -156,7 +161,7 @@ void setLittleFSFlushPolicy(uint32_t flushEveryMs, Level flushImmediateLevel) {
 
 #pragma region Sinks
 
-void ensureStarted() {
+static void ensureStarted() {
   if (g_started) {
     return;
   }
@@ -235,14 +240,16 @@ bool addLittleFS(Level minLevel, const char* path, bool formatOnFail) {
 
 #pragma region Logging API
 
-void logf(Level level, const char* fmt, ...) {
+void logf(Level level, const char* file, const char* func, uint16_t line,
+          const char* fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  logv(level, fmt, ap);
+  logv(level, file, func, line, fmt, ap);
   va_end(ap);
 }
 
-void logv(Level level, const char* fmt, va_list ap) {
+void logv(Level level, const char* file, const char* func, uint16_t line,
+          const char* fmt, va_list ap) {
   ensureStarted();
   if (!g_queue || !g_logFmtMutex || !g_queueItemBuf) {
     return;
@@ -267,6 +274,11 @@ void logv(Level level, const char* fmt, va_list ap) {
   auto* header = reinterpret_cast<EntryHeader*>(g_queueItemBuf);
   header->ms = millis();
   header->level = level;
+  header->core = xPortGetCoreID();
+  header->task = pcTaskGetName(nullptr);
+  header->file = file;
+  header->func = func;
+  header->line = line;
 
   char* msg = reinterpret_cast<char*>(g_queueItemBuf + sizeof(EntryHeader));
   msg[0] = '\0';
@@ -294,13 +306,18 @@ void logv(Level level, const char* fmt, va_list ap) {
 #pragma region Writer task
 
 static void serialWriteLine(const EntryHeader& header, const char* msg) {
-  Serial.printf("[%lu][%s] %s\n", (unsigned long)header.ms,
-                levelToStr(header.level), msg);
+  Serial.printf("[%lu][%s][C%d][%s][%s:%u][%s] %s\n", (unsigned long)header.ms,
+                levelToStr(header.level), header.core,
+                header.task ? header.task : "?", baseName(header.file),
+                header.line, header.func ? header.func : "?", msg);
 }
 
 static bool lfsWriteLine(const EntryHeader& header, const char* msg) {
-  size_t written{g_lfsFile.printf("[%lu][%s] %s\n", (unsigned long)header.ms,
-                                  levelToStr(header.level), msg)};
+  size_t written{g_lfsFile.printf(
+      "[%lu][%s][C%d][%s][%s:%u][%s] %s\n", (unsigned long)header.ms,
+      levelToStr(header.level), header.core, header.task ? header.task : "?",
+      baseName(header.file), header.line, header.func ? header.func : "?",
+      msg)};
   return written > 0;
 }
 
@@ -365,7 +382,7 @@ static void rotateLogsIfNeeded() {
   g_lfsDirty = false;
 }
 
-void reportDroppedLogs() {
+static void reportDroppedLogs() {
   uint32_t dropped{g_droppedCount};
   if (dropped > 0) {
     g_droppedCount = 0;
@@ -374,7 +391,7 @@ void reportDroppedLogs() {
   }
 }
 
-void taskFn(void*) {
+static void taskFn(void*) {
   const size_t itemSize{entryBytes()};
   uint8_t* item{(uint8_t*)malloc(itemSize)};
   if (!item) {
