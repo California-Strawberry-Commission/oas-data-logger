@@ -36,6 +36,11 @@ enum class Level : uint8_t { DEBUG, INFO, WARN, ERROR };
 struct EntryHeader {
   uint32_t ms;
   Level level;
+  uint8_t core;
+  const char* task;
+  const char* file;
+  const char* func;
+  uint16_t line;
 };
 
 /* ========================= CONFIGURATION ========================= */
@@ -113,22 +118,21 @@ bool addLittleFS(Level minLevel = Level::INFO, const char* path = "/ezlog.txt",
  * @param fmt    printf-style format string.
  * @param ...    Format arguments.
  */
-void logf(Level level, const char* fmt, ...)
-    __attribute__((format(printf, 2, 3)));
+void logf(Level level, const char* file, const char* func, uint16_t line,
+          const char* fmt, ...) __attribute__((format(printf, 5, 6)));
 
 /**
  * Internal version of logf that accepts a va_list.
  */
-void logv(Level level, const char* fmt, va_list ap);
+void logv(Level level, const char* file, const char* func, uint16_t line,
+          const char* fmt, va_list ap);
 
 }  // namespace ezlog
 
 // Convenience macros
-#define EZLOG_DEBUG(fmt, ...) \
-  ::ezlog::logf(::ezlog::Level::DEBUG, (fmt), ##__VA_ARGS__)
-#define EZLOG_INFO(fmt, ...) \
-  ::ezlog::logf(::ezlog::Level::INFO, (fmt), ##__VA_ARGS__)
-#define EZLOG_WARN(fmt, ...) \
-  ::ezlog::logf(::ezlog::Level::WARN, (fmt), ##__VA_ARGS__)
-#define EZLOG_ERROR(fmt, ...) \
-  ::ezlog::logf(::ezlog::Level::ERROR, (fmt), ##__VA_ARGS__)
+#define EZLOG(level, fmt, ...) \
+  ::ezlog::logf(level, __FILE__, __func__, __LINE__, fmt, ##__VA_ARGS__)
+#define EZLOG_DEBUG(fmt, ...) EZLOG(::ezlog::Level::DEBUG, fmt, ##__VA_ARGS__)
+#define EZLOG_INFO(fmt, ...) EZLOG(::ezlog::Level::INFO, fmt, ##__VA_ARGS__)
+#define EZLOG_WARN(fmt, ...) EZLOG(::ezlog::Level::WARN, fmt, ##__VA_ARGS__)
+#define EZLOG_ERROR(fmt, ...) EZLOG(::ezlog::Level::ERROR, fmt, ##__VA_ARGS__)
