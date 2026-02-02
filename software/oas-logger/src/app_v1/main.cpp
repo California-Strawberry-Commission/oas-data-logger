@@ -1,7 +1,7 @@
-#include <AdvancedLogger.h>
 #include <Arduino.h>
 #include <DeviceAuth.h>
 #include <ESP32Time.h>
+#include <EzLog.h>
 #include <FastLED.h>
 #include <SD_MMC.h>
 #include <SparkFun_u-blox_GNSS_v3.h>
@@ -172,20 +172,13 @@ void setup() {
   // Delay here to give dev some time to connect to Serial Monitor
   vTaskDelay(pdMS_TO_TICKS(3000));
 
-  // Initialize AdvancedLogger
-  if (!LittleFS.begin(true)) {
-    Serial.println(
-        "LittleFS mount failed! AdvancedLogger will not log to LittleFS.");
-  }
-  AdvancedLogger::begin();
-  AdvancedLogger::setPrintLevel(LogLevel::INFO);
-  AdvancedLogger::setSaveLevel(
-      LogLevel::WARNING);  // Minimizes writes which may interfere with SD card
-                           // syncing
+  // Initialize EzLog
+  ezlog::addSerial();
+  ezlog::addLittleFS();
 
-  LOG_INFO("****System Boot****");
-  LOG_INFO("Firmware: version=%s build=%d device=%s channel=%s", FW_VERSION,
-           FW_BUILD_NUMBER, DEVICE_TYPE, OTA_CHANNEL);
+  EZLOG_INFO("****System Boot****");
+  EZLOG_INFO("Firmware: version=%s build=%d device=%s channel=%s", FW_VERSION,
+             FW_BUILD_NUMBER, DEVICE_TYPE, OTA_CHANNEL);
 
   provisionDevice();
 
@@ -291,15 +284,15 @@ void initializeLed() {
 void provisionDevice() {
   device_auth::DeviceAuth auth(getDeviceUid());
   if (!auth.loadSecret(deviceSecret)) {
-    LOG_INFO("Device unprovisioned. Waiting for script...");
+    EZLOG_INFO("Device unprovisioned. Waiting for script...");
 
     deviceSecret = auth.awaitProvisioning();
 
-    LOG_INFO("Provisioning successful. Rebooting in 3s...");
+    EZLOG_INFO("Provisioning successful. Rebooting in 3s...");
     delay(3000);
     restart();
   } else {
-    LOG_INFO("Device already provisioned");
+    EZLOG_INFO("Device already provisioned");
   }
 }
 
@@ -367,7 +360,7 @@ void updateLedPattern() {
 }
 
 void transitionToState(SystemState newState) {
-  LOG_DEBUG("State transition: %d -> %d", (int)currentState, (int)newState);
+  EZLOG_DEBUG("State transition: %d -> %d", (int)currentState, (int)newState);
   currentState = newState;
 
   // Reset LED toggle state on transition
@@ -378,36 +371,36 @@ void transitionToState(SystemState newState) {
 void handleInitState() { transitionToState(SystemState::WAIT_SD); }
 
 void handleWaitSdState() {
-  LOG_INFO("Initializing SDIO for SD card...");
+  EZLOG_INFO("Initializing SDIO for SD card...");
 
   // Configure the pins for SDIO
   if (!SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0, PIN_SD_D1, PIN_SD_D2,
                       PIN_SD_D3)) {
-    LOG_ERROR("Pin configuration failed!");
+    EZLOG_ERROR("Pin configuration failed!");
     currentError = ErrorType::SD_INIT_FAILED;
     transitionToState(SystemState::ERROR);
     return;
   }
 
   // Try 1-bit mode first (more reliable)
-  LOG_INFO("Trying 1-bit mode...");
+  EZLOG_INFO("Trying 1-bit mode...");
   if (SD_MMC.begin("/sdcard", true)) {  // true = use 1-bit mode
-    LOG_INFO("SD card connected via SDIO (1-bit mode)");
+    EZLOG_INFO("SD card connected via SDIO (1-bit mode)");
 
     // Optionally try 4-bit mode
     SD_MMC.end();
     delay(100);
-    LOG_INFO("Now trying 4-bit mode...");
+    EZLOG_INFO("Now trying 4-bit mode...");
     if (SD_MMC.begin("/sdcard", true, false,
                      SDMMC_FREQ_DEFAULT)) {  // false = 4-bit mode
-      LOG_INFO("SD card connected via SDIO (4-bit mode)");
+      EZLOG_INFO("SD card connected via SDIO (4-bit mode)");
     } else {
-      LOG_WARNING("4-bit failed, falling back to 1-bit");
+      EZLOG_WARN("4-bit failed, falling back to 1-bit");
       SD_MMC.begin("/sdcard", true);
     }
     transitionToState(SystemState::WAIT_WIFI);
   } else {
-    LOG_ERROR("SD card initialization failed even in 1-bit mode");
+    EZLOG_ERROR("SD card initialization failed even in 1-bit mode");
     currentError = ErrorType::SD_INIT_FAILED;
     transitionToState(SystemState::ERROR);
   }
@@ -435,7 +428,7 @@ void pollWiFiConnection() {
 }
 
 void handleWaitWifiState() {
-  LOG_INFO("Initializing WiFi (STA)...");
+  EZLOG_INFO("Initializing WiFi (STA)...");
 
   // Set WiFi mode and register event handler
   WiFi.mode(WIFI_STA);
@@ -446,12 +439,12 @@ void handleWaitWifiState() {
   char ssid[33];
   if (getSavedSSID(ssid, sizeof(ssid))) {
     // If we have saved credentials, attempt to connect to it
-    LOG_INFO("Connecting to saved WiFi: %s", ssid);
+    EZLOG_INFO("Connecting to saved WiFi: %s", ssid);
     WiFi.begin();
     wifiConnecting = true;
   } else {
     // If we don't have saved credentials, start Config Portal
-    LOG_INFO("No saved WiFi credentials found. Starting WiFi Manager...");
+    EZLOG_INFO("No saved WiFi credentials found. Starting WiFi Manager...");
     wifiManager.autoConnect();
   }
 
@@ -462,9 +455,9 @@ void handleWaitWifiState() {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    LOG_INFO("WiFi connected successfully");
+    EZLOG_INFO("WiFi connected successfully");
   } else {
-    LOG_INFO("WiFi not connected; continuing without network.");
+    EZLOG_INFO("WiFi not connected; continuing without network.");
   }
 
   if (offloadMode) {
@@ -489,7 +482,7 @@ void handleOtaUpdate() {
   ota::OtaUpdater otaUpdater(otaConfig);
   auto res{otaUpdater.updateIfAvailable(true)};
   if (!res.ok) {
-    LOG_ERROR("[OTA] Error when updating firmware: %s", res.message.c_str());
+    EZLOG_ERROR("[OTA] Error when updating firmware: %s", res.message.c_str());
   }
 
   transitionToState(SystemState::WAIT_GPS);
@@ -517,7 +510,7 @@ void handleWaitTimeState() {
     // Also set the RTC
     rtc.setTime(gpsEpoch);
 
-    LOG_INFO("Valid GPS time received: %ld", gpsEpoch);
+    EZLOG_INFO("Valid GPS time received: %ld", gpsEpoch);
 
     // Initialize logger and start run
     initializeDLFLogger();
@@ -529,7 +522,7 @@ void handleWaitTimeState() {
     const unsigned long now{millis()};
     if (now - lastPrintTimeMillis > 5000) {
       lastPrintTimeMillis = now;
-      LOG_INFO("Waiting for valid GPS time...");
+      EZLOG_INFO("Waiting for valid GPS time...");
     }
   }
 }
@@ -544,10 +537,10 @@ void handleRunningState() {
 
     // Try to get GPS data with mutex protection
     if (xSemaphoreTake(gpsDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-      LOG_DEBUG("[GPS] Lat: %.6f, Lng: %.6f, Alt: %.1fm, Sats: %d, Fix: %d",
-                gpsData.lat, gpsData.lng, gpsData.alt, gpsData.satellites,
-                gpsFixType);
-      LOG_DEBUG("[DIAG] RunHandle: %d, Uptime: %lu ms\n", runHandle, now);
+      EZLOG_DEBUG("[GPS] Lat: %.6f, Lng: %.6f, Alt: %.1fm, Sats: %d, Fix: %d",
+                  gpsData.lat, gpsData.lng, gpsData.alt, gpsData.satellites,
+                  gpsFixType);
+      EZLOG_DEBUG("[DIAG] RunHandle: %d, Uptime: %lu ms\n", runHandle, now);
       xSemaphoreGive(gpsDataMutex);
     }
   }
@@ -581,7 +574,7 @@ void handleErrorState() {
   if (!wasInError) {
     // Just entered the ERROR state. This block should only be run once when we
     // first enter this state
-    LOG_ERROR("System in ERROR state. Error type: %d", (int)currentError);
+    EZLOG_ERROR("System in ERROR state. Error type: %d", (int)currentError);
     errorStartMillis = millis();
     wasInError = true;
   }
@@ -593,7 +586,7 @@ void handleErrorState() {
 }
 
 void handleSleepState() {
-  LOG_INFO("Entering deep sleep...");
+  EZLOG_INFO("Entering deep sleep...");
 
   // Stop all tasks
   disableGps();
@@ -607,8 +600,6 @@ void handleSleepState() {
   } else {
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
   }
-
-  AdvancedLogger::end();
 
   // Enter deep sleep
   esp_deep_sleep_start();
@@ -626,7 +617,7 @@ void enableGps() {
     return;
   }
 
-  LOG_INFO("Enabling GPS...");
+  EZLOG_INFO("Enabling GPS...");
 
   // Power cycle the GPS module (TESTED AND WORKING)
   // Note: PIN_GPS_ENABLE is already HIGH from setup() (shared with SD card)
@@ -651,7 +642,7 @@ void enableGps() {
     }
   }
   if (!connected) {
-    LOG_ERROR("GPS not responding");
+    EZLOG_ERROR("GPS not responding");
     currentError = ErrorType::GPS_NOT_RESPONDING;
     transitionToState(SystemState::ERROR);
     return;
@@ -663,11 +654,11 @@ void enableGps() {
   myGNSS.saveConfiguration();
 
   gpsEnabled = true;
-  LOG_INFO("GPS enabled");
+  EZLOG_INFO("GPS enabled");
 }
 
 void gpsTask(void* args) {
-  LOG_INFO("[GPS Task] Started");
+  EZLOG_INFO("[GPS Task] Started");
 
   while (true) {
     // Request PVT data - returns true when new data is available
@@ -726,11 +717,11 @@ void disableGps() {
     return;
   }
 
-  LOG_INFO("Disabling GPS...");
+  EZLOG_INFO("Disabling GPS...");
 
   // Delete GPS task if it exists
   if (xGPS_Handle != NULL) {
-    LOG_INFO("[GPS] Deleting GPS task...");
+    EZLOG_INFO("[GPS] Deleting GPS task...");
     vTaskDelete(xGPS_Handle);
     xGPS_Handle = NULL;
   }
@@ -744,7 +735,7 @@ void disableGps() {
   GPS_SERIAL.end();
 
   gpsEnabled = false;
-  LOG_INFO("GPS disabled");
+  EZLOG_INFO("GPS disabled");
 }
 
 String getDeviceUid() {
@@ -755,7 +746,7 @@ String getDeviceUid() {
 }
 
 void initializeDLFLogger() {
-  LOG_INFO("Initializing DLF logger...");
+  EZLOG_INFO("Initializing DLF logger...");
 
   auto satellitesLogInterval{std::chrono::seconds(5)};
   POLL(logger, gpsData.satellites, satellitesLogInterval, gpsDataMutex);
@@ -772,7 +763,7 @@ void initializeDLFLogger() {
       LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS;
   logger.syncTo(UPLOAD_ENDPOINT, getDeviceUid(), deviceSecret, options).begin();
 
-  LOG_INFO("DLF logger initialized");
+  EZLOG_INFO("DLF logger initialized");
 }
 
 void startLoggerRun() {
@@ -811,15 +802,16 @@ void sleepMonitorTask(void* args) {
         while (!digitalRead(PIN_SLEEP_BUTTON)) {
           if (millis() - start >= WIFI_RECONFIG_BUTTON_HOLD_TIME_MS) {
             // Sleep button has been long pressed
-            LOG_INFO(
+            EZLOG_INFO(
                 "[WiFi Reconfiguration] WiFi reconfiguration mode entered...");
 
             sleepCleanup();
             vTaskDelay(pdMS_TO_TICKS(100));
             logger.waitForSyncCompletion();
-            LOG_INFO("[WiFi Reconfiguration] Resetting WiFiManager...");
+            EZLOG_INFO("[WiFi Reconfiguration] Resetting WiFiManager...");
             wifiManager.resetSettings();  // uses vTaskDelay internally
-            LOG_INFO("[WiFi Reconfiguration] Rebooting device into AP mode...");
+            EZLOG_INFO(
+                "[WiFi Reconfiguration] Rebooting device into AP mode...");
             restart();
             break;
           }
@@ -854,7 +846,4 @@ void sleepMonitorTask(void* args) {
   vTaskDelete(NULL);
 }
 
-void restart() {
-  AdvancedLogger::end();
-  ESP.restart();
-}
+void restart() { ESP.restart(); }

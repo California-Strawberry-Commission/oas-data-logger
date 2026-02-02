@@ -22,7 +22,7 @@ function getRunUploadDir(runUuid: string) {
 // already in the DB.
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ uuid: string }> }
+  { params }: { params: Promise<{ uuid: string }> },
 ) {
   const { uuid } = await params;
 
@@ -31,7 +31,7 @@ export async function POST(
   if (!headerDeviceId) {
     return NextResponse.json(
       { error: "Unauthorized: Missing device ID header" },
-      { status: 401 }
+      { status: 401 },
     );
   }
 
@@ -39,14 +39,16 @@ export async function POST(
   const authResult = await verifyDeviceSignature(
     headerDeviceId,
     request.headers,
-    uuid 
+    uuid,
   );
 
   if (!authResult.success) {
-    console.error(`[api/upload] Auth failed for ${uuid}: ${authResult.message}`);
+    console.error(
+      `[api/upload] Auth failed for ${uuid}: ${authResult.message}`,
+    );
     return NextResponse.json(
       { error: "Unauthorized", details: "Invalid request signature" },
-      { status: 401 }
+      { status: 401 },
     );
   }
 
@@ -63,7 +65,7 @@ export async function POST(
     if (typeof deviceUid !== "string" || deviceUid.trim() === "") {
       return NextResponse.json(
         { error: "Missing or invalid deviceUid" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -89,13 +91,13 @@ export async function POST(
             error:
               "Invalid isActive value. Use true/false (or 1/0, on/off, yes/no).",
           },
-          { status: 400 }
+          { status: 400 },
         );
       }
     }
 
     console.log(
-      `[api/upload] Handling upload request for run: ${uuid}, deviceUid: ${deviceUid}, isActive: ${isActive}`
+      `[api/upload] Handling upload request for run: ${uuid}, deviceUid: ${deviceUid}, isActive: ${isActive}`,
     );
 
     // Save uploaded files
@@ -127,7 +129,7 @@ export async function POST(
           {
             error: `Run with uuid ${uuid} already associated with a different device`,
           },
-          { status: 409 }
+          { status: 409 },
         );
       }
     }
@@ -139,11 +141,11 @@ export async function POST(
     if (!runExists) {
       if (!uploadedFiles.has("meta.dlf")) {
         console.log(
-          `[api/upload] Attempting to create a new run with uuid ${uuid} but request is missing meta.dlf`
+          `[api/upload] Attempting to create a new run with uuid ${uuid} but request is missing meta.dlf`,
         );
         return NextResponse.json(
           { error: "Cannot create a new run without meta.dlf" },
-          { status: 400 }
+          { status: 400 },
         );
       }
 
@@ -163,7 +165,7 @@ export async function POST(
       runId = runInstance.id;
     } else {
       console.log(
-        `[api/upload] Appending to existing run ${uuid}. Updating isActive to ${isActive}`
+        `[api/upload] Appending to existing run ${uuid}. Updating isActive to ${isActive}`,
       );
       runId = existingRun.id;
       // Update isActive on existing run
@@ -191,7 +193,7 @@ export async function POST(
 
         // Filter out items in eventsData whose tick <= latestTick
         const newEvents = eventsData.filter(
-          (d: any) => BigInt(d.tick) > latestTick
+          (d: any) => BigInt(d.tick) > latestTick,
         );
 
         if (newEvents.length > 0) {
@@ -213,7 +215,7 @@ export async function POST(
             }),
           });
           console.log(
-            `[api/upload] Created ${newEvents.length} new EVENT records`
+            `[api/upload] Created ${newEvents.length} new EVENT records`,
           );
         } else {
           console.log("[api/upload] No new EVENT data created");
@@ -221,7 +223,7 @@ export async function POST(
       } catch (err) {
         console.error(
           "[api/upload] Event data processing skipped due to error:",
-          err
+          err,
         );
       }
     }
@@ -246,7 +248,7 @@ export async function POST(
           latestTicksByStream.map((item) => [
             item.streamId,
             item._max.tick ? item._max.tick : BigInt(-1),
-          ])
+          ]),
         );
 
         // Filter to only new polled data
@@ -274,7 +276,7 @@ export async function POST(
             }),
           });
           console.log(
-            `[api/upload] Created ${newPolled.length} new POLLED records`
+            `[api/upload] Created ${newPolled.length} new POLLED records`,
           );
         } else {
           console.log("[api/upload] No new POLLED data created");
@@ -282,7 +284,7 @@ export async function POST(
       } catch (err) {
         console.error(
           "[api/upload] Polled data processing skipped due to error:",
-          err
+          err,
         );
       }
     }
@@ -293,7 +295,7 @@ export async function POST(
     console.log(message);
     return NextResponse.json({ message });
   } catch (err) {
-    console.error(`ERROR in upload handler:`, err);
+    console.error("[api/upload] Error in upload handler:", err);
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });
   } finally {
     // Clean up tmp files
