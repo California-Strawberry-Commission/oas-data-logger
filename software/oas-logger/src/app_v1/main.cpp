@@ -420,7 +420,7 @@ bool getSavedSSID(char* out, size_t len) {
 // fires a reconnect if no WiFi connection
 void pollWiFiConnection() {
   if (WiFi.status() != WL_CONNECTED) {
-    LOG_INFO("[WiFi Poll] Connection lost. Reconnecting...");
+    EZLOG_INFO("[WiFi Poll] Connection lost. Reconnecting...");
     WiFi.disconnect();
     WiFi.reconnect();  // Avoids possible WiFi.begin() reinitialization,
                        // resuses existing STA config in RAM
