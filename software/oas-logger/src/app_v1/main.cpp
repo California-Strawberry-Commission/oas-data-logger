@@ -269,7 +269,7 @@ void loop() {
   vTaskDelay(pdMS_TO_TICKS(10));
 }
 
-// The actual reconnection is now handled by the Polling Loop.
+// The actual reconnection is now handled by pollWiFiConnection()
 void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   switch (event) {
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
