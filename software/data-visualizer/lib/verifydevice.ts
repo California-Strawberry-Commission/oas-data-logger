@@ -52,8 +52,12 @@ export async function verifyDeviceSignature(
   let secret = "";
   try {
     secret = decryptSecret(deviceRecord.secret);
-  } catch (e) {
-    console.error("Decryption failed for device", deviceId);
+  } catch (err: any) {
+    console.error(
+      "[verifyDeviceSignature] Decryption failed for device",
+      deviceId,
+      err,
+    );
     return { success: false, message: "Server error during auth" };
   }
 
@@ -70,9 +74,6 @@ export async function verifyDeviceSignature(
     .digest("hex");
 
   if (signature !== expectedSignature) {
-    console.warn(
-      `[Auth] Fail for ${deviceId}.\nExpected: ${expectedSignature}\nGot: ${signature}`
-    );
     return { success: false, message: "Invalid signature" };
   }
 
