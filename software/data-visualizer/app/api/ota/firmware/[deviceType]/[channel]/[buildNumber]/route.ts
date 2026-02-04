@@ -1,6 +1,7 @@
 import { DeviceType, OtaChannel } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { s3Client } from "@/lib/s3";
+import { verifyDeviceSignature } from "@/lib/verifydevice";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { NextRequest, NextResponse } from "next/server";
@@ -15,7 +16,7 @@ export async function GET(
       channel: string;
       buildNumber: string;
     }>;
-  }
+  },
 ) {
   const p = await params;
   const deviceType = p.deviceType.toUpperCase();
@@ -28,7 +29,7 @@ export async function GET(
       {
         error: "Invalid deviceType",
       },
-      { status: 400 }
+      { status: 400 },
     );
   }
   if (!(channel in OtaChannel)) {
@@ -36,7 +37,7 @@ export async function GET(
       {
         error: "Invalid channel",
       },
-      { status: 400 }
+      { status: 400 },
     );
   }
   if (!Number.isInteger(buildNumber) || buildNumber <= 0) {
@@ -44,7 +45,26 @@ export async function GET(
       {
         error: "buildNumber must be a positive integer",
       },
-      { status: 400 }
+      { status: 400 },
+    );
+  }
+
+  // Ensure device ID header is present
+  const deviceId = request.headers.get("x-device-id");
+  if (!deviceId) {
+    return NextResponse.json(
+      { error: "Unauthorized", details: "Missing device ID header" },
+      { status: 401 },
+    );
+  }
+
+  // Verify the request signature
+  const authResult = await verifyDeviceSignature(deviceId, request.headers);
+  if (!authResult.success) {
+    console.error(`[api/ota/firmware] Auth failed: ${authResult.message}`);
+    return NextResponse.json(
+      { error: "Unauthorized", details: "Invalid request signature" },
+      { status: 401 },
     );
   }
 

@@ -1,12 +1,13 @@
 import { DeviceType, OtaChannel } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
+import { verifyDeviceSignature } from "@/lib/verifydevice";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ deviceType: string; channel: string }> }
+  { params }: { params: Promise<{ deviceType: string; channel: string }> },
 ) {
   const p = await params;
   const deviceType = p.deviceType.toUpperCase();
@@ -18,7 +19,7 @@ export async function GET(
       {
         error: "Invalid deviceType",
       },
-      { status: 400 }
+      { status: 400 },
     );
   }
   if (!(channel in OtaChannel)) {
@@ -26,7 +27,26 @@ export async function GET(
       {
         error: "Invalid channel",
       },
-      { status: 400 }
+      { status: 400 },
+    );
+  }
+
+  // Ensure device ID header is present
+  const deviceId = request.headers.get("x-device-id");
+  if (!deviceId) {
+    return NextResponse.json(
+      { error: "Unauthorized", details: "Missing device ID header" },
+      { status: 401 },
+    );
+  }
+
+  // Verify the request signature
+  const authResult = await verifyDeviceSignature(deviceId, request.headers);
+  if (!authResult.success) {
+    console.error(`[api/ota/manifest] Auth failed: ${authResult.message}`);
+    return NextResponse.json(
+      { error: "Unauthorized", details: "Invalid request signature" },
+      { status: 401 },
     );
   }
 
@@ -60,6 +80,6 @@ export async function GET(
       headers: {
         "Cache-Control": "no-store",
       },
-    }
+    },
   );
 }

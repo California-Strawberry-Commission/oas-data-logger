@@ -27,7 +27,7 @@ import crypto from "crypto";
 export async function verifyDeviceSignature(
   deviceId: string,
   headers: Headers,
-  payloadToVerify: string,
+  payloadToVerify?: string,
 ): Promise<{ success: boolean; message?: string }> {
   // First try dev bypass
   const bypass = checkDevBypass(headers);
@@ -70,7 +70,7 @@ export async function verifyDeviceSignature(
 
   const payloadHash = crypto
     .createHash("sha256")
-    .update(payloadToVerify)
+    .update(payloadToVerify ?? "")
     .digest("hex");
 
   const stringToSign = `${deviceId}:${timestamp}:${nonce}:${payloadHash}`;
