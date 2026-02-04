@@ -101,7 +101,6 @@ UploaderComponent::UploaderComponent(fs::FS& fs, const String& fsDir,
     : fs_(fs),
       dir_(fsDir),
       endpoint_(endpoint),
-      deviceUid_(deviceUid),
       options_(options),
       signer_(deviceUid, secret) {}
 
@@ -203,10 +202,6 @@ bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
   ///////////////////////////
   size_t contentLength = 0;
 
-  // Field: deviceUid
-  contentLength +=
-      snprintf(NULL, 0, fieldTemplate, "deviceUid", deviceUid_.c_str());
-
   // Field: isActive
   const char* isActiveStr = isActive ? "true" : "false";
   contentLength += snprintf(NULL, 0, fieldTemplate, "isActive", isActiveStr);
@@ -245,7 +240,6 @@ bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
   ////////////////////////
   // Send multipart fields
   ////////////////////////
-  client->printf(fieldTemplate, "deviceUid", deviceUid_.c_str());
   client->printf(fieldTemplate, "isActive", isActiveStr);
 
   //////////////////

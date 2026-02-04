@@ -26,9 +26,9 @@ export async function POST(
 ) {
   const { uuid } = await params;
 
-  const headerDeviceId = request.headers.get("x-device-id");
+  const deviceId = request.headers.get("x-device-id");
 
-  if (!headerDeviceId) {
+  if (!deviceId) {
     return NextResponse.json(
       { error: "Unauthorized: Missing device ID header" },
       { status: 401 },
@@ -37,7 +37,7 @@ export async function POST(
 
   // Verify the signature against the UUID (that is what the firmware signs)
   const authResult = await verifyDeviceSignature(
-    headerDeviceId,
+    deviceId,
     request.headers,
     uuid,
   );
@@ -60,20 +60,11 @@ export async function POST(
     // Parse form data
     const formData = await request.formData();
 
-    // Process deviceUid field (REQUIRED)
-    const deviceUid = formData.get("deviceUid");
-    if (typeof deviceUid !== "string" || deviceUid.trim() === "") {
-      return NextResponse.json(
-        { error: "Missing or invalid deviceUid" },
-        { status: 400 },
-      );
-    }
-
     // Ensure device exists (create if missing)
     const device = await prisma.device.upsert({
-      where: { id: deviceUid },
+      where: { id: deviceId },
       update: {},
-      create: { id: deviceUid },
+      create: { id: deviceId },
     });
 
     // Process isActive field (OPTIONAL)
@@ -97,7 +88,7 @@ export async function POST(
     }
 
     console.log(
-      `[api/upload] Handling upload request for run: ${uuid}, deviceUid: ${deviceUid}, isActive: ${isActive}`,
+      `[api/upload] Handling upload request for run: ${uuid}, deviceId: ${deviceId}, isActive: ${isActive}`,
     );
 
     // Save uploaded files
