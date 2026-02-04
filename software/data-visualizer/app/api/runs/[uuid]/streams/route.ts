@@ -4,11 +4,11 @@ import { getRunForUser } from "@/lib/query-helpers";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(
-  req: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ uuid: string }> },
 ) {
   const { uuid } = await params;
-  const { searchParams } = new URL(req.url);
+  const { searchParams } = new URL(request.url);
   const stream_ids = searchParams.get("stream_ids");
 
   if (!stream_ids) {
@@ -21,7 +21,7 @@ export async function GET(
   const streamIdsArray = stream_ids.split(",");
 
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request.headers);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

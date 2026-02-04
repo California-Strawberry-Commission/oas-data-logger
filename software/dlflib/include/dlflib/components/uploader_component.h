@@ -47,7 +47,6 @@ class UploaderComponent : public DlfComponent {
   fs::FS& fs_;
   String dir_;
   String endpoint_;
-  String deviceUid_;
   Options options_;
   // Used to notify when WiFi connected/disconnected
   EventGroupHandle_t wifiEvent_;

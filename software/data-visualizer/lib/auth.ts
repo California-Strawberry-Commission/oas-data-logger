@@ -63,7 +63,18 @@ export async function clearSession(cookies: ResponseCookies) {
   cookies.delete("session");
 }
 
-export async function getCurrentUser(): Promise<User | null> {
+export async function getCurrentUser(
+  requestHeaders?: Headers,
+): Promise<User | null> {
+  // First try dev bypass
+  if (requestHeaders) {
+    const devUser = await checkDevBypass(requestHeaders);
+    if (devUser) {
+      return devUser;
+    }
+  }
+
+  // Normal session auth
   const session = await getSession();
   if (!session) {
     return null;
@@ -74,6 +85,41 @@ export async function getCurrentUser(): Promise<User | null> {
     select: { id: true, role: true, email: true },
   });
 
+  if (!user) {
+    return null;
+  }
+
+  return {
+    id: user.id,
+    role: user.role as "USER" | "ADMIN",
+    email: user.email,
+  };
+}
+
+async function checkDevBypass(headers: Headers): Promise<User | null> {
+  // Never allow bypass in production
+  if (process.env.NODE_ENV === "production") {
+    return null;
+  }
+
+  const expectedKey = process.env.AUTH_DEV_KEY;
+  const providedKey = headers.get("x-dev-key");
+  if (!expectedKey || !providedKey || expectedKey !== providedKey) {
+    return null;
+  }
+
+  // Impersonate by userId or by email
+  const devUserId = headers.get("x-dev-user-id");
+  const devEmail = headers.get("x-dev-user-email");
+
+  const user = await prisma.user.findFirst({
+    where: devUserId
+      ? { id: devUserId }
+      : devEmail
+        ? { email: devEmail }
+        : undefined,
+    select: { id: true, role: true, email: true },
+  });
   if (!user) {
     return null;
   }
