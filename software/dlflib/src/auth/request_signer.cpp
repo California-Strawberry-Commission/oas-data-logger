@@ -22,12 +22,16 @@
  * other security headers directly to the open WiFiClient stream.
  */
 
+namespace dlf::auth {
+
 RequestSigner::RequestSigner(const String& deviceId, const String& secret)
     : deviceId_(deviceId), secret_(secret) {}
 
 bool RequestSigner::writeAuthHeaders(WiFiClient& client,
                                      const String& payload) {
-  if (secret_.length() == 0) return false;
+  if (deviceId_.isEmpty() || secret_.isEmpty()) {
+    return false;
+  }
 
   time_t now;
   time(&now);
@@ -44,6 +48,32 @@ bool RequestSigner::writeAuthHeaders(WiFiClient& client,
   client.printf("x-timestamp: %s\r\n", timestamp.c_str());
   client.printf("x-nonce: %s\r\n", nonce.c_str());
   client.printf("x-signature: %s\r\n", signature.c_str());
+
+  return true;
+}
+
+bool RequestSigner::writeAuthHeaders(HTTPClient& client,
+                                     const String& payload) {
+  if (deviceId_.isEmpty() || secret_.isEmpty()) {
+    return false;
+  }
+
+  time_t now;
+  time(&now);
+  String timestamp = String(now);
+  String nonce = String(esp_random());
+
+  String bodyHash = sha256(payload);
+
+  String stringToSign =
+      deviceId_ + ":" + timestamp + ":" + nonce + ":" + bodyHash;
+
+  String signature = hmacSha256(secret_, stringToSign);
+
+  client.addHeader("x-device-id", deviceId_);
+  client.addHeader("x-timestamp", timestamp);
+  client.addHeader("x-nonce", nonce);
+  client.addHeader("x-signature", signature);
 
   return true;
 }
@@ -88,3 +118,5 @@ String RequestSigner::hmacSha256(const String& key, const String& payload) {
 
   return signature;
 }
+
+}  // namespace dlf::auth

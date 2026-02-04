@@ -171,7 +171,9 @@ String bytesToHexLower(const uint8_t* bytes, size_t len) {
 
 namespace ota {
 
-OtaUpdater::OtaUpdater(Config config) : config_(std::move(config)) {}
+OtaUpdater::OtaUpdater(Config config)
+    : config_(std::move(config)),
+      signer_(config_.deviceId, config_.deviceSecret) {}
 
 OtaUpdater::ManifestResult OtaUpdater::fetchLatestManifest() {
   if (WiFi.status() != WL_CONNECTED) {
@@ -195,10 +197,15 @@ OtaUpdater::ManifestResult OtaUpdater::fetchLatestManifest() {
   httpClient.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
   httpClient.setTimeout(config_.manifestTimeoutMs);
 
-  // Make GET request
+  // Set up HTTP request for manifest
   if (!httpClient.begin(*wifiClientHolder.client, manifestUrl)) {
     return getManifestResultForError("HTTP begin failed (manifest)");
   }
+  // Sign the request
+  if (!signer_.writeAuthHeaders(httpClient)) {
+    return getManifestResultForError("Failed to add auth headers (manifest)");
+  }
+  // Send the GET request
   const int code{httpClient.GET()};
   if (code <= 0) {
     return getManifestResultForError(String("HTTP GET failed (manifest): ") +
@@ -330,10 +337,15 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
       return getUpdateResultForError("Failed to create WiFi client");
     }
 
-    // Make GET request
+    // Set up HTTP request for firmware
     if (!httpClient.begin(*wifiClientHolder.client, url)) {
       return getUpdateResultForError("HTTP begin failed (firmware)");
     }
+    // Sign the request
+    if (!signer_.writeAuthHeaders(httpClient)) {
+      return getUpdateResultForError("Failed to add auth headers (firmware)");
+    }
+    // Send the GET request
     code = httpClient.GET();
     if (code <= 0) {
       return getUpdateResultForError(String("HTTP GET failed (firmware): ") +

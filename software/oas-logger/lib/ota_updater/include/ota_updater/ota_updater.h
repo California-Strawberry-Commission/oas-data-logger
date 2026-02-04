@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <dlflib/auth/request_signer.h>
 
 namespace ota {
 
@@ -23,6 +24,8 @@ class OtaUpdater {
     String deviceType;            // "V0" or "V1"
     String channel;               // "STABLE" or "BETA"
     int currentBuildNumber = -1;  // currently installed build number
+    String deviceId;
+    String deviceSecret;
 
     uint32_t manifestTimeoutMs = 3000;
     uint32_t firmwareTimeoutMs = 20000;
@@ -73,6 +76,7 @@ class OtaUpdater {
 
  private:
   Config config_;
+  dlf::auth::RequestSigner signer_;
 
   String getManifestUrl() const;
   String getFirmwareUrl(int buildNumber) const;

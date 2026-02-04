@@ -479,9 +479,13 @@ void handleOtaUpdate() {
   otaConfig.deviceType = DEVICE_TYPE;
   otaConfig.channel = OTA_CHANNEL;
   otaConfig.currentBuildNumber = FW_BUILD_NUMBER;
+  otaConfig.deviceId = getDeviceUid();
+  otaConfig.deviceSecret = deviceSecret;
   ota::OtaUpdater otaUpdater(otaConfig);
   auto res{otaUpdater.updateIfAvailable(true)};
-  if (!res.ok) {
+  if (res.ok) {
+    EZLOG_INFO("[OTA] Success: %s", res.message.c_str());
+  } else {
     EZLOG_ERROR("[OTA] Error when updating firmware: %s", res.message.c_str());
   }
 

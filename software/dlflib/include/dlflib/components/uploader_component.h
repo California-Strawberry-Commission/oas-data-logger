@@ -43,7 +43,7 @@ class UploaderComponent : public DlfComponent {
   void onWifiDisconnected(arduino_event_id_t event, arduino_event_info_t info);
   void onWifiConnected(arduino_event_id_t event, arduino_event_info_t info);
 
-  RequestSigner signer_;
+  dlf::auth::RequestSigner signer_;
   fs::FS& fs_;
   String dir_;
   String endpoint_;

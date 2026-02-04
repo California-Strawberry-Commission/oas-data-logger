@@ -1,9 +1,9 @@
 import prisma from "@/lib/prisma";
+import { verifyDeviceSignature } from "@/lib/verifydevice";
 import { FSAdapter } from "dlflib-js";
 import { mkdirSync, rmSync, writeFileSync } from "fs";
 import { NextRequest, NextResponse } from "next/server";
 import { resolve } from "path";
-import { verifyDeviceSignature } from "@/lib/verifydevice";
 
 export const dynamic = "force-dynamic";
 
@@ -26,26 +26,23 @@ export async function POST(
 ) {
   const { uuid } = await params;
 
+  // Ensure device ID header is present
   const deviceId = request.headers.get("x-device-id");
-
   if (!deviceId) {
     return NextResponse.json(
-      { error: "Unauthorized: Missing device ID header" },
+      { error: "Unauthorized", details: "Missing device ID header" },
       { status: 401 },
     );
   }
 
-  // Verify the signature against the UUID (that is what the firmware signs)
+  // Verify the request signature
   const authResult = await verifyDeviceSignature(
     deviceId,
     request.headers,
     uuid,
   );
-
   if (!authResult.success) {
-    console.error(
-      `[api/upload] Auth failed for ${uuid}: ${authResult.message}`,
-    );
+    console.error(`[api/upload] Auth failed: ${authResult.message}`);
     return NextResponse.json(
       { error: "Unauthorized", details: "Invalid request signature" },
       { status: 401 },
