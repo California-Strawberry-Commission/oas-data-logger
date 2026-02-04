@@ -24,12 +24,18 @@ import crypto from "crypto";
  * - x-nonce:     Random value to ensure uniqueness.
  * - x-signature: The hex-encoded HMAC string calculated by the device.
  */
-
 export async function verifyDeviceSignature(
   deviceId: string,
   headers: Headers,
   payloadToVerify: string,
 ): Promise<{ success: boolean; message?: string }> {
+  // First try dev bypass
+  const bypass = checkDevBypass(headers);
+  if (bypass) {
+    console.warn(`[verifyDeviceSignature] Dev bypass used`);
+    return { success: true };
+  }
+
   const timestamp = headers.get("x-timestamp");
   const nonce = headers.get("x-nonce");
   const signature = headers.get("x-signature");
@@ -78,4 +84,20 @@ export async function verifyDeviceSignature(
   }
 
   return { success: true };
+}
+
+function checkDevBypass(headers: Headers): boolean {
+  // Never allow bypass in production
+  if (process.env.NODE_ENV === "production") {
+    return false;
+  }
+
+  const expected = process.env.DEVICE_AUTH_DEV_KEY;
+  const provided = headers.get("x-dev-key");
+
+  if (!expected || !provided || expected !== provided) {
+    return false;
+  }
+
+  return true;
 }
