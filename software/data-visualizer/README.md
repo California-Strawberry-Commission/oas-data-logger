@@ -81,10 +81,22 @@ Apply migrations to the DB
 $ npm run db:deploy
 ```
 
-### Example upload request
+### Example API requests
+
+Headers x-device-id and x-dev-key are required for endpoints that require device auth.
+
+For example, to upload run data:
 
 ```
-curl -X POST http://localhost:3000/api/upload/example_run_20251107 -F "files=@/path/to/meta.dlf" -F "files=@/path/to/polled.dlf" -F "files=@/path/to/event.dlf" -F "isActive=false" -F "deviceUid=example-device-123"
+curl -X POST http://localhost:3000/api/upload/example_run_20251107 -H "x-device-id: <your device ID> -H "x-dev-key: <your dev key>" -F "files=@/path/to/meta.dlf" -F "files=@/path/to/polled.dlf" -F "files=@/path/to/event.dlf" -F "isActive=false"
+```
+
+Headers x-dev-user-email and x-dev-key are required for endpoints that require user auth.
+
+For example, to get a list of devices:
+
+```
+curl -X GET http://localhost:3000/api/devices -H "x-dev-user-email: admin@example.com" -H "x-dev-key: <your dev key>"
 ```
 
 ## Making DB schema changes

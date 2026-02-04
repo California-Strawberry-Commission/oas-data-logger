@@ -36,6 +36,7 @@ export async function verifyDeviceSignature(
     return { success: true };
   }
 
+  // Normal device auth
   const timestamp = headers.get("x-timestamp");
   const nonce = headers.get("x-nonce");
   const signature = headers.get("x-signature");
@@ -92,10 +93,9 @@ function checkDevBypass(headers: Headers): boolean {
     return false;
   }
 
-  const expected = process.env.DEVICE_AUTH_DEV_KEY;
-  const provided = headers.get("x-dev-key");
-
-  if (!expected || !provided || expected !== provided) {
+  const expectedKey = process.env.AUTH_DEV_KEY;
+  const providedKey = headers.get("x-dev-key");
+  if (!expectedKey || !providedKey || expectedKey !== providedKey) {
     return false;
   }
 

@@ -3,14 +3,14 @@ import prisma from "@/lib/prisma";
 import { runsWhereForUser } from "@/lib/query-helpers";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(req: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request.headers);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { searchParams } = new URL(req.url);
+    const { searchParams } = new URL(request.url);
     const deviceId = searchParams.get("device_id");
 
     const authWhere = runsWhereForUser(user);
