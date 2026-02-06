@@ -41,7 +41,7 @@ function NoData() {
 function toMapPoints(
   dataPoints: DataPoint[],
   epochTimeS: bigint,
-  tickBaseUs: bigint
+  tickBaseUs: bigint,
 ): MapPoint[] {
   // Split out datapoints into lat, lng, and alt
   const satellitesMap = new Map<number, number>();
@@ -121,7 +121,7 @@ export default function GpsPositionVisualization({
       return;
     }
     fetch(
-      `/api/runs/${runUuid}/streams?stream_ids=${STREAM_ID_SATELLITES},${STREAM_ID_LATITUDE},${STREAM_ID_LONGITUDE},${STREAM_ID_ALTITUDE}`
+      `/api/runs/${runUuid}/streams?stream_ids=${STREAM_ID_SATELLITES},${STREAM_ID_LATITUDE},${STREAM_ID_LONGITUDE},${STREAM_ID_ALTITUDE}`,
     )
       .then((res) => res.json())
       .then((data) => {
@@ -146,7 +146,7 @@ export default function GpsPositionVisualization({
   }
 
   return (
-    <div className="w-full h-[500px] max-h-[800px] sm:h-[500px] sm:max-w-[800px] mx-auto">
+    <div className="w-full h-200 max-h-200 sm:h-150 sm:max-w-200 mx-auto">
       {content}
     </div>
   );

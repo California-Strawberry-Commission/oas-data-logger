@@ -16,7 +16,7 @@ import {
 
 const MIN_NUM_SATELLITES = 1; // filter out GPS points that were logged with less than X satellites
 const MAX_JUMP_METERS = 100; // filter out GPS points that jump more than X meters from the previous point
-const DWELL_RADIUS_METERS = 1; // consider any points that lie within X meters of another point to be dwelling at the same point
+const DWELL_RADIUS_METERS = 10; // consider any points that lie within X meters of another point to be dwelling at the same point
 
 export type MapPoint = {
   timestampS: number;
@@ -82,6 +82,20 @@ function distanceMeters(a: LatLngExpression, b: LatLngExpression): number {
   return R * c;
 }
 
+function formatDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+
+  if (h > 0) {
+    return `${h}h ${m}m ${s}s`;
+  }
+  if (m > 0) {
+    return `${m}m ${s}s`;
+  }
+  return `${s}s`;
+}
+
 export default function Map({
   points,
   playbackDurationS = 10,
@@ -95,7 +109,7 @@ export default function Map({
   const sortedPoints: MapPoint[] = useMemo(
     // Create a copy of the points array before sorting in place
     () => [...points].sort((a, b) => a.timestampS - b.timestampS),
-    [points]
+    [points],
   );
 
   // Filtered view when toggle is on
@@ -178,7 +192,7 @@ export default function Map({
       const dt = displayPoints[i + 1].timestampS - displayPoints[i].timestampS;
       const dist = distanceMeters(
         displayPoints[anchorIdx].position,
-        displayPoints[i + 1].position
+        displayPoints[i + 1].position,
       );
       if (dist <= DWELL_RADIUS_METERS) {
         // We're still dwelling at the anchor point
@@ -226,7 +240,7 @@ export default function Map({
 
     let closest = displayPoints[0];
     let smallestDiff = Math.abs(
-      displayPoints[0].timestampS - currentTimestampS
+      displayPoints[0].timestampS - currentTimestampS,
     );
 
     for (let i = 1; i < displayPoints.length; i++) {
@@ -294,7 +308,7 @@ export default function Map({
       const targetS = startS + t * (endTimestampS - startS);
       const nextS = Math.min(
         endTimestampS,
-        Math.max(startTimestampS, Math.round(targetS))
+        Math.max(startTimestampS, Math.round(targetS)),
       );
       setCurrentTimestampS(nextS);
 
@@ -391,7 +405,7 @@ export default function Map({
           <div className="pointer-events-none absolute left-1/2 top-2 z-[1000] -translate-x-1/2">
             <div className="rounded-md bg-white/80 px-3 py-1 text-xs shadow">
               <span className="font-semibold">Max dwell time:</span>{" "}
-              <span className="tabular-nums">{maxDwellS.toFixed(1)}s</span>
+              <span className="tabular-nums">{formatDuration(maxDwellS)}</span>
             </div>
           </div>
         )}
