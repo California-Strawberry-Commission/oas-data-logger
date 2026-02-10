@@ -17,13 +17,21 @@ export default async function Home() {
   }
 
   return (
-    <main className="flex flex-col h-full items-center p-4 gap-4">
-      <header className="w-full flex justify-end gap-4">
-        {isAdmin && <AdminButton />}
-        <LogoutButton />
+    <div className="flex flex-col min-h-screen">
+      {/* Top app bar */}
+      <header className="w-full border-b bg-background">
+        <div className="max-w-7xl mx-auto flex items-center justify-end gap-2 h-14 px-4">
+          {isAdmin && <AdminButton />}
+          <LogoutButton email={user.email} />
+        </div>
       </header>
 
-      <DataSelector />
-    </main>
+      {/* Page content */}
+      <main className="flex-1 flex flex-col items-center p-6 gap-6">
+        <div className="w-full max-w-4xl">
+          <DataSelector />
+        </div>
+      </main>
+    </div>
   );
 }

@@ -2,8 +2,14 @@
 
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
+import { User, LogOut } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
-export default function LogoutButton() {
+export default function LogoutButton({ email }: { email: string }) {
   const [loading, setLoading] = useState(false);
 
   async function logout() {
@@ -14,8 +20,36 @@ export default function LogoutButton() {
   }
 
   return (
-    <Button variant="outline" onClick={logout} disabled={loading}>
-      {loading ? "Logging out..." : "Logout"}
-    </Button>
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" className="flex items-center gap-2">
+          <User className="h-4 w-4" />
+        </Button>
+      </PopoverTrigger>
+
+      <PopoverContent align="end" className="w-64 p-3">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-2">
+            <User className="h-4 w-4 mt-0.5 text-muted-foreground" />
+            <div className="min-w-0">
+              <div className="text-xs text-muted-foreground">Signed in as</div>
+              <div className="text-sm font-medium truncate">{email}</div>
+            </div>
+          </div>
+
+          <div className="h-px bg-border" />
+
+          <Button
+            variant="destructive"
+            onClick={logout}
+            disabled={loading}
+            className="w-full justify-start gap-2"
+          >
+            <LogOut className="h-4 w-4" />
+            {loading ? "Logging out..." : "Logout"}
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
