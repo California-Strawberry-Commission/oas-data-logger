@@ -74,13 +74,33 @@ export default function RunSelector({
   onValueChange: (runUuid: string) => void;
 }) {
   const [runs, setRuns] = useState<Run[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string>("");
 
   useEffect(() => {
     let cancelled = false;
 
-    fetch(`/api/runs?device_id=${deviceId}`)
-      .then((res) => res.json())
-      .then((data) => {
+    async function load() {
+      // No device selected yet
+      if (!deviceId) {
+        setRuns([]);
+        setError("");
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        setError("");
+
+        const res = await fetch(
+          `/api/runs?device_id=${encodeURIComponent(deviceId)}`,
+        );
+        if (!res.ok) {
+          throw new Error(`Failed to fetch runs (${res.status})`);
+        }
+
+        const data = await res.json();
         if (cancelled) {
           return;
         }
@@ -91,9 +111,24 @@ export default function RunSelector({
           lastDataTimeS: BigInt(r.lastDataTimeS),
           isActive: r.isActive,
         }));
-        setRuns(runs.sort((a, b) => Number(b.epochTimeS - a.epochTimeS)));
-      });
 
+        // Newest first
+        runs.sort((a, b) => Number(b.epochTimeS - a.epochTimeS));
+        setRuns(runs);
+      } catch (e) {
+        if (cancelled) {
+          return;
+        }
+        setRuns([]);
+        setError("Failed to load runs");
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    load();
     return () => {
       cancelled = true;
     };
@@ -101,27 +136,43 @@ export default function RunSelector({
 
   // If the selected run no longer exists, clear it
   useEffect(() => {
-    if (value && !runs.some((r) => r.uuid === value)) {
+    if (!isLoading && value && !runs.some((r) => r.uuid === value)) {
       onValueChange("");
     }
-  }, [value, runs, onValueChange]);
+  }, [value, runs, isLoading, onValueChange]);
 
-  const items = useMemo(
-    () =>
-      runs.map((run) => ({
-        value: run.uuid,
-        label: getRunLabel(run),
-      })),
-    [runs],
-  );
+  const items = useMemo(() => {
+    if (!deviceId) {
+      return [{ value: "__no_device__", label: "Select a device first" }];
+    }
+    if (isLoading) {
+      return [{ value: "__loading__", label: "Loading runs..." }];
+    }
+    if (error) {
+      return [{ value: "__error__", label: error }];
+    }
+    return runs.map((run) => ({
+      value: run.uuid,
+      label: getRunLabel(run),
+    }));
+  }, [deviceId, isLoading, error, runs]);
+
+  const hasPlaceholder = items.length > 0 && items[0].value.startsWith("__");
 
   return (
     <Combobox
       items={items}
       value={value}
-      onValueChange={onValueChange}
-      placeholder={"Select run..."}
-      searchPlaceholder={"Search run..."}
+      onValueChange={(next) => {
+        // Ignore placeholder items
+        if (next.startsWith("__")) {
+          return;
+        }
+        onValueChange(next);
+      }}
+      placeholder={isLoading ? "Loading runs..." : "Select run..."}
+      searchPlaceholder={isLoading ? "Loading..." : "Search run..."}
+      disabled={hasPlaceholder}
     />
   );
 }

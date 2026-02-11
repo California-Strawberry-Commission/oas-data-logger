@@ -7,7 +7,7 @@ import {
 } from "@/components/visualizations/gps-visualization";
 import type { RunMeta } from "@/lib/useRunMeta";
 import useRunMeta from "@/lib/useRunMeta";
-import { useCallback, useEffect, useMemo } from "react";
+import { useEffect, useMemo } from "react";
 
 export enum VisualizationType {
   NONE,
@@ -30,19 +30,32 @@ export default function VisualizationSelector({
   value: VisualizationType;
   onValueChange: (viz: VisualizationType) => void;
 }) {
-  const { run } = useRunMeta(runUuid);
+  const { run, error } = useRunMeta(runUuid);
+  const isLoading = !!runUuid && !run && !error;
 
   const items = useMemo(() => {
+    if (!runUuid) {
+      return [{ value: "__no_run__", label: "Select a run first" }];
+    }
+    if (isLoading) {
+      return [{ value: "__loading__", label: "Loading visualizations..." }];
+    }
+    if (error) {
+      return [{ value: "__error__", label: error }];
+    }
+
     const out: { value: string; label: string }[] = [];
     if (run && hasGpsData(run)) {
       out.push({ value: String(VisualizationType.GPS), label: "GPS position" });
     }
     return out;
-  }, [run]);
+  }, [runUuid, isLoading, error, run]);
+
+  const hasPlaceholder = items.length > 0 && items[0].value.startsWith("__");
 
   // Auto-select first available visualization
   useEffect(() => {
-    if (items.length === 0) {
+    if (items.length === 0 || hasPlaceholder) {
       return;
     }
 
@@ -51,30 +64,33 @@ export default function VisualizationSelector({
     if (!isValid) {
       onValueChange(Number(items[0].value) as VisualizationType);
     }
-  }, [items, value, onValueChange]);
-
-  const comboboxValue = value === VisualizationType.NONE ? "" : String(value);
-
-  const comboboxOnValueChange = useCallback(
-    (v: string) => {
-      if (!v) {
-        onValueChange(VisualizationType.NONE);
-        return;
-      }
-      onValueChange(Number(v) as VisualizationType);
-    },
-    [onValueChange],
-  );
+  }, [hasPlaceholder, items, value, onValueChange]);
 
   return (
     <>
       <div className="flex items-center gap-2">
         <Combobox
           items={items}
-          value={comboboxValue}
-          onValueChange={comboboxOnValueChange}
-          placeholder={"Select visualization..."}
-          searchPlaceholder={"Search visualization..."}
+          value={value === VisualizationType.NONE ? "" : String(value)}
+          onValueChange={(next) => {
+            // Ignore placeholder items
+            if (next.startsWith("__")) {
+              return;
+            }
+
+            if (!next) {
+              onValueChange(VisualizationType.NONE);
+              return;
+            }
+            onValueChange(Number(next) as VisualizationType);
+          }}
+          placeholder={
+            isLoading ? "Loading visualizations..." : "Select visualization..."
+          }
+          searchPlaceholder={
+            isLoading ? "Loading..." : "Search visualization..."
+          }
+          disabled={hasPlaceholder}
         />
         {run?.isActive && (
           <span className="flex items-center gap-1 text-sm text-green-600">
