@@ -1,10 +1,18 @@
 "use client";
 
-import GpsPositionVisualization from "@/components/gps-position-visualization";
 import Combobox from "@/components/ui/combobox";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  STREAM_ID_LATITUDE,
+  STREAM_ID_LONGITUDE,
+} from "@/components/visualizations/gps-visualization";
 
-type Run = {
+export enum VisualizationType {
+  NONE,
+  GPS,
+}
+
+type RunMeta = {
   uuid: string;
   epochTimeS: bigint;
   tickBaseUs: bigint;
@@ -18,33 +26,11 @@ type Stream = {
   count: number;
 };
 
-function hasGpsData(run: Run): boolean {
+function hasGpsData(run: RunMeta): boolean {
   const streamIds = new Set(run.streams.map((s) => s.streamId));
-  // Check for both old and new stream ID formats
   return (
-    (streamIds.has("pos.lat") && streamIds.has("pos.lng")) ||
-    (streamIds.has("gpsData.lat") && streamIds.has("gpsData.lng"))
+    streamIds.has(STREAM_ID_LATITUDE) && streamIds.has(STREAM_ID_LONGITUDE)
   );
-}
-
-function renderVisualization(
-  run: Run,
-  visualization: string,
-  refreshKey: number,
-) {
-  switch (visualization) {
-    case "gps":
-      return (
-        <GpsPositionVisualization
-          key={refreshKey} // Force remount on refresh
-          runUuid={run.uuid}
-          epochTimeS={run.epochTimeS}
-          tickBaseUs={run.tickBaseUs}
-        />
-      );
-    default:
-      return null;
-  }
 }
 
 export default function VisualizationSelector({
@@ -53,17 +39,16 @@ export default function VisualizationSelector({
   onValueChange,
 }: {
   runUuid: string;
-  value: string;
-  onValueChange: (viz: string) => void;
+  value: VisualizationType;
+  onValueChange: (viz: VisualizationType) => void;
 }) {
-  const [run, setRun] = useState<Run>();
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [run, setRun] = useState<RunMeta | null>(null);
 
-  const fetchRunData = useCallback(async () => {
+  const fetchRunMeta = useCallback(async () => {
     const res = await fetch(`/api/runs/${runUuid}`);
     const data = await res.json();
 
-    const nextRun: Run = {
+    const nextRun: RunMeta = {
       uuid: data.uuid,
       epochTimeS: BigInt(data.epochTimeS),
       tickBaseUs: BigInt(data.tickBaseUs),
@@ -72,11 +57,6 @@ export default function VisualizationSelector({
     };
 
     setRun(nextRun);
-
-    // If active, trigger a refresh of the visualization
-    if (nextRun.isActive) {
-      setRefreshKey((prev) => prev + 1);
-    }
   }, [runUuid]);
 
   // Initial fetch when runUuid changes
@@ -84,50 +64,51 @@ export default function VisualizationSelector({
     if (!runUuid) {
       return;
     }
-    fetchRunData();
-  }, [runUuid, fetchRunData]);
-
-  // Set up polling for new data if the current run is active
-  useEffect(() => {
-    if (!runUuid || !run?.isActive) {
-      return;
-    }
-
-    const pollInterval = setInterval(() => {
-      fetchRunData();
-    }, 5000);
-
-    return () => clearInterval(pollInterval);
-  }, [runUuid, run?.isActive, fetchRunData]);
+    setRun(null);
+    fetchRunMeta();
+  }, [runUuid, fetchRunMeta]);
 
   const items = useMemo(() => {
     const out: { value: string; label: string }[] = [];
     if (run && hasGpsData(run)) {
-      out.push({ value: "gps", label: "GPS position" });
+      out.push({ value: String(VisualizationType.GPS), label: "GPS position" });
     }
     return out;
   }, [run]);
 
-  // Auto-select first available visualization (controlled)
+  // Auto-select first available visualization
   useEffect(() => {
     if (items.length === 0) {
       return;
     }
 
     // If current selection is empty or no longer valid, pick the first option
-    const isValid = value && items.some((i) => i.value === value);
+    const isValid = items.some((i) => Number(i.value) === value);
     if (!isValid) {
-      onValueChange(items[0].value);
+      onValueChange(Number(items[0].value) as VisualizationType);
     }
   }, [items, value, onValueChange]);
+
+  const comboboxValue = value === VisualizationType.NONE ? "" : String(value);
+
+  const comboboxOnValueChange = useCallback(
+    (v: string) => {
+      if (!v) {
+        onValueChange(VisualizationType.NONE);
+        return;
+      }
+      onValueChange(Number(v) as VisualizationType);
+    },
+    [onValueChange],
+  );
 
   return (
     <>
       <div className="flex items-center gap-2">
         <Combobox
           items={items}
-          value={value}
-          onValueChange={onValueChange}
+          value={comboboxValue}
+          onValueChange={comboboxOnValueChange}
           placeholder={"Select visualization..."}
           searchPlaceholder={"Search visualization..."}
         />
@@ -141,7 +122,6 @@ export default function VisualizationSelector({
           </span>
         )}
       </div>
-      {run && renderVisualization(run, value, refreshKey)}
     </>
   );
 }

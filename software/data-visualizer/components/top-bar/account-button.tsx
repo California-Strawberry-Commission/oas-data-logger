@@ -1,15 +1,16 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
-import { User, LogOut } from "lucide-react";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Separator } from "@/components/ui/separator";
+import { LogOut, User } from "lucide-react";
+import { useState } from "react";
 
-export default function LogoutButton({ email }: { email: string }) {
+export default function AccountButton({ email }: { email: string }) {
   const [loading, setLoading] = useState(false);
 
   async function logout() {
@@ -37,7 +38,7 @@ export default function LogoutButton({ email }: { email: string }) {
             </div>
           </div>
 
-          <div className="h-px bg-border" />
+          <Separator />
 
           <Button
             variant="destructive"

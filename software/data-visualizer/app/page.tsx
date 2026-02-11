@@ -1,7 +1,7 @@
-import AdminButton from "@/components/admin-button";
-import DataSelector from "@/components/data-selector";
+import AdminButton from "@/components/top-bar/admin-button";
 import LoginModal from "@/components/login-modal";
-import LogoutButton from "@/components/logout-button";
+import AccountButton from "@/components/top-bar/account-button";
+import MainContent from "@/components/main-content";
 import { getCurrentUser } from "@/lib/auth";
 
 export default async function Home() {
@@ -17,20 +17,18 @@ export default async function Home() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col h-screen">
       {/* Top app bar */}
       <header className="w-full border-b bg-background">
         <div className="max-w-7xl mx-auto flex items-center justify-end gap-2 h-14 px-4">
           {isAdmin && <AdminButton />}
-          <LogoutButton email={user.email} />
+          <AccountButton email={user.email} />
         </div>
       </header>
 
       {/* Page content */}
-      <main className="flex-1 flex flex-col items-center p-6 gap-6">
-        <div className="w-full max-w-4xl">
-          <DataSelector />
-        </div>
+      <main className="flex flex-1 min-h-0">
+        <MainContent />
       </main>
     </div>
   );
