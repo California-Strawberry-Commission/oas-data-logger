@@ -1,7 +1,13 @@
 "use client";
 
-import HeatmapLayer, { HeatmapPoint } from "@/components/heatmap-layer";
 import { Button } from "@/components/ui/button";
+import {
+  distanceMeters,
+  toLatLng,
+} from "@/components/visualizations/gps-visualization";
+import HeatmapLayer, {
+  HeatmapPoint,
+} from "@/components/visualizations/heatmap-layer";
 import { Icon, LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Pause, Play } from "lucide-react";
@@ -14,8 +20,6 @@ import {
   TileLayer,
 } from "react-leaflet";
 
-const MIN_NUM_SATELLITES = 1; // filter out GPS points that were logged with less than X satellites
-const MAX_JUMP_METERS = 100; // filter out GPS points that jump more than X meters from the previous point
 const DWELL_RADIUS_METERS = 10; // consider any points that lie within X meters of another point to be dwelling at the same point
 
 export type MapPoint = {
@@ -47,41 +51,6 @@ const blueIcon = new ColorIcon({
   iconUrl: "/marker-icon-blue.png",
 });
 
-function toLatLng(position: LatLngExpression): { lat: number; lng: number } {
-  if (Array.isArray(position)) {
-    const [lat, lng] = position as [number, number];
-    return { lat, lng };
-  }
-  if ("lat" in position && "lng" in position) {
-    return { lat: position.lat, lng: position.lng };
-  }
-  throw new Error("Unsupported LatLngExpression shape");
-}
-
-// Calculates haversine distance between two points
-function distanceMeters(a: LatLngExpression, b: LatLngExpression): number {
-  const { lat: lat1, lng: lng1 } = toLatLng(a);
-  const { lat: lat2, lng: lng2 } = toLatLng(b);
-
-  const R = 6371000; // Earth radius in meters
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-
-  const dLatRad = toRad(lat2 - lat1);
-  const dLngRad = toRad(lng2 - lng1);
-  const lat1Rad = toRad(lat1);
-  const lat2Rad = toRad(lat2);
-
-  const sinDLat = Math.sin(dLatRad / 2);
-  const sinDLon = Math.sin(dLngRad / 2);
-
-  const h =
-    sinDLat * sinDLat +
-    Math.cos(lat1Rad) * Math.cos(lat2Rad) * sinDLon * sinDLon;
-  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-
-  return R * c;
-}
-
 function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -103,51 +72,11 @@ export default function Map({
   points: MapPoint[];
   playbackDurationS?: number;
 }) {
-  const [filterEnabled, setFilterEnabled] = useState(true);
   const [heatmapEnabled, setHeatmapEnabled] = useState(false);
-
-  const sortedPoints: MapPoint[] = useMemo(
-    // Create a copy of the points array before sorting in place
-    () => [...points].sort((a, b) => a.timestampS - b.timestampS),
-    [points],
-  );
-
-  // Filtered view when toggle is on
-  const displayPoints: MapPoint[] = useMemo(() => {
-    if (!filterEnabled) {
-      return sortedPoints;
-    }
-
-    if (sortedPoints.length === 0) {
-      return [];
-    }
-
-    const result: MapPoint[] = [];
-    let lastKept: MapPoint | null = null;
-    for (const p of sortedPoints) {
-      // Filter out GPS points that were logged with less than X satellites
-      if (p.numSatellites < MIN_NUM_SATELLITES) {
-        continue;
-      }
-
-      // Filter out GPS points that jump more than X meters from the previous point
-      if (lastKept) {
-        const jump = distanceMeters(lastKept.position, p.position);
-        if (jump > MAX_JUMP_METERS) {
-          continue;
-        }
-      }
-
-      result.push(p);
-      lastKept = p;
-    }
-
-    return result;
-  }, [sortedPoints, filterEnabled]);
 
   // Create data for heatmap rendering
   const heatmapPoints: HeatmapPoint[] = useMemo(() => {
-    const numPoints = displayPoints.length;
+    const numPoints = points.length;
     if (numPoints === 0) {
       return [];
     }
@@ -155,7 +84,7 @@ export default function Map({
     // Calculate time deltas between each point in displayPoints
     const dts: number[] = new Array(numPoints).fill(0);
     for (let i = 0; i < numPoints - 1; i++) {
-      const dt = displayPoints[i + 1].timestampS - displayPoints[i].timestampS;
+      const dt = points[i + 1].timestampS - points[i].timestampS;
       dts[i] = Math.max(0, Math.min(dt, 60)); // clamp to avoid outliers ruining the visualization
     }
     // Set the dt of the last point to be the same as the second-to-last point
@@ -166,17 +95,17 @@ export default function Map({
     const maxDt =
       dts.reduce((prev, curr) => (curr > prev ? curr : prev), 0) || 1;
 
-    return displayPoints.map((p, idx) => {
+    return points.map((p, idx) => {
       const { lat, lng } = toLatLng(p.position);
       // Set the heatmap weight for each point to be dt normalized to [0, 1]
       const weight = dts[idx] / maxDt;
       return [lat, lng, weight] as HeatmapPoint;
     });
-  }, [displayPoints]);
+  }, [points]);
 
   // Calculate min and max dwell times
   const { minDwellS, maxDwellS } = useMemo(() => {
-    const numPoints = displayPoints.length;
+    const numPoints = points.length;
     if (numPoints < 2) {
       return { minDwellS: 0, maxDwellS: 0 };
     }
@@ -189,10 +118,10 @@ export default function Map({
     let minDwellS = Infinity;
     let maxDwellS = 0;
     for (let i = 0; i < numPoints - 1; i++) {
-      const dt = displayPoints[i + 1].timestampS - displayPoints[i].timestampS;
+      const dt = points[i + 1].timestampS - points[i].timestampS;
       const dist = distanceMeters(
-        displayPoints[anchorIdx].position,
-        displayPoints[i + 1].position,
+        points[anchorIdx].position,
+        points[i + 1].position,
       );
       if (dist <= DWELL_RADIUS_METERS) {
         // We're still dwelling at the anchor point
@@ -215,44 +144,42 @@ export default function Map({
     }
 
     return { minDwellS, maxDwellS };
-  }, [displayPoints]);
+  }, [points]);
 
-  const startTimestampS = displayPoints[0]?.timestampS ?? 0;
+  const startTimestampS = points[0]?.timestampS ?? 0;
   const endTimestampS =
-    displayPoints[displayPoints.length - 1]?.timestampS ?? startTimestampS;
+    points[points.length - 1]?.timestampS ?? startTimestampS;
 
   // Current timestamp of the scrubber
   const [currentTimestampS, setCurrentTimestampS] =
     useState<number>(startTimestampS);
 
-  // When the displayPoints set changes, reset scrubber to start
+  // When the points change, reset scrubber to start
   useEffect(() => {
-    if (displayPoints.length > 0) {
-      setCurrentTimestampS(displayPoints[0].timestampS);
+    if (points.length > 0) {
+      setCurrentTimestampS(points[0].timestampS);
     }
-  }, [displayPoints]);
+  }, [points]);
 
   // Find the point whose timestamp is closest to currentTimestampS
   const currentPoint = useMemo(() => {
-    if (displayPoints.length === 0) {
+    if (points.length === 0) {
       return null;
     }
 
-    let closest = displayPoints[0];
-    let smallestDiff = Math.abs(
-      displayPoints[0].timestampS - currentTimestampS,
-    );
+    let closest = points[0];
+    let smallestDiff = Math.abs(points[0].timestampS - currentTimestampS);
 
-    for (let i = 1; i < displayPoints.length; i++) {
-      const diff = Math.abs(displayPoints[i].timestampS - currentTimestampS);
+    for (let i = 1; i < points.length; i++) {
+      const diff = Math.abs(points[i].timestampS - currentTimestampS);
       if (diff < smallestDiff) {
         smallestDiff = diff;
-        closest = displayPoints[i];
+        closest = points[i];
       }
     }
 
     return closest;
-  }, [displayPoints, currentTimestampS]);
+  }, [points, currentTimestampS]);
 
   // Whether the scrubber playback animation is active
   const [isPlaying, setIsPlaying] = useState(false);
@@ -332,18 +259,18 @@ export default function Map({
   }, [isPlaying, startTimestampS, endTimestampS, playbackDurationS]);
 
   // Note: all hooks must be defined before early returns (Rules of Hooks)
-  if (displayPoints.length === 0 || !currentPoint) {
+  if (points.length === 0 || !currentPoint) {
     return null;
   }
 
-  const polylinePositions = displayPoints.map((p) => p.position);
+  const polylinePositions = points.map((p) => p.position);
 
   return (
     <div className="flex h-full w-full flex-col">
       {/* Map + overlay container */}
       <div className="relative h-full w-full flex-1">
         <MapContainer
-          center={displayPoints[0].position}
+          center={points[0].position}
           zoom={18}
           scrollWheelZoom={true}
           touchZoom={true}
@@ -370,7 +297,7 @@ export default function Map({
           <Polyline positions={polylinePositions} color="blue" />
 
           {/* Start marker */}
-          <Marker position={displayPoints[0].position} icon={greenIcon}>
+          <Marker position={points[0].position} icon={greenIcon}>
             <Popup>
               <div className="max-w-[200px] break-words text-sm">
                 {`Start: ${new Date(startTimestampS * 1000).toLocaleString()}`}
@@ -379,10 +306,7 @@ export default function Map({
           </Marker>
 
           {/* End marker */}
-          <Marker
-            position={displayPoints[displayPoints.length - 1].position}
-            icon={redIcon}
-          >
+          <Marker position={points[points.length - 1].position} icon={redIcon}>
             <Popup>
               <div className="max-w-[200px] break-words text-sm">
                 {`End: ${new Date(endTimestampS * 1000).toLocaleString()}`}
@@ -411,7 +335,8 @@ export default function Map({
         )}
       </div>
 
-      <div className="rounded-md bg-white/80 p-2 text-xs shadow">
+      {/* Map controls */}
+      <div className="bg-white/80 p-2 text-xs">
         {/* Scrubber */}
         <input
           type="range"
@@ -458,18 +383,6 @@ export default function Map({
               </>
             )}
           </Button>
-        </div>
-
-        {/* Filter toggle */}
-        <div className="mt-2 flex items-center justify-center gap-2">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={filterEnabled}
-              onChange={(e) => setFilterEnabled(e.target.checked)}
-            />
-            Filter outliers
-          </label>
         </div>
 
         {/* Heatmap toggle */}
