@@ -20,13 +20,23 @@ export default function DeviceSelector({
   onValueChange: (deviceId: string) => void;
 }) {
   const [devices, setDevices] = useState<Device[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string>("");
 
   useEffect(() => {
     let cancelled = false;
 
-    fetch("/api/devices")
-      .then((res) => res.json())
-      .then((data) => {
+    async function load() {
+      try {
+        setIsLoading(true);
+        setError("");
+
+        const res = await fetch("/api/devices");
+        if (!res.ok) {
+          throw new Error(`Failed to fetch devices (${res.status})`);
+        }
+
+        const data = await res.json();
         if (cancelled) {
           return;
         }
@@ -35,6 +45,7 @@ export default function DeviceSelector({
           id: d.id,
           name: d.name,
         }));
+
         const sorted = devices.sort((a: Device, b: Device) => {
           // Non-null names first
           if (a.name === null && b.name !== null) {
@@ -57,9 +68,22 @@ export default function DeviceSelector({
           // If both names are null, then compare id
           return a.id.localeCompare(b.id);
         });
-        setDevices(sorted);
-      });
 
+        setDevices(sorted);
+      } catch (e) {
+        if (cancelled) {
+          return;
+        }
+        setDevices([]);
+        setError("Failed to load devices");
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    load();
     return () => {
       cancelled = true;
     };
@@ -67,27 +91,40 @@ export default function DeviceSelector({
 
   // If the selected device no longer exists, clear it
   useEffect(() => {
-    if (value && !devices.some((d) => d.id === value)) {
+    if (!isLoading && value && !devices.some((d) => d.id === value)) {
       onValueChange("");
     }
-  }, [value, devices, onValueChange]);
+  }, [value, devices, isLoading, onValueChange]);
 
-  const items = useMemo(
-    () =>
-      devices.map((device) => ({
-        value: device.id,
-        label: getDeviceLabel(device),
-      })),
-    [devices],
-  );
+  const items = useMemo(() => {
+    if (isLoading) {
+      return [{ value: "__loading__", label: "Loading devices..." }];
+    }
+    if (error) {
+      return [{ value: "__error__", label: error }];
+    }
+    return devices.map((device) => ({
+      value: device.id,
+      label: getDeviceLabel(device),
+    }));
+  }, [devices, isLoading, error]);
+
+  const hasPlaceholder = items.length > 0 && items[0].value.startsWith("__");
 
   return (
     <Combobox
       items={items}
       value={value}
-      onValueChange={onValueChange}
-      placeholder={"Select device..."}
-      searchPlaceholder={"Search device..."}
+      onValueChange={(next) => {
+        // Ignore placeholder items
+        if (next.startsWith("__")) {
+          return;
+        }
+        onValueChange(next);
+      }}
+      placeholder={isLoading ? "Loading devices..." : "Select device..."}
+      searchPlaceholder={isLoading ? "Loading..." : "Search device..."}
+      disabled={hasPlaceholder}
     />
   );
 }

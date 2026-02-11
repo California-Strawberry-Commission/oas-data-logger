@@ -57,6 +57,7 @@ export default function Combobox({
   value, // controlled if defined
   onValueChange,
   defaultSelected,
+  disabled,
 }: {
   items: Item[];
   placeholder?: string;
@@ -64,6 +65,7 @@ export default function Combobox({
   value?: string;
   onValueChange?: (value: string) => void;
   defaultSelected?: string;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState<boolean>(false);
   const [internalValue, setInternalValue] = useState(""); // selected value when uncontrolled
@@ -105,6 +107,7 @@ export default function Combobox({
           role="combobox"
           aria-expanded={open}
           className="w-full justify-between"
+          disabled={disabled}
         >
           <span className="min-w-0 flex-1 truncate text-left">
             {selectedItem ? selectedItem.label : placeholder}
