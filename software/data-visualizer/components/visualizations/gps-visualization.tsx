@@ -226,7 +226,7 @@ export default function GpsVisualization({
     );
   } else {
     return (
-      <div className="w-full h-150 border">
+      <div className="w-full h-150 border rounded-md overflow-hidden">
         <MapComponent points={filteredPoints} />
       </div>
     );

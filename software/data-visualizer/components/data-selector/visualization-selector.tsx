@@ -1,30 +1,18 @@
 "use client";
 
 import Combobox from "@/components/ui/combobox";
-import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   STREAM_ID_LATITUDE,
   STREAM_ID_LONGITUDE,
 } from "@/components/visualizations/gps-visualization";
+import type { RunMeta } from "@/lib/useRunMeta";
+import useRunMeta from "@/lib/useRunMeta";
+import { useCallback, useEffect, useMemo } from "react";
 
 export enum VisualizationType {
   NONE,
   GPS,
 }
-
-type RunMeta = {
-  uuid: string;
-  epochTimeS: bigint;
-  tickBaseUs: bigint;
-  streams: Stream[];
-  isActive?: boolean;
-};
-
-type Stream = {
-  streamId: string;
-  streamType: string;
-  count: number;
-};
 
 function hasGpsData(run: RunMeta): boolean {
   const streamIds = new Set(run.streams.map((s) => s.streamId));
@@ -42,31 +30,7 @@ export default function VisualizationSelector({
   value: VisualizationType;
   onValueChange: (viz: VisualizationType) => void;
 }) {
-  const [run, setRun] = useState<RunMeta | null>(null);
-
-  const fetchRunMeta = useCallback(async () => {
-    const res = await fetch(`/api/runs/${runUuid}`);
-    const data = await res.json();
-
-    const nextRun: RunMeta = {
-      uuid: data.uuid,
-      epochTimeS: BigInt(data.epochTimeS),
-      tickBaseUs: BigInt(data.tickBaseUs),
-      streams: data.streams,
-      isActive: data.isActive,
-    };
-
-    setRun(nextRun);
-  }, [runUuid]);
-
-  // Initial fetch when runUuid changes
-  useEffect(() => {
-    if (!runUuid) {
-      return;
-    }
-    setRun(null);
-    fetchRunMeta();
-  }, [runUuid, fetchRunMeta]);
+  const { run } = useRunMeta(runUuid);
 
   const items = useMemo(() => {
     const out: { value: string; label: string }[] = [];

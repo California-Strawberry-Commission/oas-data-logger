@@ -3,97 +3,58 @@
 import type { Selection } from "@/components/data-selector/data-selector";
 import { VisualizationType } from "@/components/data-selector/visualization-selector";
 import GpsVisualization from "@/components/visualizations/gps-visualization";
-import { useCallback, useEffect, useMemo, useState } from "react";
-
-type RunMeta = {
-  uuid: string;
-  epochTimeS: bigint;
-  tickBaseUs: bigint;
-  isActive?: boolean;
-};
+import useRunMeta from "@/lib/useRunMeta";
 
 export default function VisualizationArea({
   selection,
 }: {
   selection: Selection;
 }) {
-  const [run, setRun] = useState<RunMeta | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [error, setError] = useState<string>("");
+  const isSelectionValid =
+    selection.deviceId !== "" &&
+    selection.runUuid !== "" &&
+    selection.visualizationType !== VisualizationType.NONE;
 
-  const runUuid = selection.runUuid;
+  const { run, error, refreshKey } = useRunMeta(selection.runUuid);
 
-  const fetchRunMeta = useCallback(async () => {
-    setError("");
-    const res = await fetch(`/api/runs/${runUuid}`);
-    if (!res.ok) {
-      setRun(null);
-      setError("Failed to load run");
-      return;
-    }
+  // No selection yet
+  if (!isSelectionValid) {
+    return (
+      <div className="h-full w-full flex items-center justify-center text-muted-foreground p-4 text-center">
+        Select a device, run, and visualization type.
+      </div>
+    );
+  }
 
-    const data = await res.json();
-    const nextRun: RunMeta = {
-      uuid: data.uuid,
-      epochTimeS: BigInt(data.epochTimeS),
-      tickBaseUs: BigInt(data.tickBaseUs),
-      isActive: data.isActive,
-    };
+  // Error
+  if (error) {
+    return (
+      <div className="h-full w-full flex items-center justify-center text-destructive p-4 text-center">
+        {error}
+      </div>
+    );
+  }
 
-    setRun(nextRun);
+  // Loading
+  if (!run) {
+    return (
+      <div className="h-full w-full flex items-center justify-center text-muted-foreground">
+        Loading...
+      </div>
+    );
+  }
 
-    // If active, force visualization remount so it can reload any internal state
-    if (nextRun.isActive) {
-      setRefreshKey((k) => k + 1);
-    }
-  }, [runUuid]);
-
-  // Initial fetch when runUuid changes
-  useEffect(() => {
-    if (!runUuid) {
-      return;
-    }
-    setRun(null);
-    setRefreshKey(0);
-    fetchRunMeta();
-  }, [runUuid, fetchRunMeta]);
-
-  const content = useMemo(() => {
-    if (!run) {
-      return null;
-    }
-
-    switch (selection.visualizationType) {
-      case VisualizationType.GPS:
-        return (
-          <GpsVisualization
-            key={refreshKey}
-            runUuid={run.uuid}
-            epochTimeS={run.epochTimeS}
-            tickBaseUs={run.tickBaseUs}
-          />
-        );
-
-      default:
-        return null;
-    }
-  }, [selection.visualizationType, run, refreshKey]);
-
+  // Render viz
   return (
-    <div className="h-full w-full overflow-hidden">
-      {error ? (
-        <div className="h-full flex items-center justify-center text-destructive">
-          {error}
-        </div>
-      ) : !run ? (
-        <div className="h-full flex items-center justify-center text-muted-foreground">
-          Loading...
-        </div>
-      ) : (
-        <div className="flex flex-col h-full w-full items-center overflow-y-auto p-4 gap-4">
-          {content}
-        </div>
-      )}
+    <div className="flex flex-col w-full items-center p-4 gap-4 md:overflow-y-auto">
+      {selection.visualizationType === VisualizationType.GPS ? (
+        <GpsVisualization
+          key={refreshKey}
+          runUuid={run.uuid}
+          epochTimeS={run.epochTimeS}
+          tickBaseUs={run.tickBaseUs}
+        />
+      ) : null}
     </div>
   );
 }

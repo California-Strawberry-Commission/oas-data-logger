@@ -33,7 +33,7 @@ export default async function Home() {
       </header>
 
       {/* Page content */}
-      <main className="flex flex-1 min-h-0">
+      <main className="flex flex-col md:flex-row md:flex-1 md:min-h-0">
         <MainContent />
       </main>
     </div>

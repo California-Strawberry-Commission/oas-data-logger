@@ -104,7 +104,7 @@ export default function Combobox({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="max-w-100 w-full justify-between"
+          className="w-full justify-between"
         >
           <span className="min-w-0 flex-1 truncate text-left">
             {selectedItem ? selectedItem.label : placeholder}
