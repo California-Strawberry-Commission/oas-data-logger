@@ -20,13 +20,13 @@ import {
   TileLayer,
 } from "react-leaflet";
 
-const DWELL_RADIUS_METERS = 10; // consider any points that lie within X meters of another point to be dwelling at the same point
-
 export type MapPoint = {
   timestampS: number;
   position: LatLngExpression;
   numSatellites: number;
 };
+
+const DWELL_RADIUS_METERS = 10; // consider any points that lie within X meters of another point to be dwelling at the same point
 
 const ColorIcon = Icon.extend({
   options: {
@@ -65,6 +65,15 @@ function formatDuration(seconds: number): string {
   return `${s}s`;
 }
 
+/**
+ * Find the index of the point whose timestamp is closest to a target timestamp.
+ * Uses binary search and assumes the input array is already sorted by
+ * `timestampS` in ascending order.
+ *
+ * @param points Time-sorted GPS points.
+ * @param timestampS Target timestamp in seconds.
+ * @returns Index of the closest point.
+ */
 function findClosestIndexByTimestamp(
   points: MapPoint[],
   timestampS: number,
@@ -92,6 +101,115 @@ function findClosestIndexByTimestamp(
   return d1 <= d0 ? prev : lo;
 }
 
+/**
+ * Reduce the number of GPS points by keeping only points that are at least
+ * `minDistMeters` apart from the previously kept point. This is intended to
+ * be used to improve performance for map rendering.
+ *
+ * @param points GPS points in traversal order.
+ * @param minDistMeters Minimum distance required to keep a point.
+ * @returns Decimated GPS points.
+ */
+function decimateByDistance(
+  points: MapPoint[],
+  minDistMeters: number = 3,
+): MapPoint[] {
+  if (points.length === 0) {
+    return [];
+  }
+
+  const result: MapPoint[] = [points[0]];
+  let lastKept = points[0];
+  for (let i = 1; i < points.length; i++) {
+    if (
+      distanceMeters(lastKept.position, points[i].position) >= minDistMeters
+    ) {
+      result.push(points[i]);
+      lastKept = points[i];
+    }
+  }
+
+  // Always keep the last point
+  const lastPoint = points[points.length - 1];
+  if (result[result.length - 1] !== lastPoint) {
+    result.push(lastPoint);
+  }
+
+  return result;
+}
+
+function toHeatmapPoints(points: MapPoint[]): HeatmapPoint[] {
+  const numPoints = points.length;
+  if (numPoints === 0) {
+    return [];
+  }
+
+  // Calculate time deltas between each point in displayPoints
+  const dts: number[] = new Array(numPoints).fill(0);
+  for (let i = 0; i < numPoints - 1; i++) {
+    const dt = points[i + 1].timestampS - points[i].timestampS;
+    dts[i] = Math.max(0, Math.min(dt, 60)); // clamp to avoid outliers ruining the visualization
+  }
+  // Set the dt of the last point to be the same as the second-to-last point
+  if (numPoints > 1) {
+    dts[numPoints - 1] = dts[numPoints - 2];
+  }
+
+  const maxDt = dts.reduce((prev, curr) => (curr > prev ? curr : prev), 0) || 1;
+
+  return points.map((p, idx) => {
+    const { lat, lng } = toLatLng(p.position);
+    // Set the heatmap weight for each point to be dt normalized to [0, 1]
+    const weight = dts[idx] / maxDt;
+    return [lat, lng, weight] as HeatmapPoint;
+  });
+}
+
+function calculateDwellMinMax(points: MapPoint[]): {
+  minS: number;
+  maxS: number;
+} {
+  const numPoints = points.length;
+  if (numPoints < 2) {
+    return { minS: 0, maxS: 0 };
+  }
+
+  // Compute min/max dwell using a sliding anchor. Any points following an anchor point that is
+  // less than DWELL_RADIUS_METERS to the anchor point is considered to be dwelling at the
+  // anchor point.
+  let anchorIdx = 0;
+  let currentDwellS = 0;
+  let minDwellS = Infinity;
+  let maxDwellS = 0;
+  for (let i = 0; i < numPoints - 1; i++) {
+    const dt = points[i + 1].timestampS - points[i].timestampS;
+    const dist = distanceMeters(
+      points[anchorIdx].position,
+      points[i + 1].position,
+    );
+    if (dist <= DWELL_RADIUS_METERS) {
+      // We're still dwelling at the anchor point
+      currentDwellS += dt;
+    } else {
+      // We're no longer dwelling at the anchor point.
+      // Update min/max dwell times and update the anchor point.
+      minDwellS = Math.min(minDwellS, currentDwellS);
+      maxDwellS = Math.max(maxDwellS, currentDwellS);
+      anchorIdx = i + 1;
+      currentDwellS = 0;
+    }
+  }
+
+  minDwellS = Math.min(minDwellS, currentDwellS);
+  maxDwellS = Math.max(maxDwellS, currentDwellS);
+
+  if (minDwellS === Infinity) {
+    minDwellS = 0;
+  }
+
+  return { minS: minDwellS, maxS: maxDwellS };
+}
+
 export default function Map({
   points,
   playbackDurationS = 10,
@@ -105,81 +223,29 @@ export default function Map({
 }) {
   const [heatmapEnabled, setHeatmapEnabled] = useState(false);
 
-  // Create data for heatmap rendering
-  const heatmapPoints: HeatmapPoint[] = useMemo(() => {
-    const numPoints = points.length;
-    if (numPoints === 0) {
-      return [];
+  // Decimate points to improve performance
+  const renderedPoints = useMemo(() => {
+    if (points.length > 1000) {
+      return decimateByDistance(points, 3);
     }
-
-    // Calculate time deltas between each point in displayPoints
-    const dts: number[] = new Array(numPoints).fill(0);
-    for (let i = 0; i < numPoints - 1; i++) {
-      const dt = points[i + 1].timestampS - points[i].timestampS;
-      dts[i] = Math.max(0, Math.min(dt, 60)); // clamp to avoid outliers ruining the visualization
-    }
-    // Set the dt of the last point to be the same as the second-to-last point
-    if (numPoints > 1) {
-      dts[numPoints - 1] = dts[numPoints - 2];
-    }
-
-    const maxDt =
-      dts.reduce((prev, curr) => (curr > prev ? curr : prev), 0) || 1;
-
-    return points.map((p, idx) => {
-      const { lat, lng } = toLatLng(p.position);
-      // Set the heatmap weight for each point to be dt normalized to [0, 1]
-      const weight = dts[idx] / maxDt;
-      return [lat, lng, weight] as HeatmapPoint;
-    });
+    return points;
   }, [points]);
+
+  // Create data for heatmap rendering
+  const heatmapPoints: HeatmapPoint[] = useMemo(
+    () => toHeatmapPoints(renderedPoints),
+    [renderedPoints],
+  );
 
   // Calculate min and max dwell times
-  const { minDwellS, maxDwellS } = useMemo(() => {
-    const numPoints = points.length;
-    if (numPoints < 2) {
-      return { minDwellS: 0, maxDwellS: 0 };
-    }
+  const { minS: minDwellS, maxS: maxDwellS } = useMemo(
+    () => calculateDwellMinMax(renderedPoints),
+    [renderedPoints],
+  );
 
-    // Compute min/max dwell using a sliding anchor. Any points following an anchor point that is
-    // less than DWELL_RADIUS_METERS to the anchor point is considered to be dwelling at the
-    // anchor point.
-    let anchorIdx = 0;
-    let dwellS = 0;
-    let minDwellS = Infinity;
-    let maxDwellS = 0;
-    for (let i = 0; i < numPoints - 1; i++) {
-      const dt = points[i + 1].timestampS - points[i].timestampS;
-      const dist = distanceMeters(
-        points[anchorIdx].position,
-        points[i + 1].position,
-      );
-      if (dist <= DWELL_RADIUS_METERS) {
-        // We're still dwelling at the anchor point
-        dwellS += dt;
-      } else {
-        // We're no longer dwelling at the anchor point.
-        // Update min/max dwell times and update the anchor point.
-        minDwellS = Math.min(minDwellS, dwellS);
-        maxDwellS = Math.max(maxDwellS, dwellS);
-        anchorIdx = i + 1;
-        dwellS = 0;
-      }
-    }
-
-    minDwellS = Math.min(minDwellS, dwellS);
-    maxDwellS = Math.max(maxDwellS, dwellS);
-
-    if (minDwellS === Infinity) {
-      minDwellS = 0;
-    }
-
-    return { minDwellS, maxDwellS };
-  }, [points]);
-
-  const startTimestampS = points[0]?.timestampS ?? 0;
+  const startTimestampS = renderedPoints[0]?.timestampS ?? 0;
   const endTimestampS =
-    points[points.length - 1]?.timestampS ?? startTimestampS;
+    renderedPoints[renderedPoints.length - 1]?.timestampS ?? startTimestampS;
 
   // Current timestamp of the scrubber
   const [uncontrolledTimestampS, setUncontrolledTimestampS] =
@@ -196,19 +262,10 @@ export default function Map({
 
   // When the points change, reset scrubber to start
   useEffect(() => {
-    if (points.length > 0) {
-      setCurrentTimestampS(points[0].timestampS);
+    if (renderedPoints.length > 0) {
+      setCurrentTimestampS(renderedPoints[0].timestampS);
     }
-  }, [points]);
-
-  // Find the point whose timestamp is closest to currentTimestampS
-  const currentPointIdx = useMemo(() => {
-    if (points.length === 0) {
-      return -1;
-    }
-    return findClosestIndexByTimestamp(points, currentTimestampS);
-  }, [points, currentTimestampS]);
-  const currentPoint = currentPointIdx >= 0 ? points[currentPointIdx] : null;
+  }, [renderedPoints]);
 
   // Whether the scrubber playback animation is active
   const [isPlaying, setIsPlaying] = useState(false);
@@ -287,19 +344,37 @@ export default function Map({
     };
   }, [isPlaying, startTimestampS, endTimestampS, playbackDurationS]);
 
-  // Note: all hooks must be defined before early returns (Rules of Hooks)
-  if (points.length === 0 || !currentPoint) {
+  // Positions to be drawn as line segments on the map
+  const polylinePositions = useMemo(
+    () => renderedPoints.map((p) => p.position),
+    [renderedPoints],
+  );
+
+  // Find the point whose timestamp is closest to currentTimestampS, used to
+  // render the current position marker on the map
+  const currentPoint = useMemo(() => {
+    if (renderedPoints.length === 0) {
+      return null;
+    }
+    const currentPointIdx = findClosestIndexByTimestamp(
+      renderedPoints,
+      currentTimestampS,
+    );
+    return currentPointIdx >= 0 ? renderedPoints[currentPointIdx] : null;
+  }, [renderedPoints, currentTimestampS]);
+
+  // Note: all hooks must be defined before this early return (Rules of Hooks)
+  if (renderedPoints.length === 0 || !currentPoint) {
     return null;
   }
-
-  const polylinePositions = points.map((p) => p.position);
 
   return (
     <div className="flex h-full w-full flex-col">
       {/* Map + overlay container */}
       <div className="relative h-full w-full flex-1">
         <MapContainer
-          center={points[0].position}
+          preferCanvas={true}
+          center={renderedPoints[0].position}
           zoom={18}
           scrollWheelZoom={true}
           touchZoom={true}
@@ -326,7 +401,7 @@ export default function Map({
           <Polyline positions={polylinePositions} color="blue" />
 
           {/* Start marker */}
-          <Marker position={points[0].position} icon={greenIcon}>
+          <Marker position={renderedPoints[0].position} icon={greenIcon}>
             <Popup>
               <div className="max-w-[200px] break-words text-sm">
                 {`Start: ${new Date(startTimestampS * 1000).toLocaleString()}`}
@@ -335,7 +410,10 @@ export default function Map({
           </Marker>
 
           {/* End marker */}
-          <Marker position={points[points.length - 1].position} icon={redIcon}>
+          <Marker
+            position={renderedPoints[renderedPoints.length - 1].position}
+            icon={redIcon}
+          >
             <Popup>
               <div className="max-w-[200px] break-words text-sm">
                 {`End: ${new Date(endTimestampS * 1000).toLocaleString()}`}
