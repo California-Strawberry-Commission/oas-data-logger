@@ -1,9 +1,10 @@
 "use client";
 
-import type { MapPoint } from "@/components/visualizations/map";
+import type { MapPoint } from "@/components/visualizations/gps/map";
 import { LatLngExpression } from "leaflet";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
+import SpeedChart from "@/components/visualizations/gps/speed-chart";
 
 // Lazy load Map
 const MapComponent = dynamic(() => import("./map"), {
@@ -18,6 +19,7 @@ export const STREAM_ID_ALTITUDE = "gpsData.alt";
 
 const MIN_NUM_SATELLITES = 1; // filter out GPS points that were logged with less than X satellites
 const MAX_JUMP_METERS = 100; // filter out GPS points that jump more than X meters from the previous point
+const MPS_TO_MPH = 2.2369362920544;
 
 type DataPoint = {
   streamId: string;
@@ -149,6 +151,72 @@ function toMapPoints(
   return mapPoints;
 }
 
+type SpeedSample = {
+  timestampS: number;
+  speedMph: number;
+};
+
+function toSpeedDataSeries(points: MapPoint[]): SpeedSample[] {
+  if (points.length === 0) {
+    return [];
+  }
+
+  const out: SpeedSample[] = [
+    { timestampS: points[0].timestampS, speedMph: 0 },
+  ];
+
+  for (let i = 1; i < points.length; i++) {
+    const dt = points[i].timestampS - points[i - 1].timestampS;
+    if (!Number.isFinite(dt) || dt <= 0) {
+      out.push({ timestampS: points[i].timestampS, speedMph: 0 });
+      continue;
+    }
+    const distM = distanceMeters(points[i - 1].position, points[i].position);
+    const mph = (distM / dt) * MPS_TO_MPH;
+    out.push({
+      timestampS: points[i].timestampS,
+      speedMph: Number.isFinite(mph) ? mph : 0,
+    });
+  }
+  return out;
+}
+
+/**
+ * Apply exponential moving average smoothing to speed data series.
+ *
+ * @param data Raw speed samples.
+ * @param halfLifeS The half-life, in seconds, which is the amount of time it takes for a change to be reflected by 50% of the smoothed signal.
+ * @returns Smoothed speed data series.
+ */
+function smoothSpeedEma(
+  data: SpeedSample[],
+  halfLifeS: number = 5,
+): SpeedSample[] {
+  if (data.length === 0) {
+    return [];
+  }
+
+  const out: SpeedSample[] = [];
+  let y = data[0].speedMph;
+  out.push({ ...data[0], speedMph: y });
+
+  const ln2 = Math.log(2);
+
+  for (let i = 1; i < data.length; i++) {
+    const dt = data[i].timestampS - data[i - 1].timestampS;
+    // If dt is weird, fall back to no smoothing step.
+    const safeDt = Number.isFinite(dt) && dt > 0 ? dt : 0;
+
+    // Convert half-life to per-step alpha (time-aware)
+    const alpha = safeDt > 0 ? 1 - Math.exp(-(ln2 * safeDt) / halfLifeS) : 1;
+
+    y = y + alpha * (data[i].speedMph - y);
+    out.push({ ...data[i], speedMph: y });
+  }
+
+  return out;
+}
+
 export default function GpsVisualization({
   runUuid,
   epochTimeS,
@@ -184,8 +252,11 @@ export default function GpsVisualization({
       });
   }, [runUuid, epochTimeS, tickBaseUs]);
 
-  const filteredPoints: MapPoint[] | null = useMemo(() => {
-    if (!filterEnabled || mapPoints === null || mapPoints.length === 0) {
+  const filteredPoints: MapPoint[] = useMemo(() => {
+    if (mapPoints === null || mapPoints.length === 0) {
+      return [];
+    }
+    if (!filterEnabled) {
       return mapPoints;
     }
 
@@ -212,7 +283,15 @@ export default function GpsVisualization({
     return result;
   }, [mapPoints, filterEnabled]);
 
-  if (filteredPoints === null) {
+  const speedData = useMemo(() => {
+    if (!filteredPoints || filteredPoints.length === 0) {
+      return [];
+    }
+    const raw = toSpeedDataSeries(filteredPoints);
+    return smoothSpeedEma(raw, 5);
+  }, [filteredPoints]);
+
+  if (mapPoints === null) {
     return (
       <div className="w-full h-150">
         <LoadingMap />
@@ -226,9 +305,14 @@ export default function GpsVisualization({
     );
   } else {
     return (
-      <div className="w-full h-150 border rounded-md overflow-hidden">
-        <MapComponent points={filteredPoints} />
-      </div>
+      <>
+        <div className="w-full h-150 border rounded-md overflow-hidden">
+          <MapComponent points={filteredPoints} />
+        </div>
+        <div className="w-full h-60 p-4 border rounded-md overflow-hidden">
+          <SpeedChart data={speedData} />
+        </div>
+      </>
     );
   }
 }

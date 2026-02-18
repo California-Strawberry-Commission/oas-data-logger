@@ -4,10 +4,10 @@ import { Button } from "@/components/ui/button";
 import {
   distanceMeters,
   toLatLng,
-} from "@/components/visualizations/gps-visualization";
+} from "@/components/visualizations/gps/gps-visualization";
 import HeatmapLayer, {
   HeatmapPoint,
-} from "@/components/visualizations/heatmap-layer";
+} from "@/components/visualizations/gps/heatmap-layer";
 import { Icon, LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Pause, Play } from "lucide-react";
@@ -65,12 +65,43 @@ function formatDuration(seconds: number): string {
   return `${s}s`;
 }
 
+function findClosestIndexByTimestamp(
+  points: MapPoint[],
+  timestampS: number,
+): number {
+  let lo = 0;
+  let hi = points.length - 1;
+
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (points[mid].timestampS < timestampS) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+
+  // lo is first index with timestamp >= t
+  if (lo === 0) {
+    return 0;
+  }
+  const prev = lo - 1;
+
+  const d0 = Math.abs(points[lo].timestampS - timestampS);
+  const d1 = Math.abs(points[prev].timestampS - timestampS);
+  return d1 <= d0 ? prev : lo;
+}
+
 export default function Map({
   points,
   playbackDurationS = 10,
+  selectedTimestampS, // for controlled use
+  onSelectedTimestampChange, // for controlled use
 }: {
   points: MapPoint[];
   playbackDurationS?: number;
+  selectedTimestampS?: number;
+  onSelectedTimestampChange?: (timestampS: number) => void;
 }) {
   const [heatmapEnabled, setHeatmapEnabled] = useState(false);
 
@@ -151,8 +182,17 @@ export default function Map({
     points[points.length - 1]?.timestampS ?? startTimestampS;
 
   // Current timestamp of the scrubber
-  const [currentTimestampS, setCurrentTimestampS] =
+  const [uncontrolledTimestampS, setUncontrolledTimestampS] =
     useState<number>(startTimestampS);
+  const currentTimestampS = selectedTimestampS ?? uncontrolledTimestampS;
+
+  const setCurrentTimestampS = (timestampS: number) => {
+    if (onSelectedTimestampChange) {
+      onSelectedTimestampChange(timestampS);
+    } else {
+      setUncontrolledTimestampS(timestampS);
+    }
+  };
 
   // When the points change, reset scrubber to start
   useEffect(() => {
@@ -162,24 +202,13 @@ export default function Map({
   }, [points]);
 
   // Find the point whose timestamp is closest to currentTimestampS
-  const currentPoint = useMemo(() => {
+  const currentPointIdx = useMemo(() => {
     if (points.length === 0) {
-      return null;
+      return -1;
     }
-
-    let closest = points[0];
-    let smallestDiff = Math.abs(points[0].timestampS - currentTimestampS);
-
-    for (let i = 1; i < points.length; i++) {
-      const diff = Math.abs(points[i].timestampS - currentTimestampS);
-      if (diff < smallestDiff) {
-        smallestDiff = diff;
-        closest = points[i];
-      }
-    }
-
-    return closest;
+    return findClosestIndexByTimestamp(points, currentTimestampS);
   }, [points, currentTimestampS]);
+  const currentPoint = currentPointIdx >= 0 ? points[currentPointIdx] : null;
 
   // Whether the scrubber playback animation is active
   const [isPlaying, setIsPlaying] = useState(false);
