@@ -4,7 +4,7 @@ import Combobox from "@/components/ui/combobox";
 import {
   STREAM_ID_LATITUDE,
   STREAM_ID_LONGITUDE,
-} from "@/components/visualizations/gps-visualization";
+} from "@/components/visualizations/gps/gps-visualization";
 import type { RunMeta } from "@/lib/useRunMeta";
 import useRunMeta from "@/lib/useRunMeta";
 import { useEffect, useMemo } from "react";

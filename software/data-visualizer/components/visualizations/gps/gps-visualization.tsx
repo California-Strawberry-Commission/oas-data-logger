@@ -1,6 +1,8 @@
 "use client";
 
-import type { MapPoint } from "@/components/visualizations/map";
+import type { MapPoint } from "@/components/visualizations/gps/map";
+import type { SpeedSample } from "@/components/visualizations/gps/speed-chart";
+import SpeedChart from "@/components/visualizations/gps/speed-chart";
 import { LatLngExpression } from "leaflet";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
@@ -11,19 +13,19 @@ const MapComponent = dynamic(() => import("./map"), {
   loading: () => <LoadingMap />,
 });
 
-export const STREAM_ID_SATELLITES = "gpsData.satellites";
-export const STREAM_ID_LATITUDE = "gpsData.lat";
-export const STREAM_ID_LONGITUDE = "gpsData.lng";
-export const STREAM_ID_ALTITUDE = "gpsData.alt";
-
-const MIN_NUM_SATELLITES = 1; // filter out GPS points that were logged with less than X satellites
-const MAX_JUMP_METERS = 100; // filter out GPS points that jump more than X meters from the previous point
-
 type DataPoint = {
   streamId: string;
   tick: number;
   data: number;
 };
+
+export const STREAM_ID_SATELLITES = "gpsData.satellites";
+export const STREAM_ID_LATITUDE = "gpsData.lat";
+export const STREAM_ID_LONGITUDE = "gpsData.lng";
+export const STREAM_ID_ALTITUDE = "gpsData.alt";
+const MIN_NUM_SATELLITES = 1; // filter out GPS points that were logged with less than X satellites
+const MAX_JUMP_METERS = 100; // filter out GPS points that jump more than X meters from the previous point
+const MPS_TO_MPH = 2.2369362920544;
 
 export function toLatLng(position: LatLngExpression): {
   lat: number;
@@ -39,7 +41,13 @@ export function toLatLng(position: LatLngExpression): {
   throw new Error("Unsupported LatLngExpression shape");
 }
 
-// Calculates haversine distance between two points
+/**
+ * Calculates the haversine distance between two points.
+ *
+ * @param a First point.
+ * @param b Second point.
+ * @returns Haversine distance between a and b.
+ */
 export function distanceMeters(
   a: LatLngExpression,
   b: LatLngExpression,
@@ -64,22 +72,6 @@ export function distanceMeters(
   const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 
   return R * c;
-}
-
-function LoadingMap() {
-  return (
-    <div className="flex items-center justify-center h-full bg-gray-200">
-      <span className="text-gray-500 animate-pulse">Loading...</span>
-    </div>
-  );
-}
-
-function NoData() {
-  return (
-    <div className="flex items-center justify-center h-full bg-gray-200">
-      <span className="text-gray-500">No data</span>
-    </div>
-  );
 }
 
 function toMapPoints(
@@ -149,6 +141,47 @@ function toMapPoints(
   return mapPoints;
 }
 
+function toSpeedSamples(points: MapPoint[]): SpeedSample[] {
+  if (points.length === 0) {
+    return [];
+  }
+
+  const out: SpeedSample[] = [
+    { timestampS: points[0].timestampS, speedMph: 0 },
+  ];
+
+  for (let i = 1; i < points.length; i++) {
+    const dt = points[i].timestampS - points[i - 1].timestampS;
+    if (!Number.isFinite(dt) || dt <= 0) {
+      out.push({ timestampS: points[i].timestampS, speedMph: 0 });
+      continue;
+    }
+    const distM = distanceMeters(points[i - 1].position, points[i].position);
+    const mph = (distM / dt) * MPS_TO_MPH;
+    out.push({
+      timestampS: points[i].timestampS,
+      speedMph: Number.isFinite(mph) ? mph : 0,
+    });
+  }
+  return out;
+}
+
+function LoadingMap() {
+  return (
+    <div className="flex items-center justify-center h-full bg-gray-200">
+      <span className="text-gray-500 animate-pulse">Loading...</span>
+    </div>
+  );
+}
+
+function NoData() {
+  return (
+    <div className="flex items-center justify-center h-full bg-gray-200">
+      <span className="text-gray-500">No data</span>
+    </div>
+  );
+}
+
 export default function GpsVisualization({
   runUuid,
   epochTimeS,
@@ -158,10 +191,12 @@ export default function GpsVisualization({
   epochTimeS: bigint;
   tickBaseUs: bigint;
 }) {
-  const [mapPoints, setMapPoints] = useState<MapPoint[] | null>(null);
+  const [rawPoints, setRawPoints] = useState<MapPoint[] | null>(null);
   // TODO: Be able to toggle filter through UI
   const [filterEnabled, setFilterEnabled] = useState(true);
+  const [selectedTimestampS, setSelectedTimestampS] = useState<number>(0);
 
+  // Fetch raw GPS data
   useEffect(() => {
     if (!runUuid) {
       return;
@@ -180,18 +215,22 @@ export default function GpsVisualization({
         });
         const mapPoints = toMapPoints(dataPoints, epochTimeS, tickBaseUs);
         mapPoints.sort((a, b) => a.timestampS - b.timestampS);
-        setMapPoints(mapPoints);
+        setRawPoints(mapPoints);
       });
   }, [runUuid, epochTimeS, tickBaseUs]);
 
-  const filteredPoints: MapPoint[] | null = useMemo(() => {
-    if (!filterEnabled || mapPoints === null || mapPoints.length === 0) {
-      return mapPoints;
+  // Filter outliers from raw GPS data
+  const filteredPoints: MapPoint[] = useMemo(() => {
+    if (rawPoints === null || rawPoints.length === 0) {
+      return [];
+    }
+    if (!filterEnabled) {
+      return rawPoints;
     }
 
     const result: MapPoint[] = [];
     let lastKept: MapPoint | null = null;
-    for (const p of mapPoints) {
+    for (const p of rawPoints) {
       // Filter out GPS points that were logged with less than X satellites
       if (p.numSatellites < MIN_NUM_SATELLITES) {
         continue;
@@ -210,9 +249,16 @@ export default function GpsVisualization({
     }
 
     return result;
-  }, [mapPoints, filterEnabled]);
+  }, [rawPoints, filterEnabled]);
 
-  if (filteredPoints === null) {
+  const speedData = useMemo(() => {
+    if (!filteredPoints || filteredPoints.length === 0) {
+      return [];
+    }
+    return toSpeedSamples(filteredPoints);
+  }, [filteredPoints]);
+
+  if (rawPoints === null) {
     return (
       <div className="w-full h-150">
         <LoadingMap />
@@ -226,9 +272,22 @@ export default function GpsVisualization({
     );
   } else {
     return (
-      <div className="w-full h-150 border rounded-md overflow-hidden">
-        <MapComponent points={filteredPoints} />
-      </div>
+      <>
+        <div className="w-full h-150 border rounded-md overflow-hidden">
+          <MapComponent
+            points={filteredPoints}
+            selectedTimestampS={selectedTimestampS}
+            onSelectedTimestampChange={setSelectedTimestampS}
+          />
+        </div>
+        <div className="w-full h-60 p-4 border rounded-md overflow-hidden">
+          <SpeedChart
+            data={speedData}
+            selectedTimestampS={selectedTimestampS}
+            onSelectedTimestampChange={setSelectedTimestampS}
+          />
+        </div>
+      </>
     );
   }
 }
