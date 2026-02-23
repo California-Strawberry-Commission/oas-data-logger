@@ -1,13 +1,13 @@
-#!/usr/bin/env node
+import { PrismaPg } from "@prisma/adapter-pg";
 import { ReadlineParser } from "@serialport/parser-readline";
-import dotenv from "dotenv";
+import { config as dotenv } from "dotenv";
 import nodeCrypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { SerialPort } from "serialport";
-import { PrismaClient } from "../generated/prisma/client/index.js";
-import { encryptSecret } from "../lib/crypto.ts";
+import { PrismaClient } from "@/generated/prisma/client";
+import { encryptSecret } from "@/lib/crypto";
 
 /**
  * Device Provisioning Script (Host Side)
@@ -25,12 +25,25 @@ import { encryptSecret } from "../lib/crypto.ts";
  * @param {string} --secret - The 32-byte Hex Secret (Required for --db-only mode).
  *
  * USAGE EXAMPLES:
- * node scripts/provision-device.mjs /dev/ttyUSB0 --env=local
- * node scripts/provision-device.mjs --db-only --id=device_123 --secret=abc...123 --env=prod
+ * npm run provision-device -- /dev/ttyUSB0 --env=local
+ * npm run provision-device -- --db-only --id=device_123 --secret=abc...123 --env=prod
  */
 
+//#region Types
+
+type EnvName = "local" | "preview" | "prod";
+
+//#endregion
+
+//#region CLI Args
+
 const {
-  values: { env, "db-only": dbOnly, id: manualId, secret: manualSecret },
+  values: {
+    env: envRaw,
+    "db-only": dbOnly,
+    id: manualId,
+    secret: manualSecret,
+  },
   positionals,
 } = parseArgs({
   options: {
@@ -45,26 +58,81 @@ const {
 // The serial port is the first positional argument
 const portPath = positionals[0];
 
-const scriptDirname = path.dirname(fileURLToPath(import.meta.url));
-const envPath = path.resolve(scriptDirname, `../.env.${env}`);
+function isEnvName(x: string): x is EnvName {
+  return x === "local" || x === "preview" || x === "prod";
+}
 
-console.log(`[Setup] Loading config from: ${envPath}`);
-
-dotenv.config({ path: envPath });
-
-if (!process.env.DATABASE_URL) {
-  console.error("Error: DATABASE_URL is missing.");
+if (!isEnvName(envRaw)) {
+  console.error(
+    `Error: --env must be one of local|preview|prod (got: ${envRaw})`,
+  );
   process.exit(1);
 }
+const env: EnvName = envRaw;
+
+//#endregion
 
 let isProvisioning = false;
 const BAUD_RATE = 115200;
 
-function generateSecret() {
+function createPrismaClient(databaseUrl: string): PrismaClient {
+  const adapter = new PrismaPg({
+    connectionString: databaseUrl,
+  });
+  return new PrismaClient({ adapter });
+}
+
+function requireEnv(name: string): string {
+  const val = process.env[name];
+  if (!val) {
+    throw new Error(`Missing env var ${name}`);
+  }
+  return val;
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  msg: string,
+): Promise<T> {
+  let t: NodeJS.Timeout | undefined;
+
+  const timeout = new Promise((_, reject) => {
+    t = setTimeout(() => reject(new Error(msg)), ms);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (t) {
+      clearTimeout(t);
+    }
+  }) as Promise<T>;
+}
+
+async function openSerialPort(port: SerialPort) {
+  await new Promise<void>((resolve, reject) => {
+    port.open((err) => (err ? reject(err) : resolve()));
+  });
+}
+
+async function closeSerialPort(port: SerialPort) {
+  await new Promise<void>((resolve) => {
+    port.close(() => resolve());
+  });
+}
+
+function generateSecret(): string {
   return nodeCrypto.randomBytes(32).toString("hex"); // 32 hex chars
 }
 
-async function registerDeviceInDB(prisma, deviceId, rawSecret) {
+async function registerDeviceInDB(
+  prisma: PrismaClient,
+  deviceId: string,
+  rawSecret: string,
+) {
   console.log(`[DB] Encrypting & saving secret for ${deviceId}...`);
 
   const encryptedSecret = encryptSecret(rawSecret);
@@ -91,22 +159,18 @@ async function registerDeviceInDB(prisma, deviceId, rawSecret) {
 }
 
 async function main() {
-  const prisma = new PrismaClient({
-    datasources: { db: { url: process.env.DATABASE_URL } },
+  // Resolve .env file relative to this script file
+  const scriptDirname = path.dirname(fileURLToPath(import.meta.url));
+  dotenv({
+    path: path.resolve(scriptDirname, `../.env.${env}`),
   });
 
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const databaseUrl = requireEnv("DATABASE_URL");
 
-  const withTimeout = (promise, ms, msg) => {
-    let t;
-    const timeout = new Promise((_, reject) => {
-      t = setTimeout(() => reject(new Error(msg)), ms);
-    });
-    return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
-  };
+  const prisma = createPrismaClient(databaseUrl);
 
-  let parser;
-  let port;
+  let parser: ReadlineParser | undefined;
+  let port: SerialPort | undefined;
   try {
     if (dbOnly) {
       if (!manualId || !manualSecret) {
@@ -130,8 +194,9 @@ async function main() {
 
       try {
         ports = await SerialPort.list();
-      } catch (err) {
-        console.error("\n[Error] Failed to list serial ports:", err.message);
+      } catch (err: any) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("\n[Error] Failed to list serial ports:", msg);
         process.exitCode = 1;
         return;
       }
@@ -166,20 +231,29 @@ async function main() {
     });
     parser = port.pipe(new ReadlineParser({ delimiter: "\n" }));
 
-    await new Promise((resolve, reject) => {
-      port.open((err) => (err ? reject(err) : resolve()));
-    });
+    await openSerialPort(port);
     console.log("Port open. Waiting for 'DEVICE_ID:'...");
 
-    const provisioningTask = new Promise((resolve, reject) => {
+    const provisioningTask = new Promise<void>((resolve, reject) => {
+      if (!parser || !port) {
+        reject(new Error("Serial parser/port not initialized"));
+        return;
+      }
+
       parser.on("data", async (line) => {
         const cleanLine = line.toString().trim();
 
         if (cleanLine.startsWith("DEVICE_ID:")) {
-          if (isProvisioning) return;
+          if (isProvisioning) {
+            return;
+          }
           isProvisioning = true;
 
           const deviceId = cleanLine.split(":")[1].trim();
+          if (!deviceId) {
+            reject(new Error("Malformed DEVICE_ID line"));
+            return;
+          }
           console.log(`\nDetected Device ID: ${deviceId}`);
 
           const secret = generateSecret();
@@ -191,8 +265,14 @@ async function main() {
             console.log("Pushing secret to device...");
             await sleep(500); // Needed to allow hardware to catch up
 
+            if (!port) {
+              reject(new Error("Serial port not initialized"));
+              return;
+            }
             port.write(`PROV_SET:${secret}\n`, (err) => {
-              if (err) console.error("Write error:", err);
+              if (err) {
+                console.error("Write error:", err);
+              }
             });
           } catch (err) {
             reject(err);
@@ -216,18 +296,20 @@ async function main() {
       20000,
       "Timeout: Device did not respond in 20s.",
     );
-    port.close();
-  } catch (err) {
-    console.error("\n[Error]", err.message);
+    await closeSerialPort(port);
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("\n[Error]", msg);
     process.exitCode = 1;
   } finally {
-
-    if (parser) parser.removeAllListeners("data");
+    if (parser) {
+      parser.removeAllListeners("data");
+    }
 
     if (port) {
       port.removeAllListeners();
       if (port.isOpen) {
-        await new Promise((resolve) => port.close((err) => resolve()));
+        await closeSerialPort(port);
       }
     }
 
@@ -235,4 +317,8 @@ async function main() {
   }
 }
 
-main();
+main().catch((err) => {
+  const msg = err instanceof Error ? err.message : String(err);
+  console.error("[ERROR]", msg);
+  process.exit(1);
+});
