@@ -1,16 +1,24 @@
-#!/usr/bin/env node
+import { PrismaClient } from "@/generated/prisma/client";
 import {
   HeadObjectCommand,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
-import dotenv from "dotenv";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { config as dotenv } from "dotenv";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { PrismaClient } from "../generated/prisma/client/index.js";
+
+//#region Types
+
+type EnvName = "local" | "preview" | "prod";
+type DeviceType = "V0" | "V1";
+type Channel = "STABLE" | "BETA";
+
+//#endregion
 
 //#region CLI Args
 
@@ -30,13 +38,25 @@ Usage:
   process.exit(code);
 }
 
+function isEnvName(x: string): x is EnvName {
+  return x === "local" || x === "preview" || x === "prod";
+}
+
+function isDeviceType(x: string): x is DeviceType {
+  return x === "V0" || x === "V1";
+}
+
+function isChannel(x: string): x is Channel {
+  return x === "STABLE" || x === "BETA";
+}
+
 const {
   values: {
-    env,
-    file,
-    deviceType,
-    channel = "STABLE",
-    version,
+    env: envRaw,
+    file: fileRaw,
+    deviceType: deviceTypeRaw,
+    channel: channelRaw = "STABLE",
+    version: versionRaw,
     publish = false,
     buildNumber: buildNumberArg,
     s3Key: s3KeyArg,
@@ -61,23 +81,29 @@ if (help) {
   printUsageAndExit(0);
 }
 
-if (!env || !file || !deviceType || !version) {
+if (!envRaw || !fileRaw || !deviceTypeRaw || !versionRaw) {
   printUsageAndExit(2);
 }
 
-if (!["local", "preview", "prod"].includes(env)) {
+if (!isEnvName(envRaw!)) {
   throw new Error(`env must be local, preview, or prod`);
 }
-if (!["V0", "V1"].includes(deviceType)) {
+if (!isDeviceType(deviceTypeRaw!)) {
   throw new Error(`deviceType must be V0 or V1`);
 }
-if (!["STABLE", "BETA"].includes(channel)) {
+if (!isChannel(channelRaw!)) {
   throw new Error(`channel must be STABLE or BETA`);
 }
 
+const env: EnvName = envRaw!;
+const file: string = fileRaw!;
+const deviceType: DeviceType = deviceTypeRaw!;
+const channel: Channel = channelRaw!;
+const version: string = versionRaw!;
+
 //#endregion
 
-function requireEnv(name) {
+function requireEnv(name: string): string {
   const val = process.env[name];
   if (!val) {
     throw new Error(`Missing env var ${name}`);
@@ -85,7 +111,7 @@ function requireEnv(name) {
   return val;
 }
 
-function sha256File(filePath) {
+function sha256File(filePath: string): string {
   const hash = crypto.createHash("sha256");
   const fd = fs.openSync(filePath, "r");
   try {
@@ -101,7 +127,11 @@ function sha256File(filePath) {
   return hash.digest("hex");
 }
 
-async function s3ObjectExists(s3, bucket, key) {
+async function s3ObjectExists(
+  s3: S3Client,
+  bucket: string,
+  key: string,
+): Promise<boolean> {
   try {
     await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
     return true;
@@ -110,10 +140,17 @@ async function s3ObjectExists(s3, bucket, key) {
   }
 }
 
+function createPrismaClient(databaseUrl: string): PrismaClient {
+  const adapter = new PrismaPg({
+    connectionString: databaseUrl,
+  });
+  return new PrismaClient({ adapter });
+}
+
 async function main() {
   // Resolve .env file relative to this script file
   const scriptDirname = path.dirname(fileURLToPath(import.meta.url));
-  dotenv.config({
+  dotenv({
     path: path.resolve(scriptDirname, `../.env.${env}`),
   });
 
@@ -130,9 +167,7 @@ async function main() {
   const size = fileStat.size;
   const sha256 = sha256File(fileAbsPath);
 
-  const prisma = new PrismaClient({
-    datasources: { db: { url: databaseUrl } },
-  });
+  const prisma = createPrismaClient(databaseUrl);
   const s3 = new S3Client({
     region: awsRegion,
     credentials: {
@@ -143,7 +178,7 @@ async function main() {
 
   try {
     // Figure out the next incremental build number
-    let buildNumber;
+    let buildNumber: number;
     if (!buildNumberArg) {
       const last = await prisma.firmwareRelease.findFirst({
         where: { deviceType, channel },
@@ -165,7 +200,7 @@ async function main() {
       s3KeyArg ??
       `firmware/${deviceType}/${channel}/${String(buildNumber).padStart(
         6,
-        "0"
+        "0",
       )}/${baseName}-${shaShort}.bin`;
 
     // Upload file to S3
@@ -178,7 +213,7 @@ async function main() {
           Body: fs.createReadStream(fileAbsPath),
           ContentType: "application/octet-stream",
           CacheControl: "no-cache",
-        })
+        }),
       );
       console.log(
         "Successfully uploaded object to S3:",
@@ -190,12 +225,12 @@ async function main() {
             sha256: sha256.slice(0, 12) + "...",
           },
           null,
-          2
-        )
+          2,
+        ),
       );
     } else {
       console.log(
-        `Object with key ${s3Key} already exists in S3 bucket ${s3Bucket}. Skipping upload`
+        `Object with key ${s3Key} already exists in S3 bucket ${s3Bucket}. Skipping upload`,
       );
     }
 

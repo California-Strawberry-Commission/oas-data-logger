@@ -109,12 +109,26 @@ $ npm run db:migrate my_migration_name
 
 Make sure to check in the generated files under the `prisma/migrations` directory to source control. Note that when Vercel picks up the commit, it will automatically apply the newly created migration (via `npm run vercel-build`).
 
+## Provisioning devices
+
+Run the following script to provision a device and update the DB in interactive mode (connects via Serial, waits for the device to announce its ID, generates a secret, saves it to the DB, and pushes it to the device):
+
+```
+npm run provision-device -- <serial port, such as /dev/ttyACM0>
+```
+
+Run the following script for DB-only mode (manually inserts a known device ID and secret into the database):
+
+```
+npm run provision-device -- --db-only --id=<device ID> --secret=<device secret> --env=<local|preview|prod>
+```
+
 ## Pushing OTA firmware
 
 Run the following script to upload the firmware bin to S3 and update the DB:
 
 ```
-node scripts/publish-firmware.mjs --file <path/to/firmware.bin> --deviceType <V0|V1> --channel <STABLE|BETA> --version <human readable version name, like 0.0.1>
+npm run publish-firmware -- --env <local|preview|prod> --file <path/to/firmware.bin> --deviceType <V0|V1> --channel <STABLE|BETA> --version <human readable version name, like 0.0.1>
 ```
 
 Note: when updating a DB entry for existing firmware (for example, marking it as published), you will need to specify buildNumber, as {deviceType, channel, buildNumber} is used to uniquely identify the row.
