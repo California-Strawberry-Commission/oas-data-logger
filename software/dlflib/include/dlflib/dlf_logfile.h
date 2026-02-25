@@ -27,7 +27,8 @@ namespace dlf {
  */
 class LogFile {
  public:
-  LogFile(dlf::datastream::stream_handles_t handles,
+  LogFile(std::vector<std::unique_ptr<dlf::datastream::AbstractStreamHandle>>
+              handles,
           dlf_stream_type_e streamType, String dir, fs::FS& fs);
 
   /**
@@ -81,7 +82,7 @@ class LogFile {
   /**
    * @brief Data stream handles logged by this logfile
    */
-  dlf::datastream::stream_handles_t handles_;
+  std::vector<std::unique_ptr<dlf::datastream::AbstractStreamHandle>> handles_;
 
   fs::FS& fs_;
   String filename_;

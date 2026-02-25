@@ -9,7 +9,8 @@
 
 namespace dlf {
 
-Run::Run(fs::FS& fs, const String& fsDir, dlf::datastream::streams_t streams,
+Run::Run(fs::FS& fs, const String& fsDir,
+         std::vector<dlf::datastream::AbstractStream*> streams,
          std::chrono::microseconds tickInterval, const Encodable& meta)
     : fs_(fs), streams_(streams), tickInterval_(tickInterval) {
   assert(tickInterval.count() > 0);
@@ -126,7 +127,7 @@ void Run::createLogfile(dlf_stream_type_e t) {
   DLFLIB_LOG_DEBUG("[Run] Creating %s logfile",
                    dlf::datastream::streamTypeToString(t));
 #endif
-  dlf::datastream::stream_handles_t handles;
+  std::vector<std::unique_ptr<dlf::datastream::AbstractStreamHandle>> handles;
 
   size_t idx = 0;
   for (auto& stream : streams_) {

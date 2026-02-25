@@ -122,7 +122,7 @@ class DLFLogger : public dlf::components::DlfComponent {
 
   std::unique_ptr<Run> runs_[MAX_ACTIVE_RUNS];
   // Todo: Figure out how to do this with unique_ptrs
-  dlf::datastream::streams_t streams_;
+  std::vector<dlf::datastream::AbstractStream*> streams_;
   fs::FS& fs_;
   String fsDir_;
   std::vector<dlf::components::DlfComponent*> components_;

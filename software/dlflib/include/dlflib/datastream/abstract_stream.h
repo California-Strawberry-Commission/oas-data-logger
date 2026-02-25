@@ -27,7 +27,6 @@ inline const char* streamTypeToString(dlf_stream_type_e t) {
 
 // Forward declare abstract_stream_handle.h
 class AbstractStreamHandle;
-using stream_handle_t = std::unique_ptr<AbstractStreamHandle>;
 
 /**
  * Abstract class representing a source of data as well as some information
@@ -71,7 +70,5 @@ class AbstractStream {
   const char* notes_;
   SemaphoreHandle_t mutex_;
 };
-
-using streams_t = std::vector<AbstractStream*>;
 
 }  // namespace dlf::datastream

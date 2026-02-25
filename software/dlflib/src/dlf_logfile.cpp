@@ -170,8 +170,9 @@ void LogFile::taskFlusher(void* arg) {
   vTaskDelete(nullptr);
 }
 
-LogFile::LogFile(dlf::datastream::stream_handles_t handles,
-                 dlf_stream_type_e streamType, String dir, fs::FS& fs)
+LogFile::LogFile(
+    std::vector<std::unique_ptr<dlf::datastream::AbstractStreamHandle>> handles,
+    dlf_stream_type_e streamType, String dir, fs::FS& fs)
     : fs_(fs), handles_(std::move(handles)), fileEndPosition_(0) {
   filename_ =
       dir + "/" + dlf::datastream::streamTypeToString(streamType) + ".dlf";
