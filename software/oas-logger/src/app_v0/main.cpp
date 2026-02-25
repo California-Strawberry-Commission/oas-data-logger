@@ -690,6 +690,15 @@ void disableGps() {
     return;
   }
 
+  EZLOG_INFO("Disabling GPS...");
+
+  // Delete GPS task if it exists
+  if (gpsTaskHandle != nullptr) {
+    EZLOG_INFO("Deleting GPS task...");
+    vTaskDelete(gpsTaskHandle);
+    gpsTaskHandle = nullptr;
+  }
+
   // Put GPS in Backup Mode
   if (!USE_LEGACY_GPIO_CONFIG) {
     Wire.beginTransmission(I2C_ADDR_GPS);
