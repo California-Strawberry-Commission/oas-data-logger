@@ -8,8 +8,8 @@ namespace dlf {
 
 DLFLogger::DLFLogger(fs::FS& fs, const String& fsDir) : fs_(fs), fsDir_(fsDir) {
   loggerEventGroup_ = xEventGroupCreate();
-  this->setup(&components_);
-  addComponent(this);
+  // Wire the registry into `this` so getComponent works from DLFLogger
+  this->setRegistry(this);
 }
 
 DLFLogger::~DLFLogger() {
@@ -26,27 +26,20 @@ DLFLogger::~DLFLogger() {
     vEventGroupDelete(loggerEventGroup_);
     loggerEventGroup_ = nullptr;
   }
-
-  // TODO: Clean up components
 }
 
 bool DLFLogger::begin() {
   DLFLIB_LOG_INFO("[DLFLogger] Begin");
   prune();
 
-  // Set subcomponent stores to enable component communication
-  for (dlf::components::DlfComponent*& comp : components_) {
-    comp->setup(&components_);
-  }
-
-  // begin subcomponents
-  for (dlf::components::DlfComponent*& comp : components_) {
-    // Break recursion
-    if (comp == this) {
+  // Begin subcomponents
+  for (const auto& componentPtr : components_) {
+    auto* component = componentPtr.get();
+    if (!component) {
       continue;
     }
 
-    comp->begin();
+    componentPtr->begin();
   }
 
   return true;
@@ -94,10 +87,9 @@ DLFLogger& DLFLogger::syncTo(
     const String& endpoint, const String& deviceUid, const String& secret,
     const dlf::components::UploaderComponent::Options& options) {
   if (!hasComponent<dlf::components::UploaderComponent>()) {
-    auto* uploader{new dlf::components::UploaderComponent(
-        fs_, fsDir_, endpoint, deviceUid, secret, options)};
-
-    addComponent(uploader);
+    auto uploader = dlf::util::make_unique<dlf::components::UploaderComponent>(
+        fs_, fsDir_, endpoint, deviceUid, secret, options);
+    addComponent(std::move(uploader));
   }
 
   return *this;
@@ -191,6 +183,20 @@ void DLFLogger::prune() {
     }
   }
   root.close();
+}
+
+dlf::components::Component* DLFLogger::findById(size_t id) const {
+  // Allow finding DLFLogger itself
+  if (id == dlf::util::hashType<DLFLogger>()) {
+    return const_cast<DLFLogger*>(this);
+  }
+
+  for (const auto& componentPtr : components_) {
+    if (componentPtr && componentPtr->id() == id) {
+      return componentPtr.get();
+    }
+  }
+  return nullptr;
 }
 
 }  // namespace dlf

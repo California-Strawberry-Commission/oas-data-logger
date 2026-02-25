@@ -7,7 +7,7 @@
 #include <chrono>
 #include <vector>
 
-#include "dlflib/components/dlf_component.h"
+#include "dlflib/components/component.h"
 #include "dlflib/components/uploader_component.h"
 #include "dlflib/datastream/event_stream.h"
 #include "dlflib/datastream/polled_stream.h"
@@ -51,14 +51,15 @@ namespace dlf {
 // 0 is error, > 0 is valid handle
 using run_handle_t = int;
 
-class DLFLogger : public dlf::components::DlfComponent {
+class DLFLogger : public dlf::components::Component,
+                  public dlf::components::ComponentRegistry {
  public:
   enum LoggerEvents : uint32_t { RUN_COMPLETE = 1 };
 
   DLFLogger(fs::FS& fs, const String& fsDir = "/");
   ~DLFLogger() override;
 
-  bool begin();
+  bool begin() override;
 
   run_handle_t startRun(
       const Encodable& meta,
@@ -122,12 +123,30 @@ class DLFLogger : public dlf::components::DlfComponent {
 
   void prune();
 
+  // ComponentRegistry
+  dlf::components::Component* findById(size_t id) const override;
+
+  template <typename T>
+  T* addComponent(std::unique_ptr<T> component) {
+    static_assert(std::is_base_of<dlf::components::Component, T>::value,
+                  "T must derive from Component");
+    if (!component) {
+      return nullptr;
+    }
+
+    component->setRegistry(this);
+    component->setId(dlf::util::hashType<T>());
+
+    T* raw = component.get();
+    components_.push_back(std::move(component));
+    return raw;
+  }
+
+  std::vector<std::unique_ptr<dlf::components::Component>> components_;
   std::unique_ptr<Run> runs_[MAX_ACTIVE_RUNS];
   std::vector<std::unique_ptr<dlf::datastream::AbstractStream>> streams_;
   fs::FS& fs_;
   String fsDir_;
-  // TODO: Fix ambiguous ownership of components
-  std::vector<dlf::components::DlfComponent*> components_;
   // Used to signal that a new run is available
   EventGroupHandle_t loggerEventGroup_{nullptr};
 };

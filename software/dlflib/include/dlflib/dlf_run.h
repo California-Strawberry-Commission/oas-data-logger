@@ -14,8 +14,6 @@
 
 namespace dlf {
 
-// Todo: Performance timings
-
 class Run {
  public:
   Run(fs::FS& fs, const String& fsDir,
