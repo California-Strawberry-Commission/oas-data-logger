@@ -9,8 +9,10 @@
 
 namespace dlf {
 
-Run::Run(fs::FS& fs, String fsDir, dlf::datastream::streams_t streams,
-         std::chrono::microseconds tickInterval, Encodable& meta)
+Run::Run(fs::FS& fs, const String& fsDir,
+         const std::vector<std::unique_ptr<dlf::datastream::AbstractStream>>&
+             streams,
+         std::chrono::microseconds tickInterval, const Encodable& meta)
     : fs_(fs), streams_(streams), tickInterval_(tickInterval) {
   assert(tickInterval.count() > 0);
 
@@ -91,7 +93,7 @@ void Run::unlockAllLogFiles() {
   }
 }
 
-void Run::createMetafile(Encodable& meta) {
+void Run::createMetafile(const Encodable& meta) {
   dlf_meta_header_t h;
   time_t now = time(NULL);
   h.epoch_time_s = now;
@@ -126,16 +128,17 @@ void Run::createLogfile(dlf_stream_type_e t) {
   DLFLIB_LOG_DEBUG("[Run] Creating %s logfile",
                    dlf::datastream::streamTypeToString(t));
 #endif
-  dlf::datastream::stream_handles_t handles;
+  std::vector<std::unique_ptr<dlf::datastream::AbstractStreamHandle>> handles;
 
   size_t idx = 0;
-  for (auto& stream : streams_) {
-    if (stream->type() == t) {
-      handles.push_back(std::move(stream->handle(tickInterval_, idx++)));
+  for (const auto& stream : streams_) {
+    auto* streamPtr = stream.get();
+    if (streamPtr && stream->type() == t) {
+      handles.push_back(stream->createHandle(tickInterval_, idx++));
     }
   }
-  logFiles_.push_back(std::unique_ptr<LogFile>(
-      new LogFile(std::move(handles), t, runDir_, fs_)));
+  logFiles_.push_back(
+      dlf::util::make_unique<LogFile>(std::move(handles), t, runDir_, fs_));
 }
 
 void Run::taskSampler(void* arg) {

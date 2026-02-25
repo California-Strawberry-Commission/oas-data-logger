@@ -186,7 +186,7 @@ void setup() {
 
   // Create mutex for GPS data protection
   gpsDataMutex = xSemaphoreCreateMutex();
-  if (gpsDataMutex == NULL) {
+  if (gpsDataMutex == nullptr) {
     currentError = ErrorType::LOGGER_INIT_FAILED;
     transitionToState(SystemState::ERROR);
     return;
@@ -688,6 +688,15 @@ void enableGps() {
 void disableGps() {
   if (!gpsEnabled) {
     return;
+  }
+
+  EZLOG_INFO("Disabling GPS...");
+
+  // Delete GPS task if it exists
+  if (gpsTaskHandle != nullptr) {
+    EZLOG_INFO("Deleting GPS task...");
+    vTaskDelete(gpsTaskHandle);
+    gpsTaskHandle = nullptr;
   }
 
   // Put GPS in Backup Mode

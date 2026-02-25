@@ -56,8 +56,4 @@ class AbstractStreamHandle {
   dlf_stream_idx_t idx;
 };
 
-using stream_handle_t = std::unique_ptr<dlf::datastream::AbstractStreamHandle>;
-using stream_handles_t =
-    std::vector<std::unique_ptr<dlf::datastream::AbstractStreamHandle>>;
-
 }  // namespace dlf::datastream

@@ -5,11 +5,11 @@
 #include <WiFi.h>
 
 #include "dlflib/auth/request_signer.h"
-#include "dlflib/components/dlf_component.h"
+#include "dlflib/components/component.h"
 
 namespace dlf::components {
 
-class UploaderComponent : public DlfComponent {
+class UploaderComponent : public Component {
  public:
   struct Options {
     // Delete the run data from the SD card after uploading
@@ -24,7 +24,7 @@ class UploaderComponent : public DlfComponent {
                     const String& deviceUid, const String& secret,
                     const Options& options);
 
-  bool begin();
+  bool begin() override;
   bool uploadRun(fs::File runDir, const String& runUuid, bool isActive = false);
   void waitForSyncCompletion();
 

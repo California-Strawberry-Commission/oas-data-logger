@@ -426,7 +426,7 @@ void UploaderComponent::syncTask(void* arg) {
 
     xEventGroupSetBits(uploaderComponent->syncEvent_, SYNC_COMPLETE);
 
-    logger->waitForNewRun();
+    logger->waitForRunComplete();
   }
 }
 

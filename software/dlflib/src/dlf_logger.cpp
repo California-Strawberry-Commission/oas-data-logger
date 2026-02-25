@@ -6,68 +6,75 @@
 
 namespace dlf {
 
-DLFLogger::DLFLogger(fs::FS& fs, String fsDir) : fs_(fs), fsDir_(fsDir) {
+DLFLogger::DLFLogger(fs::FS& fs, const String& fsDir) : fs_(fs), fsDir_(fsDir) {
   loggerEventGroup_ = xEventGroupCreate();
-  this->setup(&components_);
-  addComponent(this);
+  // Wire the registry into `this` so getComponent works from DLFLogger
+  this->setRegistry(this);
+}
+
+DLFLogger::~DLFLogger() {
+  // Stop all active runs
+  for (auto& run : runs_) {
+    if (run) {
+      run->close();
+      run.reset();
+    }
+  }
+
+  // Delete FreeRTOS event group
+  if (loggerEventGroup_) {
+    vEventGroupDelete(loggerEventGroup_);
+    loggerEventGroup_ = nullptr;
+  }
 }
 
 bool DLFLogger::begin() {
   DLFLIB_LOG_INFO("[DLFLogger] Begin");
   prune();
 
-  // Set subcomponent stores to enable component communication
-  for (dlf::components::DlfComponent*& comp : components_) {
-    comp->setup(&components_);
-  }
-
-  // begin subcomponents
-  for (dlf::components::DlfComponent*& comp : components_) {
-    // Break recursion
-    if (comp == this) {
+  // Begin subcomponents
+  for (const auto& componentPtr : components_) {
+    auto* component = componentPtr.get();
+    if (!component) {
       continue;
     }
 
-    comp->begin();
+    componentPtr->begin();
   }
 
   return true;
 }
 
-run_handle_t DLFLogger::startRun(Encodable meta,
+run_handle_t DLFLogger::startRun(const Encodable& meta,
                                  std::chrono::microseconds tickRate) {
   run_handle_t h = getAvailableHandle();
 
-  // If 0, out of space.
-  if (!h) {
-    return h;
-  }
-
-  DLFLIB_LOG_INFO("[DLFLogger] Starting logging with a cycle time-base of %dus",
-                  tickRate);
-
-  // Initialize new run
-  dlf::Run* run = new dlf::Run(fs_, fsDir_, streams_, tickRate, meta);
-
-  if (run == NULL) {
+  // A handle of 0 indicates that no more runs can be started (max active runs
+  // has been reached)
+  if (h == 0) {
     return 0;
   }
 
-  int runIdx = h - 1;
-  runs_[runIdx] = std::unique_ptr<dlf::Run>(run);
+  DLFLIB_LOG_INFO("[DLFLogger] Starting logging with a tick rate of %lldus",
+                  (long long)tickRate.count());
+
+  // Initialize new run
+  int idx = h - 1;
+  runs_[idx] =
+      dlf::util::make_unique<dlf::Run>(fs_, fsDir_, streams_, tickRate, meta);
 
   return h;
 }
 
 void DLFLogger::stopRun(run_handle_t h) {
-  int runIdx = h - 1;
-  if (runIdx < 0 || runIdx >= MAX_RUNS || !runs_[runIdx]) {
+  int idx = h - 1;
+  if (idx < 0 || idx >= MAX_ACTIVE_RUNS || !runs_[idx]) {
     return;
   }
 
-  runs_[runIdx]->close();
-  runs_[runIdx].reset();
-  xEventGroupSetBits(loggerEventGroup_, NEW_RUN);
+  runs_[idx]->close();
+  runs_[idx].reset();
+  xEventGroupSetBits(loggerEventGroup_, RUN_COMPLETE);
 }
 
 DLFLogger& DLFLogger::syncTo(
@@ -80,10 +87,9 @@ DLFLogger& DLFLogger::syncTo(
     const String& endpoint, const String& deviceUid, const String& secret,
     const dlf::components::UploaderComponent::Options& options) {
   if (!hasComponent<dlf::components::UploaderComponent>()) {
-    auto* uploader{new dlf::components::UploaderComponent(
-        fs_, fsDir_, endpoint, deviceUid, secret, options)};
-
-    addComponent(uploader);
+    auto uploader = dlf::util::make_unique<dlf::components::UploaderComponent>(
+        fs_, fsDir_, endpoint, deviceUid, secret, options);
+    addComponent(std::move(uploader));
   }
 
   return *this;
@@ -97,7 +103,8 @@ void DLFLogger::waitForSyncCompletion() {
 
 std::vector<run_handle_t> DLFLogger::getActiveRuns() {
   std::vector<run_handle_t> activeRuns;
-  for (size_t i = 0; i < MAX_RUNS; ++i) {
+  activeRuns.reserve(MAX_ACTIVE_RUNS);
+  for (int i = 0; i < MAX_ACTIVE_RUNS; ++i) {
     if (runs_[i]) {
       run_handle_t handle = i + 1;
       activeRuns.push_back(handle);
@@ -107,42 +114,37 @@ std::vector<run_handle_t> DLFLogger::getActiveRuns() {
 }
 
 Run* DLFLogger::getRun(run_handle_t h) {
-  int runIdx = h - 1;
-  if (runIdx < 0 || runIdx >= MAX_RUNS || !runs_[runIdx]) {
+  int idx = h - 1;
+  if (idx < 0 || idx >= MAX_ACTIVE_RUNS || !runs_[idx]) {
     return nullptr;
   }
 
-  return runs_[runIdx].get();
+  return runs_[idx].get();
 }
 
-DLFLogger& DLFLogger::watchInternal(Encodable value, String id,
+DLFLogger& DLFLogger::watchInternal(const Encodable& value, const String& id,
                                     const char* notes,
                                     SemaphoreHandle_t mutex) {
-  dlf::datastream::AbstractStream* s =
-      new dlf::datastream::EventStream(value, id, notes, mutex);
-  streams_.push_back(s);
-
+  streams_.push_back(dlf::util::make_unique<dlf::datastream::EventStream>(
+      value, id, notes, mutex));
   return *this;
 }
 
-DLFLogger& DLFLogger::pollInternal(Encodable value, String id,
+DLFLogger& DLFLogger::pollInternal(const Encodable& value, const String& id,
                                    std::chrono::microseconds sampleInterval,
                                    std::chrono::microseconds phase,
                                    const char* notes, SemaphoreHandle_t mutex) {
-  dlf::datastream::AbstractStream* s = new dlf::datastream::PolledStream(
-      value, id, sampleInterval, phase, notes, mutex);
-  streams_.push_back(s);
-
+  streams_.push_back(dlf::util::make_unique<dlf::datastream::PolledStream>(
+      value, id, sampleInterval, phase, notes, mutex));
   return *this;
 }
 
 run_handle_t DLFLogger::getAvailableHandle() {
-  for (size_t i = 0; i < MAX_RUNS; i++) {
+  for (int i = 0; i < MAX_ACTIVE_RUNS; ++i) {
     if (!runs_[i]) {
       return i + 1;
     }
   }
-
   return 0;
 }
 
@@ -181,6 +183,20 @@ void DLFLogger::prune() {
     }
   }
   root.close();
+}
+
+dlf::components::Component* DLFLogger::findById(size_t id) const {
+  // Allow finding DLFLogger itself
+  if (id == dlf::util::hashType<DLFLogger>()) {
+    return const_cast<DLFLogger*>(this);
+  }
+
+  for (const auto& componentPtr : components_) {
+    if (componentPtr && componentPtr->id() == id) {
+      return componentPtr.get();
+    }
+  }
+  return nullptr;
 }
 
 }  // namespace dlf

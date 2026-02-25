@@ -166,12 +166,13 @@ void LogFile::taskFlusher(void* arg) {
   xSemaphoreGive(self->syncSemaphore_);
 
   DLFLIB_LOG_INFO("[LogFile][taskFlusher] Flusher exited cleanly w/ HWM %u",
-                  uxTaskGetStackHighWaterMark(NULL));
-  vTaskDelete(NULL);
+                  uxTaskGetStackHighWaterMark(nullptr));
+  vTaskDelete(nullptr);
 }
 
-LogFile::LogFile(dlf::datastream::stream_handles_t handles,
-                 dlf_stream_type_e streamType, String dir, fs::FS& fs)
+LogFile::LogFile(
+    std::vector<std::unique_ptr<dlf::datastream::AbstractStreamHandle>> handles,
+    dlf_stream_type_e streamType, String dir, fs::FS& fs)
     : fs_(fs), handles_(std::move(handles)), fileEndPosition_(0) {
   filename_ =
       dir + "/" + dlf::datastream::streamTypeToString(streamType) + ".dlf";
@@ -179,19 +180,19 @@ LogFile::LogFile(dlf::datastream::stream_handles_t handles,
   // Set up class internals
   stream_ =
       xStreamBufferCreate(DLF_LOGFILE_BUFFER_SIZE, DLF_SD_BLOCK_WRITE_SIZE);
-  if (stream_ == NULL) {
+  if (stream_ == nullptr) {
     state_ = STREAM_CREATE_ERROR;
     return;
   }
 
   syncSemaphore_ = xSemaphoreCreateCounting(1, 0);
-  if (syncSemaphore_ == NULL) {
+  if (syncSemaphore_ == nullptr) {
     state_ = SYNC_CREATE_ERROR;
     return;
   }
 
   fileMutex_ = xSemaphoreCreateMutex();
-  if (fileMutex_ == NULL) {
+  if (fileMutex_ == nullptr) {
     state_ = SYNC_CREATE_ERROR;
     return;
   }

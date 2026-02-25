@@ -4,7 +4,7 @@
 
 namespace dlf::datastream {
 
-PolledStream::PolledStream(Encodable& src, String id,
+PolledStream::PolledStream(const Encodable& src, const String& id,
                            std::chrono::microseconds sampleInterval,
                            std::chrono::microseconds phase, const char* notes,
                            SemaphoreHandle_t mutex)
@@ -12,8 +12,9 @@ PolledStream::PolledStream(Encodable& src, String id,
       sampleInterval_(sampleInterval),
       phase_(phase) {}
 
-stream_handle_t PolledStream::handle(std::chrono::microseconds tickInterval,
-                                     dlf_stream_idx_t idx) {
+std::unique_ptr<dlf::datastream::AbstractStreamHandle>
+PolledStream::createHandle(std::chrono::microseconds tickInterval,
+                           dlf_stream_idx_t idx) {
   dlf_tick_t sampleIntervalTicks = 0;
   dlf_tick_t samplePhaseTicks = 0;
 
@@ -23,8 +24,8 @@ stream_handle_t PolledStream::handle(std::chrono::microseconds tickInterval,
     samplePhaseTicks = phase_ / tickInterval;
   }
 
-  return std::unique_ptr<AbstractStreamHandle>(
-      new PolledStreamHandle(this, idx, sampleIntervalTicks, samplePhaseTicks));
+  return dlf::util::make_unique<PolledStreamHandle>(
+      this, idx, sampleIntervalTicks, samplePhaseTicks);
 }
 
 dlf_stream_type_e PolledStream::type() { return POLLED; }

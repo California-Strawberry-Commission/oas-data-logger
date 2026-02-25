@@ -14,12 +14,12 @@
 
 namespace dlf {
 
-// Todo: Performance timings
-
 class Run {
  public:
-  Run(fs::FS& fs, String fsDir, dlf::datastream::streams_t streams,
-      std::chrono::microseconds tickInterval, Encodable& meta);
+  Run(fs::FS& fs, const String& fsDir,
+      const std::vector<std::unique_ptr<dlf::datastream::AbstractStream>>&
+          streams,
+      std::chrono::microseconds tickInterval, const Encodable& meta);
 
   /**
    * End the run. Cleans up and closes out log files.
@@ -48,7 +48,7 @@ class Run {
 
   void createLockfile();
 
-  void createMetafile(Encodable& meta);
+  void createMetafile(const Encodable& meta);
 
   void createLogfile(dlf_stream_type_e t);
 
@@ -58,7 +58,7 @@ class Run {
   dlf_file_state_e status_;
   SemaphoreHandle_t syncSemaphore_;
   std::chrono::microseconds tickInterval_;
-  dlf::datastream::streams_t streams_;
+  const std::vector<std::unique_ptr<dlf::datastream::AbstractStream>>& streams_;
   std::vector<std::unique_ptr<LogFile>> logFiles_;
   String lockfilePath_;
 };

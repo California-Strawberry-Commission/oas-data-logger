@@ -2,7 +2,14 @@
 
 #include <Arduino.h>
 
+#include <memory>
+
 namespace dlf::util {
+
+template <typename T, typename... Args>
+std::unique_ptr<T> make_unique(Args&&... args) {
+  return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+}
 
 // https://stackoverflow.com/a/59522794/16238567
 inline constexpr size_t hashStr(const char* s, int off = 0) {

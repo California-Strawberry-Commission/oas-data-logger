@@ -4,14 +4,14 @@
 
 namespace dlf::datastream {
 
-EventStream::EventStream(Encodable& dat, String id, const char* notes,
-                         SemaphoreHandle_t mutex)
+EventStream::EventStream(const Encodable& dat, const String& id,
+                         const char* notes, SemaphoreHandle_t mutex)
     : AbstractStream(dat, id, notes, mutex) {}
 
-stream_handle_t EventStream::handle(std::chrono::microseconds tickInterval,
-                                    dlf_stream_idx_t idx) {
-  return std::unique_ptr<AbstractStreamHandle>(
-      new EventStreamHandle(this, idx));
+std::unique_ptr<dlf::datastream::AbstractStreamHandle>
+EventStream::createHandle(std::chrono::microseconds tickInterval,
+                          dlf_stream_idx_t idx) {
+  return dlf::util::make_unique<EventStreamHandle>(this, idx);
 }
 
 dlf_stream_type_e EventStream::type() { return EVENT; }
