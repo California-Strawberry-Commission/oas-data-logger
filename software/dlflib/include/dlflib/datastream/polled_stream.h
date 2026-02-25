@@ -17,7 +17,7 @@ class PolledStream : public AbstractStream {
                std::chrono::microseconds phase, const char* notes,
                SemaphoreHandle_t mutex = nullptr);
 
-  std::unique_ptr<dlf::datastream::AbstractStreamHandle> handle(
+  std::unique_ptr<dlf::datastream::AbstractStreamHandle> createHandle(
       std::chrono::microseconds tickInterval, dlf_stream_idx_t idx);
 
   dlf_stream_type_e type();

@@ -46,8 +46,8 @@ class DlfComponent {
   }
 
  private:
-  std::vector<DlfComponent*>* componentStore_;
-  size_t id_;
+  std::vector<DlfComponent*>* componentStore_{nullptr};
+  size_t id_{0};
 };
 
 }  // namespace dlf::components

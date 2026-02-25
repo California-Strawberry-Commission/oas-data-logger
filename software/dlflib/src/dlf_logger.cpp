@@ -12,6 +12,24 @@ DLFLogger::DLFLogger(fs::FS& fs, const String& fsDir) : fs_(fs), fsDir_(fsDir) {
   addComponent(this);
 }
 
+DLFLogger::~DLFLogger() {
+  // Stop all active runs
+  for (auto& run : runs_) {
+    if (run) {
+      run->close();
+      run.reset();
+    }
+  }
+
+  // Delete FreeRTOS event group
+  if (loggerEventGroup_) {
+    vEventGroupDelete(loggerEventGroup_);
+    loggerEventGroup_ = nullptr;
+  }
+
+  // TODO: Clean up components
+}
+
 bool DLFLogger::begin() {
   DLFLIB_LOG_INFO("[DLFLogger] Begin");
   prune();
@@ -44,13 +62,13 @@ run_handle_t DLFLogger::startRun(const Encodable& meta,
     return 0;
   }
 
-  DLFLIB_LOG_INFO("[DLFLogger] Starting logging with a tick rate of %dus",
-                  tickRate);
+  DLFLIB_LOG_INFO("[DLFLogger] Starting logging with a tick rate of %lldus",
+                  (long long)tickRate.count());
 
   // Initialize new run
-  dlf::Run* run = new dlf::Run(fs_, fsDir_, streams_, tickRate, meta);
   int idx = h - 1;
-  runs_[idx] = std::unique_ptr<dlf::Run>(run);
+  runs_[idx] =
+      dlf::util::make_unique<dlf::Run>(fs_, fsDir_, streams_, tickRate, meta);
 
   return h;
 }
@@ -112,24 +130,20 @@ Run* DLFLogger::getRun(run_handle_t h) {
   return runs_[idx].get();
 }
 
-DLFLogger& DLFLogger::watchInternal(const Encodable& value, String id,
+DLFLogger& DLFLogger::watchInternal(const Encodable& value, const String& id,
                                     const char* notes,
                                     SemaphoreHandle_t mutex) {
-  dlf::datastream::AbstractStream* s =
-      new dlf::datastream::EventStream(value, id, notes, mutex);
-  streams_.push_back(s);
-
+  streams_.push_back(dlf::util::make_unique<dlf::datastream::EventStream>(
+      value, id, notes, mutex));
   return *this;
 }
 
-DLFLogger& DLFLogger::pollInternal(const Encodable& value, String id,
+DLFLogger& DLFLogger::pollInternal(const Encodable& value, const String& id,
                                    std::chrono::microseconds sampleInterval,
                                    std::chrono::microseconds phase,
                                    const char* notes, SemaphoreHandle_t mutex) {
-  dlf::datastream::AbstractStream* s = new dlf::datastream::PolledStream(
-      value, id, sampleInterval, phase, notes, mutex);
-  streams_.push_back(s);
-
+  streams_.push_back(dlf::util::make_unique<dlf::datastream::PolledStream>(
+      value, id, sampleInterval, phase, notes, mutex));
   return *this;
 }
 

@@ -40,7 +40,7 @@ class AbstractStream {
    * @param idx
    * @return
    */
-  virtual std::unique_ptr<AbstractStreamHandle> handle(
+  virtual std::unique_ptr<AbstractStreamHandle> createHandle(
       std::chrono::microseconds tickInterval, dlf_stream_idx_t idx) = 0;
 
   virtual dlf_stream_type_e type() = 0;

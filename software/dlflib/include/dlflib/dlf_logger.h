@@ -56,6 +56,7 @@ class DLFLogger : public dlf::components::DlfComponent {
   enum LoggerEvents : uint32_t { RUN_COMPLETE = 1 };
 
   DLFLogger(fs::FS& fs, const String& fsDir = "/");
+  ~DLFLogger() override;
 
   bool begin();
 
@@ -108,10 +109,11 @@ class DLFLogger : public dlf::components::DlfComponent {
   Run* getRun(run_handle_t h);
 
  private:
-  DLFLogger& watchInternal(const Encodable& value, String id, const char* notes,
+  DLFLogger& watchInternal(const Encodable& value, const String& id,
+                           const char* notes,
                            SemaphoreHandle_t mutex = nullptr);
 
-  DLFLogger& pollInternal(const Encodable& value, String id,
+  DLFLogger& pollInternal(const Encodable& value, const String& id,
                           std::chrono::microseconds sampleInterval,
                           std::chrono::microseconds phase, const char* notes,
                           SemaphoreHandle_t mutex = nullptr);
@@ -121,10 +123,10 @@ class DLFLogger : public dlf::components::DlfComponent {
   void prune();
 
   std::unique_ptr<Run> runs_[MAX_ACTIVE_RUNS];
-  // Todo: Figure out how to do this with unique_ptrs
-  std::vector<dlf::datastream::AbstractStream*> streams_;
+  std::vector<std::unique_ptr<dlf::datastream::AbstractStream>> streams_;
   fs::FS& fs_;
   String fsDir_;
+  // TODO: Fix ambiguous ownership of components
   std::vector<dlf::components::DlfComponent*> components_;
   // Used to signal that a new run is available
   EventGroupHandle_t loggerEventGroup_{nullptr};

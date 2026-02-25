@@ -19,7 +19,8 @@ namespace dlf {
 class Run {
  public:
   Run(fs::FS& fs, const String& fsDir,
-      std::vector<dlf::datastream::AbstractStream*> streams,
+      const std::vector<std::unique_ptr<dlf::datastream::AbstractStream>>&
+          streams,
       std::chrono::microseconds tickInterval, const Encodable& meta);
 
   /**
@@ -59,7 +60,7 @@ class Run {
   dlf_file_state_e status_;
   SemaphoreHandle_t syncSemaphore_;
   std::chrono::microseconds tickInterval_;
-  std::vector<dlf::datastream::AbstractStream*> streams_;
+  const std::vector<std::unique_ptr<dlf::datastream::AbstractStream>>& streams_;
   std::vector<std::unique_ptr<LogFile>> logFiles_;
   String lockfilePath_;
 };

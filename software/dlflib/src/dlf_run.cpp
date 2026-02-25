@@ -10,7 +10,8 @@
 namespace dlf {
 
 Run::Run(fs::FS& fs, const String& fsDir,
-         std::vector<dlf::datastream::AbstractStream*> streams,
+         const std::vector<std::unique_ptr<dlf::datastream::AbstractStream>>&
+             streams,
          std::chrono::microseconds tickInterval, const Encodable& meta)
     : fs_(fs), streams_(streams), tickInterval_(tickInterval) {
   assert(tickInterval.count() > 0);
@@ -130,13 +131,14 @@ void Run::createLogfile(dlf_stream_type_e t) {
   std::vector<std::unique_ptr<dlf::datastream::AbstractStreamHandle>> handles;
 
   size_t idx = 0;
-  for (auto& stream : streams_) {
-    if (stream->type() == t) {
-      handles.push_back(std::move(stream->handle(tickInterval_, idx++)));
+  for (const auto& stream : streams_) {
+    auto* streamPtr = stream.get();
+    if (streamPtr && stream->type() == t) {
+      handles.push_back(stream->createHandle(tickInterval_, idx++));
     }
   }
-  logFiles_.push_back(std::unique_ptr<LogFile>(
-      new LogFile(std::move(handles), t, runDir_, fs_)));
+  logFiles_.push_back(
+      dlf::util::make_unique<LogFile>(std::move(handles), t, runDir_, fs_));
 }
 
 void Run::taskSampler(void* arg) {
