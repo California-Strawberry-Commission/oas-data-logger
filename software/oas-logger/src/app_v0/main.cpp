@@ -186,7 +186,7 @@ void setup() {
 
   // Create mutex for GPS data protection
   gpsDataMutex = xSemaphoreCreateMutex();
-  if (gpsDataMutex == NULL) {
+  if (gpsDataMutex == nullptr) {
     currentError = ErrorType::LOGGER_INIT_FAILED;
     transitionToState(SystemState::ERROR);
     return;

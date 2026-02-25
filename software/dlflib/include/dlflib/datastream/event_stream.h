@@ -13,8 +13,8 @@ namespace dlf::datastream {
  */
 class EventStream : public AbstractStream {
  public:
-  EventStream(Encodable& dat, String id, const char* notes,
-              SemaphoreHandle_t mutex = NULL);
+  EventStream(const Encodable& dat, const String& id, const char* notes,
+              SemaphoreHandle_t mutex = nullptr);
 
   stream_handle_t handle(std::chrono::microseconds tickInterval,
                          dlf_stream_idx_t idx);

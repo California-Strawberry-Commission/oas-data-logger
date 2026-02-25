@@ -18,8 +18,8 @@ namespace dlf {
 
 class Run {
  public:
-  Run(fs::FS& fs, String fsDir, dlf::datastream::streams_t streams,
-      std::chrono::microseconds tickInterval, Encodable& meta);
+  Run(fs::FS& fs, const String& fsDir, dlf::datastream::streams_t streams,
+      std::chrono::microseconds tickInterval, const Encodable& meta);
 
   /**
    * End the run. Cleans up and closes out log files.
@@ -48,7 +48,7 @@ class Run {
 
   void createLockfile();
 
-  void createMetafile(Encodable& meta);
+  void createMetafile(const Encodable& meta);
 
   void createLogfile(dlf_stream_type_e t);
 

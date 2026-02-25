@@ -4,8 +4,8 @@
 
 namespace dlf::datastream {
 
-EventStream::EventStream(Encodable& dat, String id, const char* notes,
-                         SemaphoreHandle_t mutex)
+EventStream::EventStream(const Encodable& dat, const String& id,
+                         const char* notes, SemaphoreHandle_t mutex)
     : AbstractStream(dat, id, notes, mutex) {}
 
 stream_handle_t EventStream::handle(std::chrono::microseconds tickInterval,

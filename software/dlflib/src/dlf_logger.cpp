@@ -6,7 +6,7 @@
 
 namespace dlf {
 
-DLFLogger::DLFLogger(fs::FS& fs, String fsDir) : fs_(fs), fsDir_(fsDir) {
+DLFLogger::DLFLogger(fs::FS& fs, const String& fsDir) : fs_(fs), fsDir_(fsDir) {
   loggerEventGroup_ = xEventGroupCreate();
   this->setup(&components_);
   addComponent(this);
@@ -34,40 +34,36 @@ bool DLFLogger::begin() {
   return true;
 }
 
-run_handle_t DLFLogger::startRun(Encodable meta,
+run_handle_t DLFLogger::startRun(const Encodable& meta,
                                  std::chrono::microseconds tickRate) {
   run_handle_t h = getAvailableHandle();
 
-  // If 0, out of space.
-  if (!h) {
-    return h;
+  // A handle of 0 indicates that no more runs can be started (max active runs
+  // has been reached)
+  if (h == 0) {
+    return 0;
   }
 
-  DLFLIB_LOG_INFO("[DLFLogger] Starting logging with a cycle time-base of %dus",
+  DLFLIB_LOG_INFO("[DLFLogger] Starting logging with a tick rate of %dus",
                   tickRate);
 
   // Initialize new run
   dlf::Run* run = new dlf::Run(fs_, fsDir_, streams_, tickRate, meta);
-
-  if (run == NULL) {
-    return 0;
-  }
-
-  int runIdx = h - 1;
-  runs_[runIdx] = std::unique_ptr<dlf::Run>(run);
+  int idx = h - 1;
+  runs_[idx] = std::unique_ptr<dlf::Run>(run);
 
   return h;
 }
 
 void DLFLogger::stopRun(run_handle_t h) {
-  int runIdx = h - 1;
-  if (runIdx < 0 || runIdx >= MAX_RUNS || !runs_[runIdx]) {
+  int idx = h - 1;
+  if (idx < 0 || idx >= MAX_ACTIVE_RUNS || !runs_[idx]) {
     return;
   }
 
-  runs_[runIdx]->close();
-  runs_[runIdx].reset();
-  xEventGroupSetBits(loggerEventGroup_, NEW_RUN);
+  runs_[idx]->close();
+  runs_[idx].reset();
+  xEventGroupSetBits(loggerEventGroup_, RUN_COMPLETE);
 }
 
 DLFLogger& DLFLogger::syncTo(
@@ -97,7 +93,8 @@ void DLFLogger::waitForSyncCompletion() {
 
 std::vector<run_handle_t> DLFLogger::getActiveRuns() {
   std::vector<run_handle_t> activeRuns;
-  for (size_t i = 0; i < MAX_RUNS; ++i) {
+  activeRuns.reserve(MAX_ACTIVE_RUNS);
+  for (int i = 0; i < MAX_ACTIVE_RUNS; ++i) {
     if (runs_[i]) {
       run_handle_t handle = i + 1;
       activeRuns.push_back(handle);
@@ -107,15 +104,15 @@ std::vector<run_handle_t> DLFLogger::getActiveRuns() {
 }
 
 Run* DLFLogger::getRun(run_handle_t h) {
-  int runIdx = h - 1;
-  if (runIdx < 0 || runIdx >= MAX_RUNS || !runs_[runIdx]) {
+  int idx = h - 1;
+  if (idx < 0 || idx >= MAX_ACTIVE_RUNS || !runs_[idx]) {
     return nullptr;
   }
 
-  return runs_[runIdx].get();
+  return runs_[idx].get();
 }
 
-DLFLogger& DLFLogger::watchInternal(Encodable value, String id,
+DLFLogger& DLFLogger::watchInternal(const Encodable& value, String id,
                                     const char* notes,
                                     SemaphoreHandle_t mutex) {
   dlf::datastream::AbstractStream* s =
@@ -125,7 +122,7 @@ DLFLogger& DLFLogger::watchInternal(Encodable value, String id,
   return *this;
 }
 
-DLFLogger& DLFLogger::pollInternal(Encodable value, String id,
+DLFLogger& DLFLogger::pollInternal(const Encodable& value, String id,
                                    std::chrono::microseconds sampleInterval,
                                    std::chrono::microseconds phase,
                                    const char* notes, SemaphoreHandle_t mutex) {
@@ -137,12 +134,11 @@ DLFLogger& DLFLogger::pollInternal(Encodable value, String id,
 }
 
 run_handle_t DLFLogger::getAvailableHandle() {
-  for (size_t i = 0; i < MAX_RUNS; i++) {
+  for (int i = 0; i < MAX_ACTIVE_RUNS; ++i) {
     if (!runs_[i]) {
       return i + 1;
     }
   }
-
   return 0;
 }
 

@@ -106,7 +106,7 @@ SFE_UBLOX_GNSS_SERIAL myGNSS;  // u-blox GNSS object
 ESP32Time rtc;
 WiFiManager wifiManager;
 dlf::DLFLogger logger{SD_MMC};
-TaskHandle_t xGPS_Handle = NULL;
+TaskHandle_t xGPS_Handle{nullptr};
 
 // State Machine Variables
 SystemState currentState = SystemState::INIT;
@@ -184,7 +184,7 @@ void setup() {
 
   // Create mutex for GPS data protection
   gpsDataMutex = xSemaphoreCreateMutex();
-  if (gpsDataMutex == NULL) {
+  if (gpsDataMutex == nullptr) {
     currentError = ErrorType::LOGGER_INIT_FAILED;
     transitionToState(SystemState::ERROR);
     return;
@@ -724,10 +724,10 @@ void disableGps() {
   EZLOG_INFO("Disabling GPS...");
 
   // Delete GPS task if it exists
-  if (xGPS_Handle != NULL) {
+  if (xGPS_Handle != nullptr) {
     EZLOG_INFO("[GPS] Deleting GPS task...");
     vTaskDelete(xGPS_Handle);
-    xGPS_Handle = NULL;
+    xGPS_Handle = nullptr;
   }
 
   // Turn off GPS wake signal

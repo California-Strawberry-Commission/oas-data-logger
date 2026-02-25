@@ -9,8 +9,8 @@
 
 namespace dlf {
 
-Run::Run(fs::FS& fs, String fsDir, dlf::datastream::streams_t streams,
-         std::chrono::microseconds tickInterval, Encodable& meta)
+Run::Run(fs::FS& fs, const String& fsDir, dlf::datastream::streams_t streams,
+         std::chrono::microseconds tickInterval, const Encodable& meta)
     : fs_(fs), streams_(streams), tickInterval_(tickInterval) {
   assert(tickInterval.count() > 0);
 
@@ -91,7 +91,7 @@ void Run::unlockAllLogFiles() {
   }
 }
 
-void Run::createMetafile(Encodable& meta) {
+void Run::createMetafile(const Encodable& meta) {
   dlf_meta_header_t h;
   time_t now = time(NULL);
   h.epoch_time_s = now;

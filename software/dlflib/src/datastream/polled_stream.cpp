@@ -4,7 +4,7 @@
 
 namespace dlf::datastream {
 
-PolledStream::PolledStream(Encodable& src, String id,
+PolledStream::PolledStream(const Encodable& src, const String& id,
                            std::chrono::microseconds sampleInterval,
                            std::chrono::microseconds phase, const char* notes,
                            SemaphoreHandle_t mutex)

@@ -61,7 +61,7 @@ class AbstractStream {
   SemaphoreHandle_t mutex() const { return mutex_; }
 
  protected:
-  AbstractStream(Encodable& dat, String id, const char* notes,
+  AbstractStream(const Encodable& dat, const String& id, const char* notes,
                  SemaphoreHandle_t mutex)
       : src_(dat), id_(id), notes_(notes), mutex_(mutex) {}
 
