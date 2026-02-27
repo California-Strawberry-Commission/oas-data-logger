@@ -1,8 +1,5 @@
 #include "dlflib/components/uploader_component.h"
 
-#include <WiFiClient.h>
-#include <WiFiClientSecure.h>
-
 #include "dlflib/dlf_cfg.h"
 #include "dlflib/dlf_logger.h"
 #include "dlflib/log.h"
@@ -45,46 +42,6 @@ UrlParts parseUrl(const String& url) {
 
   urlParts.path = (pathStart < url.length()) ? url.substring(pathStart) : "/";
   return urlParts;
-}
-
-std::unique_ptr<WiFiClient> connectToEndpoint(const String& url,
-                                              int maxRetries = 3,
-                                              uint32_t retryDelayMs = 500) {
-  UrlParts parts{parseUrl(url)};
-  if (parts.scheme.length() == 0 || parts.host.length() == 0) {
-    DLFLIB_LOG_ERROR("[UploaderComponent][connectToEndpoint] Invalid URL");
-    return nullptr;
-  }
-
-  bool useHttps{parts.scheme == "https"};
-
-  std::unique_ptr<WiFiClient> client;
-  if (useHttps) {
-    client = dlf::util::make_unique<WiFiClientSecure>();
-    static_cast<WiFiClientSecure*>(client.get())->setInsecure();
-  } else {
-    client = dlf::util::make_unique<WiFiClient>();
-  }
-
-  for (int attempt = 1; attempt <= maxRetries; ++attempt) {
-    DLFLIB_LOG_INFO(
-        "[UploaderComponent][connectToEndpoint] Attempt %d to %s:%u", attempt,
-        parts.host.c_str(), parts.port);
-
-    if (client->connect(parts.host.c_str(), parts.port)) {
-      DLFLIB_LOG_INFO(
-          "[UploaderComponent][connectToEndpoint] Connected successfully");
-      return client;
-    }
-
-    DLFLIB_LOG_WARNING(
-        "[UploaderComponent][connectToEndpoint] Connect failed, retrying...");
-    delay(retryDelayMs);
-  }
-
-  DLFLIB_LOG_ERROR(
-      "[UploaderComponent][connectToEndpoint] All connect retries failed");
-  return nullptr;
 }
 
 }  // namespace
@@ -240,8 +197,8 @@ bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
   client->printf("Content-Type: multipart/form-data; boundary=%s\r\n",
                  boundary);
   client->printf("Content-Length: %zu\r\n", contentLength);
-  client->println("Connection: close");
-  client->println();  // end of headers
+  client->print("Connection: close\r\n");
+  client->print("\r\n");  // end of headers
 
   ////////////////////////
   // Send multipart fields
@@ -554,6 +511,61 @@ void UploaderComponent::partialRunUploadTask(void* arg) {
     // Block until desired interval has passed since the last loop
     vTaskDelayUntil(&lastWakeTime, period);
   }
+}
+
+WiFiClient* UploaderComponent::getWiFiClient(bool secure) {
+  if (secure) {
+    if (!wifiClientSecure_) {
+      wifiClientSecure_ = dlf::util::make_unique<WiFiClientSecure>();
+      wifiClientSecure_->setInsecure();
+    }
+    return wifiClientSecure_.get();
+  } else {
+    if (!wifiClient_) {
+      wifiClient_ = dlf::util::make_unique<WiFiClient>();
+    }
+    return wifiClient_.get();
+  }
+}
+
+WiFiClient* UploaderComponent::connectToEndpoint(const String& url,
+                                                 int maxRetries,
+                                                 uint32_t retryDelayMs) {
+  UrlParts parts{parseUrl(url)};
+  if (parts.scheme.length() == 0 || parts.host.length() == 0) {
+    DLFLIB_LOG_ERROR("[UploaderComponent][connectToEndpoint] Invalid URL");
+    return nullptr;
+  }
+
+  const bool useHttps{parts.scheme == "https"};
+  WiFiClient* client = getWiFiClient(useHttps);
+  if (!client) {
+    return nullptr;
+  }
+
+  // Ensure clean state on WiFiClient
+  client->stop();
+
+  for (int attempt = 1; attempt <= maxRetries; ++attempt) {
+    DLFLIB_LOG_INFO(
+        "[UploaderComponent][connectToEndpoint] Attempt %d to %s:%u", attempt,
+        parts.host.c_str(), parts.port);
+
+    if (client->connect(parts.host.c_str(), parts.port)) {
+      DLFLIB_LOG_INFO(
+          "[UploaderComponent][connectToEndpoint] Connected successfully");
+      return client;
+    }
+
+    DLFLIB_LOG_WARNING(
+        "[UploaderComponent][connectToEndpoint] Connect failed, retrying...");
+    delay(retryDelayMs);
+  }
+
+  DLFLIB_LOG_ERROR(
+      "[UploaderComponent][connectToEndpoint] All connect retries failed");
+  client->stop();
+  return nullptr;
 }
 
 }  // namespace dlf::components

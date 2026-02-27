@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include <FS.h>
 #include <WiFi.h>
+#include <WiFiClient.h>
+#include <WiFiClientSecure.h>
 
 #include "dlflib/auth/request_signer.h"
 #include "dlflib/components/component.h"
@@ -43,6 +45,12 @@ class UploaderComponent : public Component {
   void onWifiDisconnected(arduino_event_id_t event, arduino_event_info_t info);
   void onWifiConnected(arduino_event_id_t event, arduino_event_info_t info);
 
+  WiFiClient* getWiFiClient(bool secure = true);
+  WiFiClient* connectToEndpoint(const String& url, int maxRetries = 3,
+                                uint32_t retryDelayMs = 500);
+
+  std::unique_ptr<WiFiClient> wifiClient_;
+  std::unique_ptr<WiFiClientSecure> wifiClientSecure_;
   dlf::auth::RequestSigner signer_;
   fs::FS& fs_;
   String dir_;
