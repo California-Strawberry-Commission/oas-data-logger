@@ -58,13 +58,12 @@ std::unique_ptr<WiFiClient> connectToEndpoint(const String& url,
 
   bool useHttps{parts.scheme == "https"};
 
-  WiFiClient* client = nullptr;
+  std::unique_ptr<WiFiClient> client;
   if (useHttps) {
-    auto* secureClient = new WiFiClientSecure();
-    secureClient->setInsecure();
-    client = secureClient;
+    client = dlf::util::make_unique<WiFiClientSecure>();
+    static_cast<WiFiClientSecure*>(client.get())->setInsecure();
   } else {
-    client = new WiFiClient();
+    client = dlf::util::make_unique<WiFiClient>();
   }
 
   for (int attempt = 1; attempt <= maxRetries; ++attempt) {
@@ -75,7 +74,7 @@ std::unique_ptr<WiFiClient> connectToEndpoint(const String& url,
     if (client->connect(parts.host.c_str(), parts.port)) {
       DLFLIB_LOG_INFO(
           "[UploaderComponent][connectToEndpoint] Connected successfully");
-      return std::unique_ptr<WiFiClient>(client);
+      return client;
     }
 
     DLFLIB_LOG_WARNING(
@@ -85,7 +84,6 @@ std::unique_ptr<WiFiClient> connectToEndpoint(const String& url,
 
   DLFLIB_LOG_ERROR(
       "[UploaderComponent][connectToEndpoint] All connect retries failed");
-  delete client;
   return nullptr;
 }
 
