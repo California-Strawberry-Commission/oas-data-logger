@@ -232,7 +232,7 @@ bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
   client->printf("Content-Type: multipart/form-data; boundary=%s\r\n",
                  boundary);
   client->printf("Content-Length: %zu\r\n", contentLength);
-  client->println("Connection: close\r\n");
+  client->println("Connection: close");
   client->println();  // end of headers
 
   ////////////////////////
