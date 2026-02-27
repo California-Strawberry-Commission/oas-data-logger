@@ -155,10 +155,14 @@ bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
   // List files to be uploaded
   DLFLIB_LOG_INFO("[UploaderComponent] Files to upload:");
   runDir.rewindDirectory();
-  fs::File tempFile;
-  while (tempFile = runDir.openNextFile()) {
-    DLFLIB_LOG_INFO("  - %s (%d bytes)", tempFile.name(), tempFile.size());
-    tempFile.close();
+  while (true) {
+    fs::File file = runDir.openNextFile();
+    if (!file) {
+      break;
+    }
+
+    DLFLIB_LOG_INFO("  - %s (%d bytes)", file.name(), file.size());
+    file.close();
   }
 
   char urlBuf[256];
@@ -206,13 +210,17 @@ bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
 
   // Files
   runDir.rewindDirectory();
-  fs::File file = runDir.openNextFile();
-  while (file) {
+
+  while (true) {
+    fs::File file = runDir.openNextFile();
+    if (!file) {
+      break;
+    }
+
     contentLength += snprintf(NULL, 0, fileTemplate, file.name());
     contentLength += file.size();
     contentLength += 2;  // for trailing "\r\n" after file data
     file.close();
-    file = runDir.openNextFile();
   }
 
   contentLength += strlen(endBoundary);
@@ -247,8 +255,12 @@ bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
   uint8_t buf[128];
   const size_t chunkSize = sizeof(buf);
 
-  file = runDir.openNextFile();
-  while (file) {
+  while (true) {
+    fs::File file = runDir.openNextFile();
+    if (!file) {
+      break;
+    }
+
     // Send file boundary
     client->printf(fileTemplate, file.name());
 
@@ -260,7 +272,6 @@ bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
 
     client->print("\r\n");
     file.close();
-    file = runDir.openNextFile();
   }
 
   ////////////////////
@@ -276,12 +287,12 @@ bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
     if (client->available()) {
       // We don't need to process the full response body, so return as soon as
       // we receive a line
-      String statusLine = client->readStringUntil('\n');
-      DLFLIB_LOG_INFO("[UploaderComponent] Response: %s", statusLine.c_str());
-      client->stop();
-
-      return statusLine.startsWith("HTTP/1.1 200") ||
-             statusLine.startsWith("HTTP/1.0 200");
+      char status[64] = {0};
+      size_t n = client->readBytesUntil('\n', status, sizeof(status) - 1);
+      status[n] = '\0';
+      bool ok = (strncmp(status, "HTTP/1.1 200", 12) == 0) ||
+                (strncmp(status, "HTTP/1.0 200", 12) == 0);
+      return ok;
     }
   }
 
@@ -323,6 +334,7 @@ void UploaderComponent::syncTask(void* arg) {
     if (!root.isDirectory()) {
       DLFLIB_LOG_ERROR(
           "[UploaderComponent][syncTask] Root is not dir. Terminating task");
+      root.close();
       vTaskDelete(NULL);
     }
 
@@ -334,13 +346,18 @@ void UploaderComponent::syncTask(void* arg) {
 
     xEventGroupClearBits(uploaderComponent->syncEvent_, SYNC_COMPLETE);
 
-    fs::File runDir;
     int numFailures = 0;
     while (xEventGroupGetBits(uploaderComponent->wifiEvent_) & WLAN_READY &&
-           (runDir = root.openNextFile()) && numFailures < 3) {
+           numFailures < 3) {
+      fs::File runDir = root.openNextFile();
+      if (!runDir) {
+        break;
+      }
+
       // Skip syncing files, hidden dirs, and system volume information dir
       if (!runDir.isDirectory() || runDir.name()[0] == '.' ||
           !strcmp(runDir.name(), "System Volume Information")) {
+        runDir.close();
         continue;
       }
 
@@ -352,12 +369,22 @@ void UploaderComponent::syncTask(void* arg) {
       bool lockfileFound = false;
       bool uploadMarkerFound = false;
 
-      fs::File file;
-      while (file = runDir.openNextFile()) {
-        if (!strcmp(file.name(), LOCKFILE_NAME)) {
+      while (true) {
+        fs::File file = runDir.openNextFile();
+        if (!file) {
+          break;
+        }
+
+        const bool isLockfile = !strcmp(file.name(), LOCKFILE_NAME);
+        const bool isUploadMarker =
+            !strcmp(file.name(), UPLOAD_MARKER_FILE_NAME);
+        file.close();
+
+        if (isLockfile) {
           lockfileFound = true;
           break;
-        } else if (!strcmp(file.name(), UPLOAD_MARKER_FILE_NAME)) {
+        }
+        if (isUploadMarker) {
           uploadMarkerFound = true;
           break;
         }
@@ -369,6 +396,7 @@ void UploaderComponent::syncTask(void* arg) {
             "[UploaderComponent][syncTask] %s is active and/or incomplete. "
             "Skipping",
             runDirPath.c_str());
+        runDir.close();
         continue;
       }
 
@@ -378,6 +406,7 @@ void UploaderComponent::syncTask(void* arg) {
             "[UploaderComponent][syncTask] %s has already been uploaded. "
             "Skipping",
             runDirPath.c_str());
+        runDir.close();
         continue;
       }
 
@@ -395,10 +424,19 @@ void UploaderComponent::syncTask(void* arg) {
         if (uploaderComponent->options_.deleteAfterUpload) {
           // Remove run data
           runDir.rewindDirectory();
-          while (file = runDir.openNextFile()) {
-            uploaderComponent->fs_.remove(
-                dlf::util::resolvePath({runDirPath, file.name()}));
+
+          while (true) {
+            fs::File file = runDir.openNextFile();
+            if (!file) {
+              break;
+            }
+
+            const String path =
+                dlf::util::resolvePath({runDirPath, file.name()});
+            file.close();
+            uploaderComponent->fs_.remove(path);
           }
+
           uploaderComponent->fs_.rmdir(runDirPath);
           DLFLIB_LOG_INFO(
               "[UploaderComponent][syncTask] Removed run data for %s",
@@ -407,15 +445,20 @@ void UploaderComponent::syncTask(void* arg) {
           // Add upload marker to indicate that this run has been uploaded
           String markerFilePath =
               dlf::util::resolvePath({runDirPath, UPLOAD_MARKER_FILE_NAME});
-          fs::File f = uploaderComponent->fs_.open(markerFilePath, "w", true);
-          f.write(0);
-          f.close();
+          fs::File file =
+              uploaderComponent->fs_.open(markerFilePath, "w", true);
+          if (file) {
+            file.write(0);
+            file.close();
+          }
           DLFLIB_LOG_INFO("[UploaderComponent][syncTask] Marked %s as uploaded",
                           runDir.name());
         }
       } else {
         DLFLIB_LOG_ERROR("[UploaderComponent][syncTask] Upload failed");
       }
+
+      runDir.close();
     }
 
     root.close();
@@ -504,6 +547,8 @@ void UploaderComponent::partialRunUploadTask(void* arg) {
         DLFLIB_LOG_ERROR(
             "[UploaderComponent][partialRunUploadTask] Upload failed");
       }
+
+      runDir.close();
     }
 
     // Block until desired interval has passed since the last loop
