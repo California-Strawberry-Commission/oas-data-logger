@@ -340,39 +340,50 @@ void UploaderComponent::syncTask(void* arg) {
 
       if (uploadSuccess) {
         DLFLIB_LOG_INFO("[UploaderComponent][syncTask] Upload successful");
-        if (uploaderComponent->options_.deleteAfterUpload) {
-          // Remove run data
-          runDir.rewindDirectory();
+        switch (uploaderComponent->options_.retentionMode) {
+          case RetentionMode::DELETE: {
+            // Remove run data
+            runDir.rewindDirectory();
 
-          char path[256];
-          while (true) {
-            fs::File file = runDir.openNextFile();
-            if (!file) {
-              break;
+            char path[256];
+            while (true) {
+              fs::File file = runDir.openNextFile();
+              if (!file) {
+                break;
+              }
+
+              dlf::util::joinPath(path, sizeof(path), runDirPath, file.name());
+              file.close();
+              uploaderComponent->fs_.remove(path);
             }
 
-            dlf::util::joinPath(path, sizeof(path), runDirPath, file.name());
-            file.close();
-            uploaderComponent->fs_.remove(path);
+            uploaderComponent->fs_.rmdir(runDirPath);
+            DLFLIB_LOG_INFO(
+                "[UploaderComponent][syncTask] Removed run data for %s",
+                runDir.name());
+            break;
           }
 
-          uploaderComponent->fs_.rmdir(runDirPath);
-          DLFLIB_LOG_INFO(
-              "[UploaderComponent][syncTask] Removed run data for %s",
-              runDir.name());
-        } else if (uploaderComponent->options_.markAfterUpload) {
-          // Add upload marker to indicate that this run has been uploaded
-          char markerFilePath[256];
-          dlf::util::joinPath(markerFilePath, sizeof(markerFilePath),
-                              runDirPath, UPLOAD_MARKER_FILE_NAME);
-          fs::File file =
-              uploaderComponent->fs_.open(markerFilePath, "w", true);
-          if (file) {
-            file.write(0);
-            file.close();
+          case RetentionMode::MARK: {
+            // Add upload marker to indicate that this run has been uploaded
+            char markerFilePath[256];
+            dlf::util::joinPath(markerFilePath, sizeof(markerFilePath),
+                                runDirPath, UPLOAD_MARKER_FILE_NAME);
+            fs::File file =
+                uploaderComponent->fs_.open(markerFilePath, "w", true);
+            if (file) {
+              file.write(0);
+              file.close();
+            }
+            DLFLIB_LOG_INFO(
+                "[UploaderComponent][syncTask] Marked %s as uploaded",
+                runDir.name());
+            break;
           }
-          DLFLIB_LOG_INFO("[UploaderComponent][syncTask] Marked %s as uploaded",
-                          runDir.name());
+
+          case RetentionMode::KEEP:
+          default:
+            break;
         }
       } else {
         DLFLIB_LOG_ERROR("[UploaderComponent][syncTask] Upload failed");

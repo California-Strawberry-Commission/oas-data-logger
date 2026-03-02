@@ -18,8 +18,8 @@
 // Configuration
 const int SERIAL_BAUD_RATE{115200};
 const int LOGGER_RUN_INTERVAL_S{0};  // <= 0 means disabled
-const bool LOGGER_MARK_AFTER_UPLOAD{true};
-const bool LOGGER_DELETE_AFTER_UPLOAD{false};
+const dlf::components::UploaderComponent::RetentionMode LOGGER_RETENTION_MODE{
+    dlf::components::UploaderComponent::RetentionMode::MARK};
 const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{0};  // <= 0 means disabled
 const int WIFI_RECONFIG_BUTTON_HOLD_TIME_MS{2000};
 const bool ENABLE_OTA_UPDATE{false};
@@ -761,8 +761,7 @@ void initializeDLFLogger() {
   POLL(logger, gpsData.alt, gpsDataLogInterval, gpsDataMutex);
 
   dlf::components::UploaderComponent::Options options;
-  options.markAfterUpload = LOGGER_MARK_AFTER_UPLOAD;
-  options.deleteAfterUpload = LOGGER_DELETE_AFTER_UPLOAD;
+  options.retentionMode = LOGGER_RETENTION_MODE;
   options.partialRunUploadIntervalSecs =
       LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS;
   logger.syncTo(UPLOAD_ENDPOINT, getDeviceUid(), deviceSecret, options).begin();

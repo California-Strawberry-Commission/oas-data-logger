@@ -13,11 +13,14 @@ namespace dlf::components {
 
 class UploaderComponent : public Component {
  public:
+  enum class RetentionMode : uint8_t {
+    KEEP,   // keep run data on SD card (no marker, no deletion)
+    MARK,   // add upload marker file after successful upload
+    DELETE  // delete run data after successful upload
+  };
+
   struct Options {
-    // Delete the run data from the SD card after uploading
-    bool deleteAfterUpload = false;
-    // Adds a marker file to the run directory on the SD card after uploading
-    bool markAfterUpload = true;
+    RetentionMode retentionMode = RetentionMode::MARK;
     // Attempts to upload the active runs' data at a regular interval. <= 0
     // disables partial run uploads.
     int partialRunUploadIntervalSecs = 0;
