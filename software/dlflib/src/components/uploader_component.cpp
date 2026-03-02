@@ -69,12 +69,7 @@ bool UploaderComponent::uploadRun(fs::File runDir, const char* runUuid,
   // List files to be uploaded
   DLFLIB_LOG_INFO("[UploaderComponent] Files to upload:");
   runDir.rewindDirectory();
-  while (true) {
-    fs::File file = runDir.openNextFile();
-    if (!file) {
-      break;
-    }
-
+  while (fs::File file = runDir.openNextFile()) {
     DLFLIB_LOG_INFO("  - %s (%d bytes)", file.name(), file.size());
     file.close();
   }
@@ -124,12 +119,7 @@ bool UploaderComponent::uploadRun(fs::File runDir, const char* runUuid,
   // Files
   runDir.rewindDirectory();
 
-  while (true) {
-    fs::File file = runDir.openNextFile();
-    if (!file) {
-      break;
-    }
-
+  while (fs::File file = runDir.openNextFile()) {
     contentLength += snprintf(NULL, 0, fileTemplate, file.name());
     contentLength += file.size();
     contentLength += 2;  // for trailing "\r\n" after file data
@@ -173,12 +163,7 @@ bool UploaderComponent::uploadRun(fs::File runDir, const char* runUuid,
   uint8_t buf[128];
   const size_t chunkSize = sizeof(buf);
 
-  while (true) {
-    fs::File file = runDir.openNextFile();
-    if (!file) {
-      break;
-    }
-
+  while (fs::File file = runDir.openNextFile()) {
     // Send file boundary
     client->printf(fileTemplate, file.name());
 
@@ -288,12 +273,7 @@ void UploaderComponent::syncTask(void* arg) {
       bool lockfileFound = false;
       bool uploadMarkerFound = false;
 
-      while (true) {
-        fs::File file = runDir.openNextFile();
-        if (!file) {
-          break;
-        }
-
+      while (fs::File file = runDir.openNextFile()) {
         const bool isLockfile = !strcmp(file.name(), LOCKFILE_NAME);
         const bool isUploadMarker =
             !strcmp(file.name(), UPLOAD_MARKER_FILE_NAME);
@@ -550,12 +530,7 @@ bool UploaderComponent::deleteRunDir(fs::File runDir, const char* runDirPath) {
   runDir.rewindDirectory();
 
   char path[256];
-  while (true) {
-    fs::File file = runDir.openNextFile();
-    if (!file) {
-      break;
-    }
-
+  while (fs::File file = runDir.openNextFile()) {
     dlf::util::joinPath(path, sizeof(path), runDirPath, file.name());
     file.close();
 

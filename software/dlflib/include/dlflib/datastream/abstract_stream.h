@@ -2,7 +2,6 @@
 
 #include <Arduino.h>
 #include <freertos/semphr.h>
-#include <string.h>
 
 #include <chrono>
 #include <memory>
@@ -55,18 +54,18 @@ class AbstractStream {
 
   const char* notes() { return notes_ != nullptr ? notes_ : "N/A"; }
 
-  const char* id() { return id_.c_str(); }
+  const char* id() { return id_; }
 
   SemaphoreHandle_t mutex() const { return mutex_; }
 
  protected:
-  AbstractStream(const Encodable& dat, const String& id, const char* notes,
+  AbstractStream(const Encodable& dat, const char* id, const char* notes,
                  SemaphoreHandle_t mutex)
       : src_(dat), id_(id), notes_(notes), mutex_(mutex) {}
 
  private:
   const Encodable src_;
-  const String id_;
+  const char* id_;
   const char* notes_;
   SemaphoreHandle_t mutex_;
 };

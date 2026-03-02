@@ -4,7 +4,7 @@
 
 namespace dlf::datastream {
 
-EventStream::EventStream(const Encodable& dat, const String& id,
+EventStream::EventStream(const Encodable& dat, const char* id,
                          const char* notes, SemaphoreHandle_t mutex)
     : AbstractStream(dat, id, notes, mutex) {}
 
