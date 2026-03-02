@@ -48,10 +48,10 @@ class UploaderComponent : public Component {
   // https://github.com/espressif/arduino-esp32/blob/master/libraries/WiFi/examples/WiFiClientEvents/WiFiClientEvents.ino
   void onWifiDisconnected(arduino_event_id_t event, arduino_event_info_t info);
   void onWifiConnected(arduino_event_id_t event, arduino_event_info_t info);
-
   WiFiClient* getWiFiClient(bool secure = true);
   WiFiClient* connectToEndpoint(const char* url, int maxRetries = 3,
                                 uint32_t retryDelayMs = 500);
+  bool deleteRunDir(fs::File runDir, const char* runDirPath);
 
   std::unique_ptr<WiFiClient> wifiClient_;
   std::unique_ptr<WiFiClientSecure> wifiClientSecure_;

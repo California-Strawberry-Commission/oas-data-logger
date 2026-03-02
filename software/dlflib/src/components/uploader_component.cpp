@@ -319,14 +319,24 @@ void UploaderComponent::syncTask(void* arg) {
         continue;
       }
 
-      // Skip already uploaded run
+      // Skip (or delete) already uploaded run
       if (uploadMarkerFound) {
-        DLFLIB_LOG_INFO(
-            "[UploaderComponent][syncTask] %s has already been uploaded. "
-            "Skipping",
-            runDirPath);
-        runDir.close();
-        continue;
+        if (uploaderComponent->options_.retentionMode ==
+            RetentionMode::DELETE) {
+          DLFLIB_LOG_INFO(
+              "[UploaderComponent][syncTask] %s has already been uploaded. "
+              "RetentionMode is DELETE. Deleting run data.",
+              runDirPath);
+          uploaderComponent->deleteRunDir(runDir, runDirPath);
+          continue;
+        } else {
+          DLFLIB_LOG_INFO(
+              "[UploaderComponent][syncTask] %s has already been uploaded. "
+              "Skipping.",
+              runDirPath);
+          runDir.close();
+          continue;
+        }
       }
 
       // Upload completed run that has not been uploaded yet
@@ -336,60 +346,48 @@ void UploaderComponent::syncTask(void* arg) {
       runDir.rewindDirectory();
 
       bool uploadSuccess = uploaderComponent->uploadRun(runDir, runDir.name());
-      numFailures += !uploadSuccess;
-
-      if (uploadSuccess) {
-        DLFLIB_LOG_INFO("[UploaderComponent][syncTask] Upload successful");
-        switch (uploaderComponent->options_.retentionMode) {
-          case RetentionMode::DELETE: {
-            // Remove run data
-            runDir.rewindDirectory();
-
-            char path[256];
-            while (true) {
-              fs::File file = runDir.openNextFile();
-              if (!file) {
-                break;
-              }
-
-              dlf::util::joinPath(path, sizeof(path), runDirPath, file.name());
-              file.close();
-              uploaderComponent->fs_.remove(path);
-            }
-
-            uploaderComponent->fs_.rmdir(runDirPath);
-            DLFLIB_LOG_INFO(
-                "[UploaderComponent][syncTask] Removed run data for %s",
-                runDir.name());
-            break;
-          }
-
-          case RetentionMode::MARK: {
-            // Add upload marker to indicate that this run has been uploaded
-            char markerFilePath[256];
-            dlf::util::joinPath(markerFilePath, sizeof(markerFilePath),
-                                runDirPath, UPLOAD_MARKER_FILE_NAME);
-            fs::File file =
-                uploaderComponent->fs_.open(markerFilePath, "w", true);
-            if (file) {
-              file.write(0);
-              file.close();
-            }
-            DLFLIB_LOG_INFO(
-                "[UploaderComponent][syncTask] Marked %s as uploaded",
-                runDir.name());
-            break;
-          }
-
-          case RetentionMode::KEEP:
-          default:
-            break;
-        }
-      } else {
+      if (!uploadSuccess) {
         DLFLIB_LOG_ERROR("[UploaderComponent][syncTask] Upload failed");
+        runDir.close();
+        ++numFailures;
+        continue;
       }
 
-      runDir.close();
+      DLFLIB_LOG_INFO("[UploaderComponent][syncTask] Upload successful");
+      switch (uploaderComponent->options_.retentionMode) {
+        case RetentionMode::DELETE: {
+          DLFLIB_LOG_INFO(
+              "[UploaderComponent][syncTask] RetentionMode is DELETE. Deleting "
+              "run data for %s",
+              runDir.name());
+          uploaderComponent->deleteRunDir(runDir, runDirPath);
+          break;
+        }
+
+        case RetentionMode::MARK: {
+          // Add upload marker to indicate that this run has been uploaded
+          char markerFilePath[256];
+          dlf::util::joinPath(markerFilePath, sizeof(markerFilePath),
+                              runDirPath, UPLOAD_MARKER_FILE_NAME);
+          fs::File file =
+              uploaderComponent->fs_.open(markerFilePath, "w", true);
+          if (file) {
+            file.write(0);
+            file.close();
+          }
+          DLFLIB_LOG_INFO(
+              "[UploaderComponent][syncTask] RetentionMode is MARK. Marked %s "
+              "as uploaded",
+              runDir.name());
+          runDir.close();
+          break;
+        }
+
+        case RetentionMode::KEEP:
+        default:
+          runDir.close();
+          break;
+      }
     }
 
     root.close();
@@ -542,6 +540,34 @@ WiFiClient* UploaderComponent::connectToEndpoint(const char* url,
       "[UploaderComponent][connectToEndpoint] All connect retries failed");
   client->stop();
   return nullptr;
+}
+
+bool UploaderComponent::deleteRunDir(fs::File runDir, const char* runDirPath) {
+  if (!runDir || !runDir.isDirectory() || !runDirPath) {
+    return false;
+  }
+
+  runDir.rewindDirectory();
+
+  char path[256];
+  while (true) {
+    fs::File file = runDir.openNextFile();
+    if (!file) {
+      break;
+    }
+
+    dlf::util::joinPath(path, sizeof(path), runDirPath, file.name());
+    file.close();
+
+    if (!fs_.remove(path)) {
+      // Continue best-effort deletion, but log failure
+      DLFLIB_LOG_WARNING("[UploaderComponent] Failed to remove %s", path);
+    }
+  }
+
+  const bool ok = fs_.rmdir(runDirPath);
+  runDir.close();
+  return ok;
 }
 
 }  // namespace dlf::components
