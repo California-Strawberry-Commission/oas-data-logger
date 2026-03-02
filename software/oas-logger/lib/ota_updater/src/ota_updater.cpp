@@ -173,7 +173,7 @@ namespace ota {
 
 OtaUpdater::OtaUpdater(Config config)
     : config_(std::move(config)),
-      signer_(config_.deviceId, config_.deviceSecret) {}
+      signer_(config_.deviceId.c_str(), config_.deviceSecret.c_str()) {}
 
 OtaUpdater::ManifestResult OtaUpdater::fetchLatestManifest() {
   if (WiFi.status() != WL_CONNECTED) {
