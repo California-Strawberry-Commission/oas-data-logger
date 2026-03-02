@@ -22,12 +22,13 @@ class UploaderComponent : public Component {
     // disables partial run uploads.
     int partialRunUploadIntervalSecs = 0;
   };
-  UploaderComponent(fs::FS& fs, const String& fsDir, const String& endpoint,
-                    const String& deviceUid, const String& secret,
+
+  UploaderComponent(fs::FS& fs, const char* fsDir, const char* endpointFmt,
+                    const char* deviceUid, const char* secret,
                     const Options& options);
 
   bool begin() override;
-  bool uploadRun(fs::File runDir, const String& runUuid, bool isActive = false);
+  bool uploadRun(fs::File runDir, const char* runUuid, bool isActive = false);
   void waitForSyncCompletion();
 
  private:
@@ -46,15 +47,15 @@ class UploaderComponent : public Component {
   void onWifiConnected(arduino_event_id_t event, arduino_event_info_t info);
 
   WiFiClient* getWiFiClient(bool secure = true);
-  WiFiClient* connectToEndpoint(const String& url, int maxRetries = 3,
+  WiFiClient* connectToEndpoint(const char* url, int maxRetries = 3,
                                 uint32_t retryDelayMs = 500);
 
   std::unique_ptr<WiFiClient> wifiClient_;
   std::unique_ptr<WiFiClientSecure> wifiClientSecure_;
   dlf::auth::RequestSigner signer_;
   fs::FS& fs_;
-  String dir_;
-  String endpoint_;
+  char dir_[128];
+  char endpointFmt_[256];
   Options options_;
   // Used to notify when WiFi connected/disconnected
   EventGroupHandle_t wifiEvent_;

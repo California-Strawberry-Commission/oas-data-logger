@@ -88,7 +88,8 @@ DLFLogger& DLFLogger::syncTo(
     const dlf::components::UploaderComponent::Options& options) {
   if (!hasComponent<dlf::components::UploaderComponent>()) {
     auto uploader = dlf::util::make_unique<dlf::components::UploaderComponent>(
-        fs_, fsDir_, endpoint, deviceUid, secret, options);
+        fs_, fsDir_.c_str(), endpoint.c_str(), deviceUid.c_str(),
+        secret.c_str(), options);
     addComponent(std::move(uploader));
   }
 

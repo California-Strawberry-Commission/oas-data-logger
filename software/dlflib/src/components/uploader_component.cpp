@@ -4,60 +4,17 @@
 #include "dlflib/dlf_logger.h"
 #include "dlflib/log.h"
 
-namespace {
-
-struct UrlParts {
-  String scheme;
-  String host;
-  uint16_t port;
-  String path;
-};
-
-UrlParts parseUrl(const String& url) {
-  UrlParts urlParts;
-  int schemeEnd{url.indexOf("://")};
-  if (schemeEnd < 0) {
-    // Invalid URL
-    return urlParts;
-  }
-
-  urlParts.scheme = url.substring(0, schemeEnd);
-
-  int hostStart{schemeEnd + 3};
-  int pathStart{url.indexOf('/', hostStart)};
-  if (pathStart < 0) {
-    pathStart = url.length();
-  }
-
-  int colonPos{url.indexOf(':', hostStart)};
-  if (colonPos >= 0 && colonPos < pathStart) {
-    // host:port
-    urlParts.host = url.substring(hostStart, colonPos);
-    urlParts.port = url.substring(colonPos + 1, pathStart).toInt();
-  } else {
-    // host, no explicit port
-    urlParts.host = url.substring(hostStart, pathStart);
-    urlParts.port = (urlParts.scheme == "https") ? 443 : 80;
-  }
-
-  urlParts.path = (pathStart < url.length()) ? url.substring(pathStart) : "/";
-  return urlParts;
-}
-
-}  // namespace
-
 namespace dlf::components {
 
-UploaderComponent::UploaderComponent(fs::FS& fs, const String& fsDir,
-                                     const String& endpoint,
-                                     const String& deviceUid,
-                                     const String& secret,
+UploaderComponent::UploaderComponent(fs::FS& fs, const char* fsDir,
+                                     const char* endpointFmt,
+                                     const char* deviceUid, const char* secret,
                                      const Options& options)
-    : fs_(fs),
-      dir_(fsDir),
-      endpoint_(endpoint),
-      options_(options),
-      signer_(deviceUid, secret) {}
+    : fs_(fs), options_(options), signer_(deviceUid, secret) {
+  snprintf(dir_, sizeof(dir_), "%s", fsDir ? fsDir : "");
+  snprintf(endpointFmt_, sizeof(endpointFmt_), "%s",
+           endpointFmt ? endpointFmt : "");
+}
 
 bool UploaderComponent::begin() {
   DLFLIB_LOG_INFO("[UploaderComponent] begin");
@@ -102,7 +59,7 @@ void UploaderComponent::onWifiConnected(arduino_event_id_t event,
   xEventGroupSetBits(wifiEvent_, WLAN_READY);
 }
 
-bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
+bool UploaderComponent::uploadRun(fs::File runDir, const char* runUuid,
                                   bool isActive) {
   if (!runDir) {
     DLFLIB_LOG_INFO("[UploaderComponent] No file to upload");
@@ -122,11 +79,10 @@ bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
     file.close();
   }
 
-  char urlBuf[256];
-  snprintf(urlBuf, sizeof(urlBuf), endpoint_.c_str(), runUuid.c_str());
-  String uploadUrl = urlBuf;
+  char uploadUrl[256];
+  snprintf(uploadUrl, sizeof(uploadUrl), endpointFmt_, runUuid ? runUuid : "");
   DLFLIB_LOG_INFO("[UploaderComponent] Preparing to uploading to: %s",
-                  uploadUrl.c_str());
+                  uploadUrl);
 
   auto client = connectToEndpoint(uploadUrl);
   if (!client) {
@@ -187,10 +143,15 @@ bool UploaderComponent::uploadRun(fs::File runDir, const String& runUuid,
   //////////////////////
   DLFLIB_LOG_INFO("[UploaderComponent] Sending upload request...");
 
-  UrlParts parts = parseUrl(uploadUrl);
+  dlf::util::UrlParts parts = dlf::util::parseUrl(uploadUrl);
+  if (!parts.ok) {
+    DLFLIB_LOG_ERROR("[UploaderComponent] Invalid upload URL");
+    client->stop();
+    return false;
+  }
 
-  client->printf("POST %s HTTP/1.1\r\n", parts.path.c_str());
-  client->printf("Host: %s\r\n", parts.host.c_str());
+  client->printf("POST %s HTTP/1.1\r\n", parts.path);
+  client->printf("Host: %s\r\n", parts.host);
 
   signer_.writeAuthHeaders(*client, runUuid);
 
@@ -318,8 +279,9 @@ void UploaderComponent::syncTask(void* arg) {
         continue;
       }
 
-      String runDirPath =
-          dlf::util::resolvePath({uploaderComponent->dir_, runDir.name()});
+      char runDirPath[256];
+      dlf::util::joinPath(runDirPath, sizeof(runDirPath),
+                          uploaderComponent->dir_, runDir.name());
 
       // Detect lockfile (indicates an active run) and upload marker file
       // (indicates that the run has already been uploaded)
@@ -352,7 +314,7 @@ void UploaderComponent::syncTask(void* arg) {
         DLFLIB_LOG_INFO(
             "[UploaderComponent][syncTask] %s is active and/or incomplete. "
             "Skipping",
-            runDirPath.c_str());
+            runDirPath);
         runDir.close();
         continue;
       }
@@ -362,7 +324,7 @@ void UploaderComponent::syncTask(void* arg) {
         DLFLIB_LOG_INFO(
             "[UploaderComponent][syncTask] %s has already been uploaded. "
             "Skipping",
-            runDirPath.c_str());
+            runDirPath);
         runDir.close();
         continue;
       }
@@ -382,14 +344,14 @@ void UploaderComponent::syncTask(void* arg) {
           // Remove run data
           runDir.rewindDirectory();
 
+          char path[256];
           while (true) {
             fs::File file = runDir.openNextFile();
             if (!file) {
               break;
             }
 
-            const String path =
-                dlf::util::resolvePath({runDirPath, file.name()});
+            dlf::util::joinPath(path, sizeof(path), runDirPath, file.name());
             file.close();
             uploaderComponent->fs_.remove(path);
           }
@@ -400,8 +362,9 @@ void UploaderComponent::syncTask(void* arg) {
               runDir.name());
         } else if (uploaderComponent->options_.markAfterUpload) {
           // Add upload marker to indicate that this run has been uploaded
-          String markerFilePath =
-              dlf::util::resolvePath({runDirPath, UPLOAD_MARKER_FILE_NAME});
+          char markerFilePath[256];
+          dlf::util::joinPath(markerFilePath, sizeof(markerFilePath),
+                              runDirPath, UPLOAD_MARKER_FILE_NAME);
           fs::File file =
               uploaderComponent->fs_.open(markerFilePath, "w", true);
           if (file) {
@@ -485,8 +448,10 @@ void UploaderComponent::partialRunUploadTask(void* arg) {
       // when uploading.
       RunLogFilesLock lock(run);
 
-      fs::File runDir = uploaderComponent->fs_.open(uploaderComponent->dir_ +
-                                                    "/" + run->uuid());
+      char runDirPath[256];
+      dlf::util::joinPath(runDirPath, sizeof(runDirPath),
+                          uploaderComponent->dir_, run->uuid());
+      fs::File runDir = uploaderComponent->fs_.open(runDirPath);
       if (!runDir || !runDir.isDirectory()) {
         DLFLIB_LOG_WARNING(
             "[UploaderComponent][partialRunUploadTask] Invalid run dir %s. "
@@ -528,16 +493,16 @@ WiFiClient* UploaderComponent::getWiFiClient(bool secure) {
   }
 }
 
-WiFiClient* UploaderComponent::connectToEndpoint(const String& url,
+WiFiClient* UploaderComponent::connectToEndpoint(const char* url,
                                                  int maxRetries,
                                                  uint32_t retryDelayMs) {
-  UrlParts parts{parseUrl(url)};
-  if (parts.scheme.length() == 0 || parts.host.length() == 0) {
+  dlf::util::UrlParts parts = dlf::util::parseUrl(url);
+  if (!parts.ok) {
     DLFLIB_LOG_ERROR("[UploaderComponent][connectToEndpoint] Invalid URL");
     return nullptr;
   }
 
-  const bool useHttps{parts.scheme == "https"};
+  const bool useHttps = (strcmp(parts.scheme, "https") == 0);
   WiFiClient* client = getWiFiClient(useHttps);
   if (!client) {
     return nullptr;
@@ -549,9 +514,9 @@ WiFiClient* UploaderComponent::connectToEndpoint(const String& url,
   for (int attempt = 1; attempt <= maxRetries; ++attempt) {
     DLFLIB_LOG_INFO(
         "[UploaderComponent][connectToEndpoint] Attempt %d to %s:%u", attempt,
-        parts.host.c_str(), parts.port);
+        parts.host, parts.port);
 
-    if (client->connect(parts.host.c_str(), parts.port)) {
+    if (client->connect(parts.host, parts.port)) {
       DLFLIB_LOG_INFO(
           "[UploaderComponent][connectToEndpoint] Connected successfully");
       return client;
