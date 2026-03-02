@@ -18,7 +18,7 @@ void LogFile::taskFlusher(void* arg) {
   auto self = static_cast<LogFile*>(arg);
 
   DLFLIB_LOG_INFO("[LogFile][taskFlusher] Task started for %s",
-                  self->filename_.c_str());
+                  self->filename_);
 
   uint8_t buf[DLF_SD_BLOCK_WRITE_SIZE];
   size_t totalBytesWritten = 0;
@@ -35,7 +35,7 @@ void LogFile::taskFlusher(void* arg) {
 #ifdef DEBUG
       DLFLIB_LOG_DEBUG(
           "[LogFile][taskFlusher] %s: Received %zu bytes from buffer",
-          self->filename_.c_str(), received);
+          self->filename_, received);
 #endif
 
       // Lock file mutex before writing
@@ -55,14 +55,13 @@ void LogFile::taskFlusher(void* arg) {
             bytesSinceLastSync > 0) {
           DLFLIB_LOG_INFO(
               "[LogFile][taskFlusher] %s: Forcing SD sync (close/reopen)...",
-              self->filename_.c_str());
+              self->filename_);
 
-          String fname = self->filename_;
           self->file_.flush();
           self->file_.close();
 
           // Reopen in append mode
-          self->file_ = self->fs_.open(fname, "a");
+          self->file_ = self->fs_.open(self->filename_, "a");
           if (!self->file_) {
             DLFLIB_LOG_ERROR(
                 "[LogFile][taskFlusher] ERROR: Could not reopen file after "
@@ -70,7 +69,7 @@ void LogFile::taskFlusher(void* arg) {
           } else {
             DLFLIB_LOG_INFO(
                 "[LogFile][taskFlusher] %s: SD sync complete, file reopened",
-                self->filename_.c_str());
+                self->filename_);
           }
 
           lastSyncTime = millis();
@@ -83,13 +82,13 @@ void LogFile::taskFlusher(void* arg) {
 #ifdef DEBUG
         DLFLIB_LOG_DEBUG(
             "[LogFile][taskFlusher] %s: Wrote %zu bytes, total: %zu",
-            self->filename_.c_str(), received, totalBytesWritten);
+            self->filename_, received, totalBytesWritten);
 #endif
 
         xSemaphoreGive(self->fileMutex_);
       } else {
         DLFLIB_LOG_ERROR("[LogFile][taskFlusher] %s: FAILED to acquire mutex!",
-                         self->filename_.c_str());
+                         self->filename_);
       }
     }
   }
@@ -102,7 +101,6 @@ void LogFile::taskFlusher(void* arg) {
   if (self->state_ != FLUSHING) {
     DLFLIB_LOG_INFO(
         "[LogFile][taskFlusher] No need to flush. Terminating task.");
-
     vTaskDelete(NULL);
     return;
   }
@@ -130,12 +128,11 @@ void LogFile::taskFlusher(void* arg) {
   if (xSemaphoreTake(self->fileMutex_, portMAX_DELAY) == pdTRUE) {
     DLFLIB_LOG_INFO("[LogFile][taskFlusher] Performing final SD sync...");
 
-    String fname = self->filename_;
     self->file_.flush();
     self->file_.close();
 
     // Reopen in read-write mode (not append) so closeFile can use it
-    self->file_ = self->fs_.open(fname, "r+");
+    self->file_ = self->fs_.open(self->filename_, "r+");
     if (self->file_) {
       // Seek to end so we know where data ends
       self->file_.seek(0, SeekEnd);
@@ -172,10 +169,10 @@ void LogFile::taskFlusher(void* arg) {
 
 LogFile::LogFile(
     std::vector<std::unique_ptr<dlf::datastream::AbstractStreamHandle>> handles,
-    dlf_stream_type_e streamType, String dir, fs::FS& fs)
+    dlf_stream_type_e streamType, const char* dir, fs::FS& fs)
     : fs_(fs), handles_(std::move(handles)), fileEndPosition_(0) {
-  filename_ =
-      dir + "/" + dlf::datastream::streamTypeToString(streamType) + ".dlf";
+  const char* st = dlf::datastream::streamTypeToString(streamType);
+  snprintf(filename_, sizeof(filename_), "%s/%s.dlf", dir, st ? st : "unknown");
 
   // Set up class internals
   stream_ =
@@ -199,7 +196,6 @@ LogFile::LogFile(
 
   // Open logfile
   file_ = fs_.open(filename_, "w", true);
-
   if (!file_) {
     state_ = FILE_OPEN_ERROR;
     return;
@@ -246,14 +242,14 @@ void LogFile::sample(dlf_tick_t tick) {
         DLFLIB_LOG_DEBUG(
             "[LogFile][sample] Tick %llu: Added %zu bytes to %s buffer (total: "
             "%zu)",
-            tick, afterBytes - beforeBytes, filename_.c_str(), afterBytes);
+            tick, afterBytes - beforeBytes, filename_, afterBytes);
       }
 #endif
 
       if (xStreamBufferIsFull(stream_)) {
         DLFLIB_LOG_ERROR(
             "[LogFile][sample] Error: QUEUE_FULL for %s at tick %llu",
-            filename_.c_str(), tick);
+            filename_, tick);
         state_ = QUEUE_FULL;
       }
     }
@@ -300,9 +296,6 @@ void LogFile::closeFile() {
       "[LogFile][closeFile] Closing file, tracked end position: %zu",
       fileEndPosition_);
 
-  // Get file name for debugging
-  String fname = filename_;
-
   // Flush and close current write handle
   file_.flush();
   file_.close();
@@ -311,7 +304,7 @@ void LogFile::closeFile() {
       "[LogFile][closeFile] File closed, checking actual size on SD...");
 
   // Check file size on SD before header update
-  fs::File checkFile = fs_.open(fname, "r");
+  fs::File checkFile = fs_.open(filename_, "r");
   if (checkFile) {
     size_t sizeBeforeUpdate = checkFile.size();
     DLFLIB_LOG_INFO(
@@ -322,7 +315,7 @@ void LogFile::closeFile() {
   }
 
   // Reopen in read/write mode to update header
-  file_ = fs_.open(fname, "r+");
+  file_ = fs_.open(filename_, "r+");
   if (!file_) {
     DLFLIB_LOG_ERROR(
         "[LogFile][closeFile] ERROR: Could not reopen file for header "
@@ -337,7 +330,7 @@ void LogFile::closeFile() {
   file_.close();
 
   // Check file size after header update
-  checkFile = fs_.open(fname, "r");
+  checkFile = fs_.open(filename_, "r");
   if (checkFile) {
     size_t sizeAfterUpdate = checkFile.size();
     DLFLIB_LOG_INFO(

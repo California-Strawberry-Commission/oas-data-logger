@@ -61,12 +61,15 @@ class AbstractStream {
  protected:
   AbstractStream(const Encodable& dat, const char* id, const char* notes,
                  SemaphoreHandle_t mutex)
-      : src_(dat), id_(id), notes_(notes), mutex_(mutex) {}
+      : src_(dat), mutex_(mutex) {
+    snprintf(id_, sizeof(id_), "%s", id ? id : "");
+    snprintf(notes_, sizeof(notes_), "%s", notes ? notes : "");
+  }
 
  private:
   const Encodable src_;
-  const char* id_;
-  const char* notes_;
+  char id_[32];
+  char notes_[128];
   SemaphoreHandle_t mutex_;
 };
 

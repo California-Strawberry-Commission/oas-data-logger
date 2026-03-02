@@ -41,29 +41,6 @@ inline constexpr size_t hashType() {
 }
 
 /**
- * Joins multiple path segments into a normalized path
- */
-inline String resolvePath(std::initializer_list<String> parts) {
-  String result = "";
-
-  for (const String& part : parts) {
-    if (part.length() == 0) {
-      continue;
-    }
-
-    if (result.endsWith("/") && part.startsWith("/")) {
-      result += part.substring(1);
-    } else if (!result.endsWith("/") && !part.startsWith("/")) {
-      result += "/" + part;
-    } else {
-      result += part;
-    }
-  }
-
-  return result.length() == 0 ? "/" : result;
-}
-
-/**
  * Copies characters from [begin, end) into `dst`, truncating if necessary to
  * fit in `dstSize - 1` bytes, and null-terminates it.
  *

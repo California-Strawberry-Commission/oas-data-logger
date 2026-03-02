@@ -16,7 +16,7 @@ namespace dlf {
 
 class Run {
  public:
-  Run(fs::FS& fs, const String& fsDir,
+  Run(fs::FS& fs, const char* fsDir,
       const std::vector<std::unique_ptr<dlf::datastream::AbstractStream>>&
           streams,
       std::chrono::microseconds tickInterval, const Encodable& meta);
@@ -26,7 +26,7 @@ class Run {
    */
   void close();
 
-  const char* uuid() { return uuid_.c_str(); }
+  const char* uuid() const { return uuid_; }
 
   /**
    * Force a manual flush of log files.
@@ -52,15 +52,15 @@ class Run {
 
   void createLogfile(dlf_stream_type_e t);
 
-  String uuid_;
+  char uuid_[37];
   fs::FS& fs_;
-  String runDir_;
-  dlf_file_state_e status_;
+  char runDir_[128];
+  char lockfilePath_[128];
+  volatile dlf_file_state_e status_;
   SemaphoreHandle_t syncSemaphore_;
   std::chrono::microseconds tickInterval_;
   const std::vector<std::unique_ptr<dlf::datastream::AbstractStream>>& streams_;
   std::vector<std::unique_ptr<LogFile>> logFiles_;
-  String lockfilePath_;
 };
 
 /**

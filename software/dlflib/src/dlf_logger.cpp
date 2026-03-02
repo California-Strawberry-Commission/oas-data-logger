@@ -6,7 +6,8 @@
 
 namespace dlf {
 
-DLFLogger::DLFLogger(fs::FS& fs, const char* fsDir) : fs_(fs), fsDir_(fsDir) {
+DLFLogger::DLFLogger(fs::FS& fs, const char* fsDir) : fs_(fs) {
+  snprintf(fsDir_, sizeof(fsDir_), "%s", fsDir ? fsDir : "");
   loggerEventGroup_ = xEventGroupCreate();
   // Wire the registry into `this` so getComponent works from DLFLogger
   this->setRegistry(this);
@@ -78,18 +79,17 @@ void DLFLogger::stopRun(run_handle_t h) {
 }
 
 DLFLogger& DLFLogger::syncTo(
-    const String& endpoint, const String& deviceUid,
+    const char* endpoint, const char* deviceUid,
     const dlf::components::UploaderComponent::Options& options) {
   return syncTo(endpoint, deviceUid, "", options);
 }
 
 DLFLogger& DLFLogger::syncTo(
-    const String& endpoint, const String& deviceUid, const String& secret,
+    const char* endpoint, const char* deviceUid, const char* secret,
     const dlf::components::UploaderComponent::Options& options) {
   if (!hasComponent<dlf::components::UploaderComponent>()) {
     auto uploader = dlf::util::make_unique<dlf::components::UploaderComponent>(
-        fs_, fsDir_, endpoint.c_str(), deviceUid.c_str(), secret.c_str(),
-        options);
+        fs_, fsDir_, endpoint, deviceUid, secret, options);
     addComponent(std::move(uploader));
   }
 
@@ -169,9 +169,9 @@ void DLFLogger::prune() {
       continue;
     }
 
-    char runDirPath[256];
+    char runDirPath[128];
     dlf::util::joinPath(runDirPath, sizeof(runDirPath), fsDir_, runDir.name());
-    char lockfilePath[256];
+    char lockfilePath[128];
     dlf::util::joinPath(lockfilePath, sizeof(lockfilePath), runDirPath,
                         LOCKFILE_NAME);
     if (fs_.exists(lockfilePath)) {

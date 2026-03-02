@@ -77,7 +77,8 @@ static volatile bool wifiConnecting = false;
 static uint32_t wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;
 
 // Security and Provisioning
-String deviceSecret;  // Populated from NVS at boot
+char deviceUid[13];     // Populated at boot
+char deviceSecret[65];  // Populated from NVS at boot
 
 // Backend endpoints
 const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
@@ -156,7 +157,6 @@ void handleSleepState();
 bool hasUsbPower();
 void enableGps();
 void disableGps();
-String getDeviceUid();
 void initializeDLFLogger();
 void startLoggerRun();
 void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info);
@@ -333,11 +333,17 @@ void updateLedPattern() {
 }
 
 void provisionDevice() {
-  device_auth::DeviceAuth auth(getDeviceUid());
-  if (!auth.loadSecret(deviceSecret)) {
+  // Set device UID
+  uint64_t raw = ESP.getEfuseMac();
+  snprintf(deviceUid, sizeof(deviceUid), "%012llX", (unsigned long long)raw);
+
+  // TODO: Eliminate String from DeviceAuth
+  device_auth::DeviceAuth auth(deviceUid);
+  String temp;
+  if (!auth.loadSecret(temp)) {
     EZLOG_INFO("Device unprovisioned. Waiting for script...");
 
-    deviceSecret = auth.awaitProvisioning();
+    temp = auth.awaitProvisioning();
 
     EZLOG_INFO("Provisioning successful. Rebooting in 3s...");
     delay(3000);
@@ -345,6 +351,7 @@ void provisionDevice() {
   } else {
     EZLOG_INFO("Device already provisioned");
   }
+  temp.toCharArray(deviceSecret, sizeof(deviceSecret));
 }
 
 void transitionToState(SystemState newState) {
@@ -472,7 +479,7 @@ void handleOtaUpdate() {
     otaConfig.deviceType = DEVICE_TYPE;
     otaConfig.channel = OTA_CHANNEL;
     otaConfig.currentBuildNumber = FW_BUILD_NUMBER;
-    otaConfig.deviceId = getDeviceUid();
+    otaConfig.deviceId = deviceUid;
     otaConfig.deviceSecret = deviceSecret;
     ota::OtaUpdater otaUpdater(otaConfig);
     auto res{otaUpdater.updateIfAvailable(true)};
@@ -612,13 +619,6 @@ void handleSleepState() {
   esp_deep_sleep_start();
 }
 
-String getDeviceUid() {
-  uint64_t raw = ESP.getEfuseMac();
-  char id[13];
-  sprintf(id, "%012llX", raw);
-  return id;
-}
-
 void initializeDLFLogger() {
   EZLOG_INFO("Initializing DLF logger...");
 
@@ -634,7 +634,7 @@ void initializeDLFLogger() {
   options.retentionMode = LOGGER_RETENTION_MODE;
   options.partialRunUploadIntervalSecs =
       LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS;
-  logger.syncTo(UPLOAD_ENDPOINT, getDeviceUid(), deviceSecret, options).begin();
+  logger.syncTo(UPLOAD_ENDPOINT, deviceUid, deviceSecret, options).begin();
 
   EZLOG_INFO("DLF logger initialized");
 }

@@ -91,11 +91,11 @@ class DLFLogger : public dlf::components::Component,
   POLL(double)
   POLL(float)
 
-  DLFLogger& syncTo(const String& endpoint, const String& deviceUid,
+  DLFLogger& syncTo(const char* endpoint, const char* deviceUid,
                     const dlf::components::UploaderComponent::Options& options);
 
-  DLFLogger& syncTo(const String& endpoint, const String& deviceUid,
-                    const String& secret,
+  DLFLogger& syncTo(const char* endpoint, const char* deviceUid,
+                    const char* secret,
                     const dlf::components::UploaderComponent::Options& options);
 
   void waitForSyncCompletion();
@@ -146,7 +146,7 @@ class DLFLogger : public dlf::components::Component,
   std::unique_ptr<Run> runs_[MAX_ACTIVE_RUNS];
   std::vector<std::unique_ptr<dlf::datastream::AbstractStream>> streams_;
   fs::FS& fs_;
-  const char* fsDir_;
+  char fsDir_[128];
   // Used to signal that a new run is available
   EventGroupHandle_t loggerEventGroup_{nullptr};
 };
