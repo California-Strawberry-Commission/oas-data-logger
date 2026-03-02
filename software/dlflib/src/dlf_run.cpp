@@ -9,19 +9,20 @@
 
 namespace dlf {
 
-Run::Run(fs::FS& fs, const String& fsDir,
+Run::Run(fs::FS& fs, const char* fsDir,
          const std::vector<std::unique_ptr<dlf::datastream::AbstractStream>>&
              streams,
          std::chrono::microseconds tickInterval, const Encodable& meta)
     : fs_(fs), streams_(streams), tickInterval_(tickInterval) {
   assert(tickInterval.count() > 0);
 
-  uuid_ = dlf::util::stringUuidGen();
-  runDir_ = dlf::util::resolvePath({fsDir, uuid_});
-  lockfilePath_ = dlf::util::resolvePath({runDir_, LOCKFILE_NAME});
+  dlf::util::uuidGen(uuid_);
+  dlf::util::joinPath(runDir_, sizeof(runDir_), fsDir, uuid_);
+  dlf::util::joinPath(lockfilePath_, sizeof(lockfilePath_), runDir_,
+                      LOCKFILE_NAME);
   syncSemaphore_ = xSemaphoreCreateCounting(1, 0);
 
-  DLFLIB_LOG_INFO("[Run] Starting run %s", uuid_.c_str());
+  DLFLIB_LOG_INFO("[Run] Starting run %s", uuid_);
 
   // Make directory to contain run files
   fs_.mkdir(runDir_);
@@ -59,7 +60,7 @@ void Run::close() {
 
   // Remove the lockfile last, as the presence of the lockfile indicates that
   // the run is incomplete and should not be uploaded
-  DLFLIB_LOG_INFO("[Run] Removing lockfile: %s", lockfilePath_.c_str());
+  DLFLIB_LOG_INFO("[Run] Removing lockfile: %s", lockfilePath_);
   bool lockfileRemoved = fs_.remove(lockfilePath_);
   if (lockfileRemoved) {
     DLFLIB_LOG_INFO("[Run] Lockfile successfully removed");
@@ -110,17 +111,20 @@ void Run::createMetafile(const Encodable& meta) {
       h.epoch_time_s, h.tick_base_us, h.meta_structure, meta.typeHash);
 #endif
 
-  fs::File f =
-      fs_.open(dlf::util::resolvePath({runDir_, "meta.dlf"}), "w", true);
+  char metaPath[128];
+  dlf::util::joinPath(metaPath, sizeof(metaPath), runDir_, "meta.dlf");
+  fs::File metaFile = fs_.open(metaPath, "w", true);
 
-  f.write(reinterpret_cast<uint8_t*>(&h.magic), sizeof(h.magic));
-  f.write(reinterpret_cast<uint8_t*>(&h.epoch_time_s), sizeof(h.epoch_time_s));
-  f.write(reinterpret_cast<uint8_t*>(&h.tick_base_us), sizeof(h.tick_base_us));
-  f.write((uint8_t*)h.meta_structure, strlen(h.meta_structure) + 1);
-  f.write(reinterpret_cast<uint8_t*>(&h.meta_size), sizeof(h.meta_size));
-  f.write(meta.data, h.meta_size);
+  metaFile.write(reinterpret_cast<uint8_t*>(&h.magic), sizeof(h.magic));
+  metaFile.write(reinterpret_cast<uint8_t*>(&h.epoch_time_s),
+                 sizeof(h.epoch_time_s));
+  metaFile.write(reinterpret_cast<uint8_t*>(&h.tick_base_us),
+                 sizeof(h.tick_base_us));
+  metaFile.write((uint8_t*)h.meta_structure, strlen(h.meta_structure) + 1);
+  metaFile.write(reinterpret_cast<uint8_t*>(&h.meta_size), sizeof(h.meta_size));
+  metaFile.write(meta.data, h.meta_size);
 
-  f.close();
+  metaFile.close();
 }
 
 void Run::createLogfile(dlf_stream_type_e t) {

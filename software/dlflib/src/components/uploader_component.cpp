@@ -11,7 +11,7 @@ UploaderComponent::UploaderComponent(fs::FS& fs, const char* fsDir,
                                      const char* deviceUid, const char* secret,
                                      const Options& options)
     : fs_(fs), options_(options), signer_(deviceUid, secret) {
-  snprintf(dir_, sizeof(dir_), "%s", fsDir ? fsDir : "");
+  snprintf(fsDir_, sizeof(fsDir_), "%s", fsDir ? fsDir : "");
   snprintf(endpointFmt_, sizeof(endpointFmt_), "%s",
            endpointFmt ? endpointFmt : "");
 }
@@ -69,12 +69,7 @@ bool UploaderComponent::uploadRun(fs::File runDir, const char* runUuid,
   // List files to be uploaded
   DLFLIB_LOG_INFO("[UploaderComponent] Files to upload:");
   runDir.rewindDirectory();
-  while (true) {
-    fs::File file = runDir.openNextFile();
-    if (!file) {
-      break;
-    }
-
+  while (fs::File file = runDir.openNextFile()) {
     DLFLIB_LOG_INFO("  - %s (%d bytes)", file.name(), file.size());
     file.close();
   }
@@ -124,12 +119,7 @@ bool UploaderComponent::uploadRun(fs::File runDir, const char* runUuid,
   // Files
   runDir.rewindDirectory();
 
-  while (true) {
-    fs::File file = runDir.openNextFile();
-    if (!file) {
-      break;
-    }
-
+  while (fs::File file = runDir.openNextFile()) {
     contentLength += snprintf(NULL, 0, fileTemplate, file.name());
     contentLength += file.size();
     contentLength += 2;  // for trailing "\r\n" after file data
@@ -173,12 +163,7 @@ bool UploaderComponent::uploadRun(fs::File runDir, const char* runUuid,
   uint8_t buf[128];
   const size_t chunkSize = sizeof(buf);
 
-  while (true) {
-    fs::File file = runDir.openNextFile();
-    if (!file) {
-      break;
-    }
-
+  while (fs::File file = runDir.openNextFile()) {
     // Send file boundary
     client->printf(fileTemplate, file.name());
 
@@ -241,7 +226,7 @@ void UploaderComponent::syncTask(void* arg) {
 
   while (true) {
     // Make sure SD is inserted and provided path is a dir
-    fs::File root = uploaderComponent->fs_.open(uploaderComponent->dir_);
+    fs::File root = uploaderComponent->fs_.open(uploaderComponent->fsDir_);
     if (!root) {
       DLFLIB_LOG_ERROR(
           "[UploaderComponent][syncTask] No storage found. Terminating task");
@@ -279,21 +264,16 @@ void UploaderComponent::syncTask(void* arg) {
         continue;
       }
 
-      char runDirPath[256];
+      char runDirPath[128];
       dlf::util::joinPath(runDirPath, sizeof(runDirPath),
-                          uploaderComponent->dir_, runDir.name());
+                          uploaderComponent->fsDir_, runDir.name());
 
       // Detect lockfile (indicates an active run) and upload marker file
       // (indicates that the run has already been uploaded)
       bool lockfileFound = false;
       bool uploadMarkerFound = false;
 
-      while (true) {
-        fs::File file = runDir.openNextFile();
-        if (!file) {
-          break;
-        }
-
+      while (fs::File file = runDir.openNextFile()) {
         const bool isLockfile = !strcmp(file.name(), LOCKFILE_NAME);
         const bool isUploadMarker =
             !strcmp(file.name(), UPLOAD_MARKER_FILE_NAME);
@@ -366,7 +346,7 @@ void UploaderComponent::syncTask(void* arg) {
 
         case RetentionMode::MARK: {
           // Add upload marker to indicate that this run has been uploaded
-          char markerFilePath[256];
+          char markerFilePath[128];
           dlf::util::joinPath(markerFilePath, sizeof(markerFilePath),
                               runDirPath, UPLOAD_MARKER_FILE_NAME);
           fs::File file =
@@ -457,9 +437,9 @@ void UploaderComponent::partialRunUploadTask(void* arg) {
       // when uploading.
       RunLogFilesLock lock(run);
 
-      char runDirPath[256];
+      char runDirPath[128];
       dlf::util::joinPath(runDirPath, sizeof(runDirPath),
-                          uploaderComponent->dir_, run->uuid());
+                          uploaderComponent->fsDir_, run->uuid());
       fs::File runDir = uploaderComponent->fs_.open(runDirPath);
       if (!runDir || !runDir.isDirectory()) {
         DLFLIB_LOG_WARNING(
@@ -549,13 +529,8 @@ bool UploaderComponent::deleteRunDir(fs::File runDir, const char* runDirPath) {
 
   runDir.rewindDirectory();
 
-  char path[256];
-  while (true) {
-    fs::File file = runDir.openNextFile();
-    if (!file) {
-      break;
-    }
-
+  char path[128];
+  while (fs::File file = runDir.openNextFile()) {
     dlf::util::joinPath(path, sizeof(path), runDirPath, file.name());
     file.close();
 

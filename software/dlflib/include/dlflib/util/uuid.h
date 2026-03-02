@@ -44,10 +44,4 @@ inline void uuidGen(char* returnUUID) {
   returnUUID[36] = 0;
 }
 
-inline String stringUuidGen() {
-  char returnUUID[37];
-  uuidGen(returnUUID);
-  return String(returnUUID);
-}
-
 }  // namespace dlf::util

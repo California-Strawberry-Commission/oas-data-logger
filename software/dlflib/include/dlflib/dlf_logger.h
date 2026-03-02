@@ -17,20 +17,20 @@
 
 #define POLL(type_name)                                                        \
   DLFLogger& poll(                                                             \
-      type_name& value, const String& id,                                      \
+      type_name& value, const char* id,                                        \
       std::chrono::microseconds sampleInterval,                                \
       std::chrono::microseconds phase = std::chrono::microseconds::zero(),     \
       const char* notes = nullptr, SemaphoreHandle_t mutex = nullptr) {        \
     return pollInternal(Encodable(value, #type_name), id, sampleInterval,      \
                         phase, notes, mutex);                                  \
   }                                                                            \
-  DLFLogger& poll(type_name& value, const String& id,                          \
+  DLFLogger& poll(type_name& value, const char* id,                            \
                   std::chrono::microseconds sampleInterval, const char* notes, \
                   SemaphoreHandle_t mutex = nullptr) {                         \
     return pollInternal(Encodable(value, #type_name), id, sampleInterval,      \
                         std::chrono::microseconds::zero(), notes, mutex);      \
   }                                                                            \
-  DLFLogger& poll(type_name& value, const String& id,                          \
+  DLFLogger& poll(type_name& value, const char* id,                            \
                   std::chrono::microseconds sampleInterval,                    \
                   SemaphoreHandle_t mutex) {                                   \
     return pollInternal(Encodable(value, #type_name), id, sampleInterval,      \
@@ -38,7 +38,7 @@
   }
 
 #define WATCH(type_name)                                                  \
-  DLFLogger& watch(type_name& value, const String& id,                    \
+  DLFLogger& watch(type_name& value, const char* id,                      \
                    const char* notes = nullptr,                           \
                    SemaphoreHandle_t mutex = nullptr) {                   \
     return watchInternal(Encodable(value, #type_name), id, notes, mutex); \
@@ -56,7 +56,7 @@ class DLFLogger : public dlf::components::Component,
  public:
   enum LoggerEvents : uint32_t { RUN_COMPLETE = 1 };
 
-  DLFLogger(fs::FS& fs, const String& fsDir = "/");
+  DLFLogger(fs::FS& fs, const char* fsDir = "/");
   ~DLFLogger() override;
 
   bool begin() override;
@@ -91,11 +91,11 @@ class DLFLogger : public dlf::components::Component,
   POLL(double)
   POLL(float)
 
-  DLFLogger& syncTo(const String& endpoint, const String& deviceUid,
+  DLFLogger& syncTo(const char* endpoint, const char* deviceUid,
                     const dlf::components::UploaderComponent::Options& options);
 
-  DLFLogger& syncTo(const String& endpoint, const String& deviceUid,
-                    const String& secret,
+  DLFLogger& syncTo(const char* endpoint, const char* deviceUid,
+                    const char* secret,
                     const dlf::components::UploaderComponent::Options& options);
 
   void waitForSyncCompletion();
@@ -110,11 +110,11 @@ class DLFLogger : public dlf::components::Component,
   Run* getRun(run_handle_t h);
 
  private:
-  DLFLogger& watchInternal(const Encodable& value, const String& id,
+  DLFLogger& watchInternal(const Encodable& value, const char* id,
                            const char* notes,
                            SemaphoreHandle_t mutex = nullptr);
 
-  DLFLogger& pollInternal(const Encodable& value, const String& id,
+  DLFLogger& pollInternal(const Encodable& value, const char* id,
                           std::chrono::microseconds sampleInterval,
                           std::chrono::microseconds phase, const char* notes,
                           SemaphoreHandle_t mutex = nullptr);
@@ -146,7 +146,7 @@ class DLFLogger : public dlf::components::Component,
   std::unique_ptr<Run> runs_[MAX_ACTIVE_RUNS];
   std::vector<std::unique_ptr<dlf::datastream::AbstractStream>> streams_;
   fs::FS& fs_;
-  String fsDir_;
+  char fsDir_[128];
   // Used to signal that a new run is available
   EventGroupHandle_t loggerEventGroup_{nullptr};
 };

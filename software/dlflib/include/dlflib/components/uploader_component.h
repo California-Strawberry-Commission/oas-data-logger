@@ -57,7 +57,7 @@ class UploaderComponent : public Component {
   std::unique_ptr<WiFiClientSecure> wifiClientSecure_;
   dlf::auth::RequestSigner signer_;
   fs::FS& fs_;
-  char dir_[128];
+  char fsDir_[128];
   char endpointFmt_[256];
   Options options_;
   // Used to notify when WiFi connected/disconnected

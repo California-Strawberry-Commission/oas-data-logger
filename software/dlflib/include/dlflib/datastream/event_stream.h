@@ -13,7 +13,7 @@ namespace dlf::datastream {
  */
 class EventStream : public AbstractStream {
  public:
-  EventStream(const Encodable& dat, const String& id, const char* notes,
+  EventStream(const Encodable& dat, const char* id, const char* notes,
               SemaphoreHandle_t mutex = nullptr);
 
   std::unique_ptr<dlf::datastream::AbstractStreamHandle> createHandle(

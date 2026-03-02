@@ -29,7 +29,7 @@ class LogFile {
  public:
   LogFile(std::vector<std::unique_ptr<dlf::datastream::AbstractStreamHandle>>
               handles,
-          dlf_stream_type_e streamType, String dir, fs::FS& fs);
+          dlf_stream_type_e streamType, const char* dir, fs::FS& fs);
 
   /**
    * Samples data. Intended to be externally called at the tick interval.
@@ -85,7 +85,7 @@ class LogFile {
   std::vector<std::unique_ptr<dlf::datastream::AbstractStreamHandle>> handles_;
 
   fs::FS& fs_;
-  String filename_;
+  char filename_[128];
   fs::File file_;
 
   /**
