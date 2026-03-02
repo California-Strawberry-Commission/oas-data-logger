@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include <FS.h>
 #include <WiFi.h>
+#include <WiFiClient.h>
+#include <WiFiClientSecure.h>
 
 #include "dlflib/auth/request_signer.h"
 #include "dlflib/components/component.h"
@@ -11,21 +13,25 @@ namespace dlf::components {
 
 class UploaderComponent : public Component {
  public:
+  enum class RetentionMode : uint8_t {
+    KEEP,   // keep run data on SD card (no marker, no deletion)
+    MARK,   // add upload marker file after successful upload
+    DELETE  // delete run data after successful upload
+  };
+
   struct Options {
-    // Delete the run data from the SD card after uploading
-    bool deleteAfterUpload = false;
-    // Adds a marker file to the run directory on the SD card after uploading
-    bool markAfterUpload = true;
+    RetentionMode retentionMode = RetentionMode::MARK;
     // Attempts to upload the active runs' data at a regular interval. <= 0
     // disables partial run uploads.
     int partialRunUploadIntervalSecs = 0;
   };
-  UploaderComponent(fs::FS& fs, const String& fsDir, const String& endpoint,
-                    const String& deviceUid, const String& secret,
+
+  UploaderComponent(fs::FS& fs, const char* fsDir, const char* endpointFmt,
+                    const char* deviceUid, const char* secret,
                     const Options& options);
 
   bool begin() override;
-  bool uploadRun(fs::File runDir, const String& runUuid, bool isActive = false);
+  bool uploadRun(fs::File runDir, const char* runUuid, bool isActive = false);
   void waitForSyncCompletion();
 
  private:
@@ -42,11 +48,17 @@ class UploaderComponent : public Component {
   // https://github.com/espressif/arduino-esp32/blob/master/libraries/WiFi/examples/WiFiClientEvents/WiFiClientEvents.ino
   void onWifiDisconnected(arduino_event_id_t event, arduino_event_info_t info);
   void onWifiConnected(arduino_event_id_t event, arduino_event_info_t info);
+  WiFiClient* getWiFiClient(bool secure = true);
+  WiFiClient* connectToEndpoint(const char* url, int maxRetries = 3,
+                                uint32_t retryDelayMs = 500);
+  bool deleteRunDir(fs::File runDir, const char* runDirPath);
 
+  std::unique_ptr<WiFiClient> wifiClient_;
+  std::unique_ptr<WiFiClientSecure> wifiClientSecure_;
   dlf::auth::RequestSigner signer_;
   fs::FS& fs_;
-  String dir_;
-  String endpoint_;
+  char dir_[128];
+  char endpointFmt_[256];
   Options options_;
   // Used to notify when WiFi connected/disconnected
   EventGroupHandle_t wifiEvent_;
