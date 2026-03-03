@@ -1,7 +1,10 @@
 "use client";
 
-import type { MapPoint } from "@/components/visualizations/gps/map";
-import type { SpeedSample } from "@/components/visualizations/gps/speed-chart";
+import type { MapPoint, Track } from "@/components/visualizations/gps/map";
+import type {
+  SpeedSample,
+  SpeedSeries,
+} from "@/components/visualizations/gps/speed-chart";
 import SpeedChart from "@/components/visualizations/gps/speed-chart";
 import { LatLngExpression } from "leaflet";
 import dynamic from "next/dynamic";
@@ -12,6 +15,20 @@ const MapComponent = dynamic(() => import("./map"), {
   ssr: false,
   loading: () => <LoadingMap />,
 });
+
+type RunMeta = {
+  uuid: string;
+  epochTimeS: bigint;
+  tickBaseUs: bigint;
+  streams: Stream[];
+  isActive?: boolean;
+};
+
+type Stream = {
+  streamId: string;
+  streamType: string;
+  count: number;
+};
 
 type DataPoint = {
   streamId: string;
@@ -74,11 +91,7 @@ export function distanceMeters(
   return R * c;
 }
 
-function toMapPoints(
-  dataPoints: DataPoint[],
-  epochTimeS: bigint,
-  tickBaseUs: bigint,
-): MapPoint[] {
+function toMapPoints(dataPoints: DataPoint[], tickBaseUs: bigint): MapPoint[] {
   // Split out datapoints into lat, lng, and alt
   const satellitesMap = new Map<number, number>();
   const latMap = new Map<number, number>();
@@ -131,11 +144,11 @@ function toMapPoints(
       continue;
     }
 
-    const timestampS = Number(epochTimeS) + Number(tickBaseUs) * 1e-6 * tick;
+    const elapsedS = Number(tickBaseUs) * 1e-6 * tick;
     const position: LatLngExpression =
       alt !== undefined ? [lat, lng, alt] : [lat, lng];
 
-    mapPoints.push({ position, timestampS, numSatellites });
+    mapPoints.push({ position, elapsedS, numSatellites });
   }
 
   return mapPoints;
@@ -146,20 +159,18 @@ function toSpeedSamples(points: MapPoint[]): SpeedSample[] {
     return [];
   }
 
-  const out: SpeedSample[] = [
-    { timestampS: points[0].timestampS, speedMph: 0 },
-  ];
+  const out: SpeedSample[] = [{ elapsedS: points[0].elapsedS, speedMph: 0 }];
 
   for (let i = 1; i < points.length; i++) {
-    const dt = points[i].timestampS - points[i - 1].timestampS;
+    const dt = points[i].elapsedS - points[i - 1].elapsedS;
     if (!Number.isFinite(dt) || dt <= 0) {
-      out.push({ timestampS: points[i].timestampS, speedMph: 0 });
+      out.push({ elapsedS: points[i].elapsedS, speedMph: 0 });
       continue;
     }
     const distM = distanceMeters(points[i - 1].position, points[i].position);
     const mph = (distM / dt) * MPS_TO_MPH;
     out.push({
-      timestampS: points[i].timestampS,
+      elapsedS: points[i].elapsedS,
       speedMph: Number.isFinite(mph) ? mph : 0,
     });
   }
@@ -174,7 +185,7 @@ function LoadingMap() {
   );
 }
 
-function NoData() {
+function NoDataMap() {
   return (
     <div className="flex items-center justify-center h-full bg-gray-200">
       <span className="text-gray-500">No data</span>
@@ -182,112 +193,285 @@ function NoData() {
   );
 }
 
-export default function GpsVisualization({
-  runUuid,
-  epochTimeS,
-  tickBaseUs,
-}: {
-  runUuid: string;
-  epochTimeS: bigint;
-  tickBaseUs: bigint;
-}) {
-  const [rawPoints, setRawPoints] = useState<MapPoint[] | null>(null);
+function ErrorMap({ msg }: { msg: string }) {
+  return (
+    <div className="flex items-center justify-center h-full bg-gray-200">
+      <span className="text-gray-500">Error: {msg}</span>
+    </div>
+  );
+}
+
+export default function GpsVisualization({ runUuids }: { runUuids: string[] }) {
+  const [metaByRun, setMetaByRun] = useState<
+    Record<string, RunMeta | undefined>
+  >({});
+  const [rawPointsByRun, setRawPointsByRun] = useState<
+    Record<string, MapPoint[]>
+  >({});
+  const [error, setError] = useState<string>("");
+
   // TODO: Be able to toggle filter through UI
   const [filterEnabled, setFilterEnabled] = useState(true);
-  const [selectedTimestampS, setSelectedTimestampS] = useState<number>(0);
+  const [selectedElapsedS, setSelectedElapsedS] = useState<number>(0);
 
-  // Fetch raw GPS data
+  // Dedupe runUuids and filter out empty
+  const uuids = useMemo(
+    () => Array.from(new Set(runUuids.filter(Boolean))),
+    [runUuids],
+  );
+
+  // Fetch run metadata for all selected runs
   useEffect(() => {
-    if (!runUuid) {
-      return;
-    }
-    fetch(
-      `/api/runs/${runUuid}/streams?stream_ids=${STREAM_ID_SATELLITES},${STREAM_ID_LATITUDE},${STREAM_ID_LONGITUDE},${STREAM_ID_ALTITUDE}`,
-    )
-      .then((res) => res.json())
-      .then((data) => {
-        const dataPoints: DataPoint[] = data.map((p: any) => {
-          return {
-            streamId: p.streamId,
-            tick: Number(p.tick),
-            data: Number(p.data),
-          };
-        });
-        const mapPoints = toMapPoints(dataPoints, epochTimeS, tickBaseUs);
-        mapPoints.sort((a, b) => a.timestampS - b.timestampS);
-        setRawPoints(mapPoints);
-      });
-  }, [runUuid, epochTimeS, tickBaseUs]);
+    let cancelled = false;
 
-  // Filter outliers from raw GPS data
-  const filteredPoints: MapPoint[] = useMemo(() => {
-    if (rawPoints === null || rawPoints.length === 0) {
-      return [];
-    }
-    if (!filterEnabled) {
-      return rawPoints;
-    }
-
-    const result: MapPoint[] = [];
-    let lastKept: MapPoint | null = null;
-    for (const p of rawPoints) {
-      // Filter out GPS points that were logged with less than X satellites
-      if (p.numSatellites < MIN_NUM_SATELLITES) {
-        continue;
+    async function loadMeta() {
+      if (uuids.length === 0) {
+        setMetaByRun({});
+        setRawPointsByRun({});
+        setError("");
+        return;
       }
 
-      // Filter out GPS points that jump more than X meters from the previous point
-      if (lastKept) {
-        const jump = distanceMeters(lastKept.position, p.position);
-        if (jump > MAX_JUMP_METERS) {
-          continue;
+      setError("");
+
+      const results = await Promise.all(
+        uuids.map(async (uuid) => {
+          try {
+            const res = await fetch(`/api/runs/${uuid}`);
+            if (!res.ok) {
+              return {
+                uuid,
+                meta: undefined as RunMeta | undefined,
+                ok: false,
+              };
+            }
+            const data = await res.json();
+            const meta: RunMeta = {
+              uuid: data.uuid,
+              epochTimeS: BigInt(data.epochTimeS),
+              tickBaseUs: BigInt(data.tickBaseUs),
+              streams: data.streams,
+              isActive: data.isActive,
+            };
+            return { uuid, meta, ok: true };
+          } catch (e: any) {
+            return { uuid, meta: undefined as RunMeta | undefined, ok: false };
+          }
+        }),
+      );
+
+      if (cancelled) {
+        return;
+      }
+
+      const next: Record<string, RunMeta | undefined> = {};
+      let anyFailed = false;
+      for (const r of results) {
+        if (r.ok && r.meta) {
+          next[r.uuid] = r.meta;
+        } else {
+          anyFailed = true;
         }
       }
 
-      result.push(p);
-      lastKept = p;
+      setMetaByRun(next);
+      if (anyFailed) {
+        setError("Failed to load run(s)");
+      }
+    }
+
+    loadMeta();
+    return () => {
+      cancelled = true;
+    };
+  }, [uuids]);
+
+  // Fetch raw GPS data once meta is available
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadGpsData() {
+      const metas = uuids
+        .map((uuid) => ({ uuid, meta: metaByRun[uuid] }))
+        .filter((x): x is { uuid: string; meta: RunMeta } => !!x.meta);
+      if (metas.length === 0) {
+        setRawPointsByRun({});
+        return;
+      }
+
+      const results = await Promise.all(
+        metas.map(async ({ uuid, meta }) => {
+          try {
+            const res = await fetch(
+              `/api/runs/${uuid}/streams?stream_ids=${STREAM_ID_SATELLITES},${STREAM_ID_LATITUDE},${STREAM_ID_LONGITUDE},${STREAM_ID_ALTITUDE}`,
+            );
+            if (!res.ok) {
+              return {
+                uuid,
+                points: undefined as MapPoint[] | undefined,
+                ok: false,
+              };
+            }
+
+            const data = await res.json();
+            const dataPoints: DataPoint[] = data.map((p: any) => ({
+              streamId: p.streamId,
+              tick: Number(p.tick),
+              data: Number(p.data),
+            }));
+
+            const mapPoints = toMapPoints(dataPoints, meta.tickBaseUs);
+            mapPoints.sort((a, b) => a.elapsedS - b.elapsedS);
+
+            return { uuid, points: mapPoints, ok: true };
+          } catch {
+            return {
+              uuid,
+              points: undefined as MapPoint[] | undefined,
+              ok: false,
+            };
+          }
+        }),
+      );
+
+      if (cancelled) {
+        return;
+      }
+
+      const next: Record<string, MapPoint[]> = {};
+      for (const r of results) {
+        if (r.ok && r.points) {
+          next[r.uuid] = r.points;
+        }
+      }
+
+      setRawPointsByRun(next);
+    }
+
+    loadGpsData();
+    return () => {
+      cancelled = true;
+    };
+  }, [uuids, metaByRun]);
+
+  // Filter outliers from raw GPS data
+  const filteredPointsByRun = useMemo(() => {
+    const result: Record<string, MapPoint[]> = {};
+
+    for (const [uuid, points] of Object.entries(rawPointsByRun)) {
+      if (!filterEnabled) {
+        result[uuid] = points;
+        continue;
+      }
+
+      let lastKept: MapPoint | null = null;
+      const filtered: MapPoint[] = [];
+      for (const point of points) {
+        if (point.numSatellites < MIN_NUM_SATELLITES) {
+          continue;
+        }
+
+        if (lastKept) {
+          const jump = distanceMeters(lastKept.position, point.position);
+          if (jump > MAX_JUMP_METERS) {
+            continue;
+          }
+        }
+
+        filtered.push(point);
+        lastKept = point;
+      }
+
+      result[uuid] = filtered;
     }
 
     return result;
-  }, [rawPoints, filterEnabled]);
+  }, [rawPointsByRun, filterEnabled]);
 
-  const speedData = useMemo(() => {
-    if (!filteredPoints || filteredPoints.length === 0) {
-      return [];
+  const tracks: Track[] = useMemo(() => {
+    return uuids
+      .map((uuid) => ({
+        id: uuid,
+        epochTimeS: Number(metaByRun[uuid]?.epochTimeS),
+        points: filteredPointsByRun[uuid] ?? [],
+      }))
+      .filter((t) => t.points.length > 0);
+  }, [uuids, filteredPointsByRun]);
+
+  const speedDataByRun = useMemo(() => {
+    const result: Record<string, SpeedSample[]> = {};
+
+    for (const [uuid, points] of Object.entries(filteredPointsByRun)) {
+      result[uuid] = points && points.length > 0 ? toSpeedSamples(points) : [];
     }
-    return toSpeedSamples(filteredPoints);
-  }, [filteredPoints]);
 
-  if (rawPoints === null) {
+    return result;
+  }, [filteredPointsByRun]);
+
+  const speedSeries: SpeedSeries[] = useMemo(() => {
+    return uuids
+      .map((uuid) => ({
+        id: uuid,
+        samples: speedDataByRun[uuid] ?? [],
+      }))
+      .filter((s) => s.samples.length > 0);
+  }, [uuids, speedDataByRun]);
+
+  const hasAnyMeta = Object.keys(metaByRun).length > 0;
+  const hasAnyRaw = Object.keys(rawPointsByRun).length > 0;
+  const hasAnyPoints = tracks.length > 0;
+
+  if (error) {
+    return (
+      <div className="w-full h-150">
+        <ErrorMap msg={error} />
+      </div>
+    );
+  }
+
+  // No runs selected
+  if (uuids.length === 0) {
+    return (
+      <div className="w-full h-150">
+        <NoDataMap />
+      </div>
+    );
+  }
+
+  // Still fetching meta and/or raw data
+  if (!hasAnyMeta || !hasAnyRaw) {
     return (
       <div className="w-full h-150">
         <LoadingMap />
       </div>
     );
-  } else if (filteredPoints.length === 0) {
+  }
+
+  // Data fetched, but nothing to render
+  if (!hasAnyPoints) {
     return (
       <div className="w-full h-150">
-        <NoData />
+        <NoDataMap />
       </div>
     );
-  } else {
-    return (
-      <>
-        <div className="w-full h-150 border rounded-md overflow-hidden">
-          <MapComponent
-            points={filteredPoints}
-            selectedTimestampS={selectedTimestampS}
-            onSelectedTimestampChange={setSelectedTimestampS}
-          />
-        </div>
-        <div className="w-full h-60 p-4 border rounded-md overflow-hidden">
-          <SpeedChart
-            data={speedData}
-            selectedTimestampS={selectedTimestampS}
-            onSelectedTimestampChange={setSelectedTimestampS}
-          />
-        </div>
-      </>
-    );
   }
+
+  return (
+    <>
+      <div className="w-full h-150 border rounded-md overflow-hidden">
+        <MapComponent
+          tracks={tracks}
+          selectedElapsedS={selectedElapsedS}
+          onSelectedElapsedChange={setSelectedElapsedS}
+        />
+      </div>
+      <div className="w-full h-60 p-4 border rounded-md overflow-hidden">
+        <SpeedChart
+          data={speedSeries}
+          selectedElapsedS={selectedElapsedS}
+          onSelectedElapsedChange={setSelectedElapsedS}
+        />
+      </div>
+    </>
+  );
 }

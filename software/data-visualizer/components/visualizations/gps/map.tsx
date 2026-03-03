@@ -1,32 +1,32 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import {
-  distanceMeters,
-  toLatLng,
-} from "@/components/visualizations/gps/gps-visualization";
-import HeatmapLayer, {
-  HeatmapPoint,
-} from "@/components/visualizations/gps/heatmap-layer";
+import { distanceMeters } from "@/components/visualizations/gps/gps-visualization";
+import { colorForRun } from "@/lib/run-colors";
 import { Icon, LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Pause, Play } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  CircleMarker,
   MapContainer,
-  Marker,
+  Pane,
   Polyline,
   Popup,
   TileLayer,
 } from "react-leaflet";
 
 export type MapPoint = {
-  timestampS: number;
+  elapsedS: number;
   position: LatLngExpression;
   numSatellites: number;
 };
 
-const DWELL_RADIUS_METERS = 10; // consider any points that lie within X meters of another point to be dwelling at the same point
+export type Track = {
+  id: string;
+  epochTimeS: number;
+  points: MapPoint[];
+};
 
 const ColorIcon = Icon.extend({
   options: {
@@ -36,22 +36,7 @@ const ColorIcon = Icon.extend({
   },
 });
 
-// @ts-expect-error Leaflet typings don't support extending Icon like this, but it works at runtime
-const greenIcon = new ColorIcon({
-  iconUrl: "/marker-icon-green.png",
-});
-
-// @ts-expect-error Leaflet typings don't support extending Icon like this, but it works at runtime
-const redIcon = new ColorIcon({
-  iconUrl: "/marker-icon-red.png",
-});
-
-// @ts-expect-error Leaflet typings don't support extending Icon like this, but it works at runtime
-const blueIcon = new ColorIcon({
-  iconUrl: "/marker-icon-blue.png",
-});
-
-function formatDuration(seconds: number): string {
+function formatElapsed(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
@@ -66,38 +51,42 @@ function formatDuration(seconds: number): string {
 }
 
 /**
- * Find the index of the point whose timestamp is closest to a target timestamp.
+ * Find the index of the point whose elapsedS is closest to targetElapsedS.
  * Uses binary search and assumes the input array is already sorted by
- * `timestampS` in ascending order.
+ * `elapsedS` in ascending order.
  *
  * @param points Time-sorted GPS points.
- * @param timestampS Target timestamp in seconds.
- * @returns Index of the closest point.
+ * @param targetElapsedS Target elapsedS in seconds.
+ * @returns Index of the closest point, or -1 if targetElapsedS lies outside of points.
  */
-function findClosestIndexByTimestamp(
-  points: MapPoint[],
-  timestampS: number,
-): number {
+function findClosestIndex(points: MapPoint[], targetElapsedS: number): number {
+  if (
+    points.length === 0 ||
+    targetElapsedS < points[0].elapsedS ||
+    targetElapsedS > points[points.length - 1].elapsedS
+  ) {
+    return -1;
+  }
+
   let lo = 0;
   let hi = points.length - 1;
 
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
-    if (points[mid].timestampS < timestampS) {
+    if (points[mid].elapsedS < targetElapsedS) {
       lo = mid + 1;
     } else {
       hi = mid;
     }
   }
 
-  // lo is first index with timestamp >= t
   if (lo === 0) {
     return 0;
   }
   const prev = lo - 1;
 
-  const d0 = Math.abs(points[lo].timestampS - timestampS);
-  const d1 = Math.abs(points[prev].timestampS - timestampS);
+  const d0 = Math.abs(points[lo].elapsedS - targetElapsedS);
+  const d1 = Math.abs(points[prev].elapsedS - targetElapsedS);
   return d1 <= d0 ? prev : lo;
 }
 
@@ -138,134 +127,64 @@ function decimateByDistance(
   return result;
 }
 
-function toHeatmapPoints(points: MapPoint[]): HeatmapPoint[] {
-  const numPoints = points.length;
-  if (numPoints === 0) {
-    return [];
-  }
-
-  // Calculate time deltas between each point in displayPoints
-  const dts: number[] = new Array(numPoints).fill(0);
-  for (let i = 0; i < numPoints - 1; i++) {
-    const dt = points[i + 1].timestampS - points[i].timestampS;
-    dts[i] = Math.max(0, Math.min(dt, 60)); // clamp to avoid outliers ruining the visualization
-  }
-  // Set the dt of the last point to be the same as the second-to-last point
-  if (numPoints > 1) {
-    dts[numPoints - 1] = dts[numPoints - 2];
-  }
-
-  const maxDt = dts.reduce((prev, curr) => (curr > prev ? curr : prev), 0) || 1;
-
-  return points.map((p, idx) => {
-    const { lat, lng } = toLatLng(p.position);
-    // Set the heatmap weight for each point to be dt normalized to [0, 1]
-    const weight = dts[idx] / maxDt;
-    return [lat, lng, weight] as HeatmapPoint;
-  });
-}
-
-function calculateDwellMinMax(points: MapPoint[]): {
-  minS: number;
-  maxS: number;
-} {
-  const numPoints = points.length;
-  if (numPoints < 2) {
-    return { minS: 0, maxS: 0 };
-  }
-
-  // Compute min/max dwell using a sliding anchor. Any points following an anchor point that is
-  // less than DWELL_RADIUS_METERS to the anchor point is considered to be dwelling at the
-  // anchor point.
-  let anchorIdx = 0;
-  let currentDwellS = 0;
-  let minDwellS = Infinity;
-  let maxDwellS = 0;
-  for (let i = 0; i < numPoints - 1; i++) {
-    const dt = points[i + 1].timestampS - points[i].timestampS;
-    const dist = distanceMeters(
-      points[anchorIdx].position,
-      points[i + 1].position,
-    );
-    if (dist <= DWELL_RADIUS_METERS) {
-      // We're still dwelling at the anchor point
-      currentDwellS += dt;
-    } else {
-      // We're no longer dwelling at the anchor point.
-      // Update min/max dwell times and update the anchor point.
-      minDwellS = Math.min(minDwellS, currentDwellS);
-      maxDwellS = Math.max(maxDwellS, currentDwellS);
-      anchorIdx = i + 1;
-      currentDwellS = 0;
-    }
-  }
-
-  minDwellS = Math.min(minDwellS, currentDwellS);
-  maxDwellS = Math.max(maxDwellS, currentDwellS);
-
-  if (minDwellS === Infinity) {
-    minDwellS = 0;
-  }
-
-  return { minS: minDwellS, maxS: maxDwellS };
-}
-
 export default function Map({
-  points,
+  tracks,
   playbackDurationS = 10,
-  selectedTimestampS, // for controlled use
-  onSelectedTimestampChange, // for controlled use
+  selectedElapsedS, // for controlled use
+  onSelectedElapsedChange, // for controlled use
 }: {
-  points: MapPoint[];
+  tracks: Track[];
   playbackDurationS?: number;
-  selectedTimestampS?: number;
-  onSelectedTimestampChange?: (timestampS: number) => void;
+  selectedElapsedS?: number;
+  onSelectedElapsedChange?: (elapsedS: number) => void;
 }) {
-  const [heatmapEnabled, setHeatmapEnabled] = useState(false);
+  // Decimate points (per-track) to improve performance
+  const renderedTracks: Track[] = useMemo(() => {
+    return tracks
+      .map((track) => {
+        const pts = [...(track.points ?? [])].sort(
+          (a, b) => a.elapsedS - b.elapsedS,
+        );
+        const decimated = pts.length > 1000 ? decimateByDistance(pts, 3) : pts;
+        return {
+          id: track.id,
+          epochTimeS: track.epochTimeS,
+          points: decimated,
+        };
+      })
+      .filter((t) => t.points.length > 0);
+  }, [tracks]);
 
-  // Decimate points to improve performance
-  const renderedPoints = useMemo(() => {
-    if (points.length > 1000) {
-      return decimateByDistance(points, 3);
+  // Calculate the max elapsedS across all tracks
+  const maxElapsedS = useMemo(() => {
+    let max = 0;
+    for (const track of renderedTracks) {
+      const last = track.points[track.points.length - 1];
+      if (last && last.elapsedS > max) {
+        max = last.elapsedS;
+      }
     }
-    return points;
-  }, [points]);
+    return Math.max(0, Math.floor(max));
+  }, [renderedTracks]);
 
-  // Create data for heatmap rendering
-  const heatmapPoints: HeatmapPoint[] = useMemo(
-    () => toHeatmapPoints(renderedPoints),
-    [renderedPoints],
-  );
+  // Current position of the scrubber
+  const [uncontrolledElapsedS, setUncontrolledElapsedS] = useState<number>(0);
+  const currentElapsedS = selectedElapsedS ?? uncontrolledElapsedS;
 
-  // Calculate min and max dwell times
-  const { minS: minDwellS, maxS: maxDwellS } = useMemo(
-    () => calculateDwellMinMax(renderedPoints),
-    [renderedPoints],
-  );
-
-  const startTimestampS = renderedPoints[0]?.timestampS ?? 0;
-  const endTimestampS =
-    renderedPoints[renderedPoints.length - 1]?.timestampS ?? startTimestampS;
-
-  // Current timestamp of the scrubber
-  const [uncontrolledTimestampS, setUncontrolledTimestampS] =
-    useState<number>(startTimestampS);
-  const currentTimestampS = selectedTimestampS ?? uncontrolledTimestampS;
-
-  const setCurrentTimestampS = (timestampS: number) => {
-    if (onSelectedTimestampChange) {
-      onSelectedTimestampChange(timestampS);
+  const setCurrentElapsedS = (elapsedS: number) => {
+    const clamped = Math.max(0, Math.min(maxElapsedS, Math.round(elapsedS)));
+    if (onSelectedElapsedChange) {
+      onSelectedElapsedChange(clamped);
     } else {
-      setUncontrolledTimestampS(timestampS);
+      setUncontrolledElapsedS(clamped);
     }
   };
 
-  // When the points change, reset scrubber to start
+  // Reset scrubber when tracks change
   useEffect(() => {
-    if (renderedPoints.length > 0) {
-      setCurrentTimestampS(renderedPoints[0].timestampS);
-    }
-  }, [renderedPoints]);
+    setCurrentElapsedS(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renderedTracks, maxElapsedS]);
 
   // Whether the scrubber playback animation is active
   const [isPlaying, setIsPlaying] = useState(false);
@@ -273,17 +192,16 @@ export default function Map({
   const playRafRef = useRef<number | null>(null);
   // Epoch time (ms) of animation start
   const playStartMsRef = useRef<number | null>(null);
-  // Timestamp (s) of run data that animation should start at
-  const playStartTimestampSRef = useRef<number>(startTimestampS);
+  // elapsedS of run data that animation should start at
+  const playStartElapsedSRef = useRef<number>(0);
 
-  // Keep refs in sync when the range changes
+  // Stop playback if range changes mid-play
   useEffect(() => {
-    playStartTimestampSRef.current = startTimestampS;
+    playStartElapsedSRef.current = 0;
     if (isPlaying) {
-      // If range changed mid-play, stop to avoid jumps
       setIsPlaying(false);
     }
-  }, [startTimestampS, endTimestampS]);
+  }, [maxElapsedS]);
 
   // Scrubber playback animation
   useEffect(() => {
@@ -298,7 +216,7 @@ export default function Map({
     }
 
     // Invalid playback timeline
-    if (endTimestampS <= startTimestampS) {
+    if (maxElapsedS <= 0) {
       setIsPlaying(false);
       return;
     }
@@ -306,26 +224,25 @@ export default function Map({
     const tick = (nowMs: number) => {
       if (playStartMsRef.current == null) {
         playStartMsRef.current = nowMs;
-        playStartTimestampSRef.current = currentTimestampS;
+        playStartElapsedSRef.current = currentElapsedS;
       }
 
+      // Calculate the next animation position
+      const remainingS = maxElapsedS - playStartElapsedSRef.current;
       const durationMs =
-        ((endTimestampS - playStartTimestampSRef.current) /
-          (endTimestampS - startTimestampS)) *
-        playbackDurationS *
-        1000;
+        (remainingS / Math.max(1, maxElapsedS)) * playbackDurationS * 1000;
+
       const elapsedMs = nowMs - playStartMsRef.current;
-      const t = Math.min(1, elapsedMs / durationMs);
+      const t = Math.min(1, elapsedMs / Math.max(1, durationMs));
 
-      const startS = playStartTimestampSRef.current;
-      const targetS = startS + t * (endTimestampS - startS);
-      const nextS = Math.min(
-        endTimestampS,
-        Math.max(startTimestampS, Math.round(targetS)),
-      );
-      setCurrentTimestampS(nextS);
+      const startS = playStartElapsedSRef.current;
+      const targetS = startS + t * (maxElapsedS - startS);
+      const nextS = Math.min(maxElapsedS, Math.max(0, Math.round(targetS)));
 
-      if (t >= 1 || nextS >= endTimestampS) {
+      setCurrentElapsedS(nextS);
+
+      if (t >= 1 || nextS >= maxElapsedS) {
+        // We've reached the end of playback
         setIsPlaying(false);
         return;
       }
@@ -342,29 +259,44 @@ export default function Map({
       playRafRef.current = null;
       playStartMsRef.current = null;
     };
-  }, [isPlaying, startTimestampS, endTimestampS, playbackDurationS]);
+  }, [isPlaying, maxElapsedS, playbackDurationS]);
 
-  // Positions to be drawn as line segments on the map
-  const polylinePositions = useMemo(
-    () => renderedPoints.map((p) => p.position),
-    [renderedPoints],
-  );
+  // Map center is the first point of first track
+  const center = renderedTracks[0]?.points[0]?.position;
 
-  // Find the point whose timestamp is closest to currentTimestampS, used to
-  // render the current position marker on the map
-  const currentPoint = useMemo(() => {
-    if (renderedPoints.length === 0) {
-      return null;
-    }
-    const currentPointIdx = findClosestIndexByTimestamp(
-      renderedPoints,
-      currentTimestampS,
-    );
-    return currentPointIdx >= 0 ? renderedPoints[currentPointIdx] : null;
-  }, [renderedPoints, currentTimestampS]);
+  // Per-track polylines
+  const polylines = useMemo(() => {
+    return renderedTracks.map((t) => ({
+      id: t.id,
+      positions: t.points.map((p) => p.position),
+    }));
+  }, [renderedTracks]);
 
-  // Note: all hooks must be defined before this early return (Rules of Hooks)
-  if (renderedPoints.length === 0 || !currentPoint) {
+  // Per-track current point markers
+  const currentPoints = useMemo(() => {
+    return renderedTracks
+      .map((track) => {
+        const idx = findClosestIndex(track.points, currentElapsedS);
+        if (idx < 0) {
+          return null;
+        }
+
+        const p = track.points[idx];
+        return p
+          ? {
+              id: track.id,
+              point: p,
+              timestampS: track.epochTimeS + p.elapsedS,
+            }
+          : null;
+      })
+      .filter(
+        (x): x is { id: string; point: MapPoint; timestampS: number } =>
+          x !== null,
+      );
+  }, [renderedTracks, currentElapsedS]);
+
+  if (!center || renderedTracks.length === 0) {
     return null;
   }
 
@@ -373,8 +305,8 @@ export default function Map({
       {/* Map + overlay container */}
       <div className="relative h-full w-full flex-1">
         <MapContainer
-          preferCanvas={true}
-          center={renderedPoints[0].position}
+          preferCanvas={false}
+          center={center}
           zoom={18}
           scrollWheelZoom={true}
           touchZoom={true}
@@ -387,83 +319,72 @@ export default function Map({
             maxZoom={22}
           />
 
-          {/* Dwell-time heatmap overlay */}
-          {heatmapEnabled && (
-            <HeatmapLayer
-              points={heatmapPoints}
-              radius={10}
-              blur={20}
-              maxIntensity={1}
-            />
-          )}
+          {/* One polyline per run */}
+          <Pane name="tracks" style={{ zIndex: 400 }}>
+            {polylines.map((polyline) => (
+              <Polyline
+                key={polyline.id}
+                positions={polyline.positions}
+                color={colorForRun(polyline.id)}
+              />
+            ))}
+          </Pane>
 
-          {/* Full track */}
-          <Polyline positions={polylinePositions} color="blue" />
-
-          {/* Start marker */}
-          <Marker position={renderedPoints[0].position} icon={greenIcon}>
-            <Popup>
-              <div className="max-w-[200px] break-words text-sm">
-                {`Start: ${new Date(startTimestampS * 1000).toLocaleString()}`}
-              </div>
-            </Popup>
-          </Marker>
-
-          {/* End marker */}
-          <Marker
-            position={renderedPoints[renderedPoints.length - 1].position}
-            icon={redIcon}
-          >
-            <Popup>
-              <div className="max-w-[200px] break-words text-sm">
-                {`End: ${new Date(endTimestampS * 1000).toLocaleString()}`}
-              </div>
-            </Popup>
-          </Marker>
-
-          {/* Current (scrubbed) marker */}
-          <Marker position={currentPoint.position} icon={blueIcon}>
-            <Popup>
-              <div className="max-w-[220px] break-words text-sm">
-                {new Date(currentPoint.timestampS * 1000).toLocaleString()}
-              </div>
-            </Popup>
-          </Marker>
+          {/* One marker per run at the current elapsed position */}
+          <Pane name="markers" style={{ zIndex: 600 }}>
+            {currentPoints.map(({ id, point, timestampS }) => (
+              <CircleMarker
+                key={id}
+                center={point.position}
+                radius={6}
+                pathOptions={{
+                  fillColor: colorForRun(id),
+                  fillOpacity: 1,
+                  weight: 3,
+                  className: "gps-marker gps-pulse",
+                }}
+              >
+                <Popup>
+                  <div className="max-w-[220px] break-words text-sm">
+                    <div className="font-semibold">Run</div>
+                    <div>{id}</div>
+                    <div className="mt-2 font-semibold">Time</div>
+                    <div>{`${new Date(timestampS * 1000).toLocaleString()}`}</div>
+                  </div>
+                </Popup>
+              </CircleMarker>
+            ))}
+          </Pane>
         </MapContainer>
-
-        {/* Dwell time overlay */}
-        {heatmapEnabled && (
-          <div className="pointer-events-none absolute left-1/2 top-2 z-[1000] -translate-x-1/2">
-            <div className="rounded-md bg-white/80 px-3 py-1 text-xs shadow">
-              <span className="font-semibold">Max dwell time:</span>{" "}
-              <span className="tabular-nums">{formatDuration(maxDwellS)}</span>
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Map controls */}
+      {/* Controls */}
       <div className="bg-white/80 p-2 text-xs">
         {/* Scrubber */}
         <input
           type="range"
           className="w-full"
-          min={startTimestampS}
-          max={endTimestampS}
+          min={0}
+          max={maxElapsedS}
           step={1}
-          value={currentTimestampS}
+          value={Math.max(
+            0,
+            Math.min(maxElapsedS, Math.round(currentElapsedS)),
+          )}
           onChange={(e) => {
             // Stop playback when manually scrubbing
             setIsPlaying(false);
-            setCurrentTimestampS(Number(e.target.value));
+            setCurrentElapsedS(Number(e.target.value));
           }}
         />
-        <div className="flex justify-between">
-          <span>{new Date(startTimestampS * 1000).toLocaleTimeString()}</span>
-          <span className="font-semibold">
-            {new Date(currentTimestampS * 1000).toLocaleTimeString()}
+        <div className="grid grid-cols-3 items-center text-xs">
+          <span className="text-left tabular-nums">{formatElapsed(0)}</span>
+          <span className="text-center font-semibold tabular-nums">
+            {formatElapsed(Math.round(currentElapsedS))}
           </span>
-          <span>{new Date(endTimestampS * 1000).toLocaleTimeString()}</span>
+          <span className="text-right tabular-nums">
+            {formatElapsed(maxElapsedS)}
+          </span>
         </div>
 
         {/* Scrubber playback button */}
@@ -472,8 +393,8 @@ export default function Map({
             size="sm"
             onClick={() => {
               // If at end, restart from beginning when hitting play
-              if (!isPlaying && currentTimestampS >= endTimestampS) {
-                setCurrentTimestampS(startTimestampS);
+              if (!isPlaying && currentElapsedS >= maxElapsedS) {
+                setCurrentElapsedS(0);
               }
               setIsPlaying((v) => !v);
             }}
@@ -490,18 +411,6 @@ export default function Map({
               </>
             )}
           </Button>
-        </div>
-
-        {/* Heatmap toggle */}
-        <div className="mt-2 flex items-center justify-center gap-2">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={heatmapEnabled}
-              onChange={(e) => setHeatmapEnabled(e.target.checked)}
-            />
-            Show dwell time heatmap
-          </label>
         </div>
       </div>
     </div>

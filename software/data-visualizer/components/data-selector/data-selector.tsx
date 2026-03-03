@@ -1,10 +1,6 @@
 "use client";
 
-import DeviceSelector from "@/components/data-selector/device-selector";
-import RunSelector from "@/components/data-selector/run-selector";
-import VisualizationSelector, {
-  VisualizationType,
-} from "@/components/data-selector/visualization-selector";
+import RunSelectionCard from "@/components/data-selector/run-selection-card";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,46 +15,73 @@ import { Separator } from "@/components/ui/separator";
 import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-export type Selection = {
+export type RunSelectionRow = {
+  rowId: string; // acts as stable key
   deviceId: string;
   runUuid: string;
-  visualizationType: VisualizationType;
 };
+
+export type Selection = {
+  runs: RunSelectionRow[];
+};
+
+function createRow(): RunSelectionRow {
+  return {
+    rowId: crypto.randomUUID(),
+    deviceId: "",
+    runUuid: "",
+  };
+}
 
 export default function DataSelector({
   onSelectionChanged,
 }: {
   onSelectionChanged: (next: Selection) => void;
 }) {
-  const [selectedDevice, setSelectedDevice] = useState<string>("");
-  const [selectedRun, setSelectedRun] = useState<string>("");
-  const [selectedVisualization, setSelectedVisualization] =
-    useState<VisualizationType>(VisualizationType.NONE);
+  const [rows, setRows] = useState<RunSelectionRow[]>(() => [createRow()]);
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteErrorMsg, setDeleteErrorMsg] = useState<string>("");
-
+  const [deleteErrorMsg, setDeleteErrorMsg] = useState("");
   // Used to force RunSelector to refetch runs after deleting a run
   const [runsRefreshKey, setRunsRefreshKey] = useState(0);
 
-  // Clear run + viz whenever the device changes
+  // Publish selection changes to parent
   useEffect(() => {
-    setSelectedRun("");
-    setSelectedVisualization(VisualizationType.NONE);
-  }, [selectedDevice]);
+    onSelectionChanged({ runs: rows });
+  }, [rows, onSelectionChanged]);
 
-  // Publish selection changes
-  useEffect(() => {
-    onSelectionChanged({
-      deviceId: selectedDevice,
-      runUuid: selectedRun,
-      visualizationType: selectedVisualization,
+  function updateRow(
+    rowId: string,
+    patch: Partial<Omit<RunSelectionRow, "rowId">>,
+  ) {
+    setRows((prev) =>
+      prev.map((r) => (r.rowId === rowId ? { ...r, ...patch } : r)),
+    );
+  }
+
+  function addNewRow() {
+    setRows((prev) => [...prev, createRow()]);
+  }
+
+  function removeRow(rowId: string) {
+    setRows((prev) => {
+      if (prev.length === 1) {
+        return prev;
+      }
+      return prev.filter((r) => r.rowId !== rowId);
     });
-  }, [selectedDevice, selectedRun, selectedVisualization, onSelectionChanged]);
+  }
 
-  async function handleDeleteRun() {
-    if (!selectedRun) {
+  const primary = rows[0];
+  const primaryHasRun = !!primary?.runUuid;
+  const isCompareMode = rows.length > 1;
+
+  // Only show delete button when there is exactly one selected run
+  const showDelete = !isCompareMode && primaryHasRun;
+
+  async function handleDeletePrimaryRun() {
+    if (!primary?.runUuid) {
       return;
     }
 
@@ -66,8 +89,9 @@ export default function DataSelector({
     setDeleteErrorMsg("");
 
     try {
-      const res = await fetch(`/api/runs/${selectedRun}`, { method: "DELETE" });
-
+      const res = await fetch(`/api/runs/${primary.runUuid}`, {
+        method: "DELETE",
+      });
       if (!res.ok) {
         let msg = "Failed to delete run";
         try {
@@ -79,9 +103,17 @@ export default function DataSelector({
         throw new Error(msg);
       }
 
+      // Close delete run modal
       setDeleteOpen(false);
-      setSelectedRun(""); // unselect the run when successfully deleted
-      setSelectedVisualization(VisualizationType.NONE);
+
+      // Clear primary run selection
+      setRows((prev) => {
+        const next = [...prev];
+        next[0] = { ...next[0], runUuid: "" };
+        return next;
+      });
+
+      // Force refetching updated list of runs
       setRunsRefreshKey((k) => k + 1);
     } catch (e) {
       setDeleteErrorMsg(
@@ -94,95 +126,73 @@ export default function DataSelector({
 
   return (
     <div className="h-full flex flex-col gap-4">
-      <div className="space-y-2">
-        <div className="text-sm font-medium">Device</div>
-        <DeviceSelector
-          value={selectedDevice}
-          onValueChange={setSelectedDevice}
+      {rows.map((row, idx) => (
+        <RunSelectionCard
+          key={row.rowId}
+          title={idx === 0 ? undefined : `Comparison ${idx}`}
+          row={row}
+          runsRefreshKey={runsRefreshKey}
+          onChange={(patch) => updateRow(row.rowId, patch)}
+          onRemove={idx === 0 ? undefined : () => removeRow(row.rowId)}
         />
-      </div>
+      ))}
 
-      <Separator />
-
-      <div className="space-y-2">
-        <div className="text-sm font-medium">Run</div>
-        {selectedDevice ? (
-          <RunSelector
-            key={`${selectedDevice}:${runsRefreshKey}`}
-            deviceId={selectedDevice}
-            value={selectedRun}
-            onValueChange={setSelectedRun}
-          />
-        ) : (
-          <div className="rounded-md border border-dashed py-2 px-3 text-sm text-muted-foreground">
-            Select a device to load runs.
-          </div>
-        )}
-      </div>
-
-      <Separator />
-
-      <div className="space-y-2">
-        <div className="text-sm font-medium">Visualization</div>
-        {selectedRun ? (
-          <VisualizationSelector
-            runUuid={selectedRun}
-            value={selectedVisualization}
-            onValueChange={setSelectedVisualization}
-          />
-        ) : (
-          <div className="rounded-md border border-dashed py-2 px-3 text-sm text-muted-foreground">
-            Select a run to enable visualization options.
-          </div>
-        )}
-      </div>
-
-      {selectedRun && (
+      {primaryHasRun && (
         <>
           <Separator />
 
-          <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-            <DialogTrigger asChild>
-              <Button
-                variant="destructive"
-                className="w-full justify-start gap-2"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete run
-              </Button>
-            </DialogTrigger>
+          <Button
+            variant="secondary"
+            className="w-full justify-start"
+            onClick={addNewRow}
+          >
+            + Add comparison
+          </Button>
 
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Delete this run?</DialogTitle>
-                <DialogDescription>
-                  This will permanently delete the run and its associated data.
-                  This action cannot be undone.
-                </DialogDescription>
-              </DialogHeader>
-
-              {deleteErrorMsg && (
-                <p className="text-sm text-destructive">{deleteErrorMsg}</p>
-              )}
-
-              <DialogFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => setDeleteOpen(false)}
-                  disabled={isDeleting}
-                >
-                  Cancel
-                </Button>
+          {showDelete && (
+            <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+              <DialogTrigger asChild>
                 <Button
                   variant="destructive"
-                  onClick={handleDeleteRun}
-                  disabled={isDeleting}
+                  className="w-full justify-start gap-2"
                 >
-                  {isDeleting ? "Deleting..." : "Confirm Delete"}
+                  <Trash2 className="h-4 w-4" />
+                  Delete run
                 </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+              </DialogTrigger>
+
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Delete this run?</DialogTitle>
+                  <DialogDescription>
+                    This will permanently delete the run and its associated
+                    data. This action cannot be undone.
+                  </DialogDescription>
+                </DialogHeader>
+
+                {deleteErrorMsg && (
+                  <p className="text-sm text-destructive">{deleteErrorMsg}</p>
+                )}
+
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => setDeleteOpen(false)}
+                    disabled={isDeleting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={handleDeletePrimaryRun}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? "Deleting..." : "Confirm Delete"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
         </>
       )}
     </div>
