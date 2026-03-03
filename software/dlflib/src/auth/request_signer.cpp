@@ -25,17 +25,29 @@
 namespace dlf::auth {
 
 RequestSigner::RequestSigner(const char* deviceId, const char* secret) {
-  strncpy(deviceId_, deviceId, sizeof(deviceId_) - 1);
-  deviceId_[sizeof(deviceId_) - 1] = '\0';
+  snprintf(deviceId_, sizeof(deviceId_), "%s", deviceId);
+  snprintf(secret_, sizeof(secret_), "%s", secret);
+}
 
-  strncpy(secret_, secret, sizeof(secret_) - 1);
-  secret_[sizeof(secret_) - 1] = '\0';
+void RequestSigner::bytesToHex(const byte* bytes, size_t len, char* outHex,
+                               size_t outSize) {
+  static const char hex[] = "0123456789abcdef";
+  if (outSize < 65) return;
+
+  for (size_t i = 0; i < 32; ++i) {
+    outHex[i * 2] = hex[(bytes[i] >> 4) & 0x0F];
+    outHex[i * 2 + 1] = hex[bytes[i] & 0x0F];
+  }
+
+  outHex[64] = '\0';
 }
 
 bool RequestSigner::writeAuthHeaders(WiFiClient& client, const char* payload) {
   if (deviceId_[0] == '\0' || secret_[0] == '\0') {
     return false;
   }
+
+  if (payload == nullptr) payload = "";
 
   time_t now;
   time(&now);
@@ -47,14 +59,15 @@ bool RequestSigner::writeAuthHeaders(WiFiClient& client, const char* payload) {
   snprintf(nonce, sizeof(nonce), "%lu", (unsigned long)esp_random());
 
   char bodyHash[65];
-  sha256(payload, bodyHash, sizeof(bodyHash));
+  sha256(payload, strlen(payload), bodyHash, sizeof(bodyHash));
 
   char stringToSign[256];
   snprintf(stringToSign, sizeof(stringToSign), "%s:%s:%s:%s", deviceId_,
            timestamp, nonce, bodyHash);
 
   char signature[65];
-  hmacSha256(secret_, stringToSign, signature, sizeof(signature));
+  hmacSha256(secret_, strlen(secret_), stringToSign, strlen(stringToSign),
+             signature, sizeof(signature));
 
   client.printf("x-device-id: %s\r\n", deviceId_);
   client.printf("x-timestamp: %s\r\n", timestamp);
@@ -69,6 +82,8 @@ bool RequestSigner::writeAuthHeaders(HTTPClient& client, const char* payload) {
     return false;
   }
 
+  if (payload == nullptr) payload = "";
+
   time_t now;
   time(&now);
 
@@ -79,14 +94,15 @@ bool RequestSigner::writeAuthHeaders(HTTPClient& client, const char* payload) {
   snprintf(nonce, sizeof(nonce), "%lu", (unsigned long)esp_random());
 
   char bodyHash[65];
-  sha256(payload, bodyHash, sizeof(bodyHash));
+  sha256(payload, strlen(payload), bodyHash, sizeof(bodyHash));
 
   char stringToSign[256];
   snprintf(stringToSign, sizeof(stringToSign), "%s:%s:%s:%s", deviceId_,
            timestamp, nonce, bodyHash);
 
   char signature[65];
-  hmacSha256(secret_, stringToSign, signature, sizeof(signature));
+  hmacSha256(secret_, strlen(secret_), stringToSign, strlen(stringToSign),
+             signature, sizeof(signature));
 
   client.addHeader("x-device-id", deviceId_);
   client.addHeader("x-timestamp", timestamp);
@@ -96,39 +112,34 @@ bool RequestSigner::writeAuthHeaders(HTTPClient& client, const char* payload) {
   return true;
 }
 
-void RequestSigner::sha256(const char* data, char* outHex, size_t outSize) {
+void RequestSigner::sha256(const char* data, size_t dataLen, char* outHex,
+                           size_t outSize) {
   byte result[32];
   mbedtls_md_context_t ctx;
   mbedtls_md_init(&ctx);
   mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 0);
   mbedtls_md_starts(&ctx);
-  mbedtls_md_update(&ctx, (const unsigned char*)data, strlen(data));
+  mbedtls_md_update(&ctx, (const unsigned char*)data, dataLen);
   mbedtls_md_finish(&ctx, result);
   mbedtls_md_free(&ctx);
 
-  outHex[0] = '\0';
-  for (int i = 0; i < 32 && (size_t)(i * 2 + 2) < outSize; i++) {
-    snprintf(outHex + (i * 2), 3, "%02x", result[i]);
-  }
+  bytesToHex(result, 32, outHex, outSize);
 }
 
-void RequestSigner::hmacSha256(const char* key, const char* data, char* outHex,
-                               size_t outSize) {
+void RequestSigner::hmacSha256(const char* key, size_t keyLen, const char* data,
+                               size_t dataLen, char* outHex, size_t outSize) {
   byte hmacResult[32];
   mbedtls_md_context_t ctx;
   mbedtls_md_type_t md_type = MBEDTLS_MD_SHA256;
 
   mbedtls_md_init(&ctx);
   mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(md_type), 1);  // 1 = HMAC
-  mbedtls_md_hmac_starts(&ctx, (const unsigned char*)key, strlen(key));
-  mbedtls_md_hmac_update(&ctx, (const unsigned char*)data, strlen(data));
+  mbedtls_md_hmac_starts(&ctx, (const unsigned char*)key, keyLen);
+  mbedtls_md_hmac_update(&ctx, (const unsigned char*)data, dataLen);
   mbedtls_md_hmac_finish(&ctx, hmacResult);
   mbedtls_md_free(&ctx);
 
-  outHex[0] = '\0';
-  for (int i = 0; i < 32 && (size_t)(i * 2 + 2) < outSize; i++) {
-    snprintf(outHex + (i * 2), 3, "%02x", hmacResult[i]);
-  }
+  bytesToHex(hmacResult, 32, outHex, outSize);
 }
 
 }  // namespace dlf::auth
