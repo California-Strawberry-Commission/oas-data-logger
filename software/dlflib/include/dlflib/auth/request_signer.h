@@ -8,16 +8,19 @@ namespace dlf::auth {
 
 class RequestSigner {
  public:
-  RequestSigner(const String& deviceId, const String& secret);
-  bool writeAuthHeaders(WiFiClient& client, const String& payload = "");
-  bool writeAuthHeaders(HTTPClient& client, const String& payload = "");
+  RequestSigner(const char* deviceId, const char* secret);
+  bool writeAuthHeaders(WiFiClient& client, const char* payload = nullptr);
+  bool writeAuthHeaders(HTTPClient& client, const char* payload = nullptr);
 
  private:
-  String deviceId_;
-  String secret_;
+  char deviceId_[65];
+  char secret_[65];
 
-  String sha256(const String& data);
-  String hmacSha256(const String& key, const String& payload);
+  void sha256(const char* data, size_t dataLen, char* outHex, size_t outSize);
+  void hmacSha256(const char* key, size_t keyLen, const char* data,
+                  size_t dataLen, char* outHex, size_t outSize);
+  static void bytesToHex(const byte* bytes, size_t len, char* outHex,
+                         size_t outSize);
 };
 
 }  // namespace dlf::auth
