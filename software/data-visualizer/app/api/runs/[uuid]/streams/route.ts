@@ -1,6 +1,5 @@
 import { getCurrentUser } from "@/lib/auth";
-import prisma from "@/lib/prisma";
-import { getRunForUser } from "@/lib/query-helpers";
+import prisma, { getRunForUser } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(
@@ -51,7 +50,7 @@ export async function GET(
     return NextResponse.json(
       runData.map((d) => ({
         ...d,
-        tick: d.tick.toString(),
+        tick: Number(d.tick),
       })),
     );
   } catch (err) {

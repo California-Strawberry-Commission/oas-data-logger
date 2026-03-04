@@ -1,6 +1,5 @@
 import { getCurrentUser } from "@/lib/auth";
-import prisma from "@/lib/prisma";
-import { getRunForUser } from "@/lib/query-helpers";
+import prisma, { getRunForUser } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(
@@ -29,8 +28,8 @@ export async function GET(
 
     return NextResponse.json({
       uuid: run.uuid,
-      epochTimeS: run.epochTimeS.toString(), // convert BigInt to string for JSON serialization
-      tickBaseUs: run.tickBaseUs.toString(), // convert BigInt to string for JSON serialization
+      epochTimeS: Number(run.epochTimeS),
+      tickBaseUs: Number(run.tickBaseUs),
       isActive: run.isActive,
       metadata: run.metadata,
       streams: streams.map((s) => ({

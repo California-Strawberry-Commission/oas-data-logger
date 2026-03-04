@@ -1,11 +1,10 @@
 "use client";
 
 import type { MapPoint, Track } from "@/components/visualizations/gps/map";
-import type {
-  SpeedSample,
-  SpeedSeries,
+import SpeedChart, {
+  type SpeedSample,
+  type SpeedSeries,
 } from "@/components/visualizations/gps/speed-chart";
-import SpeedChart from "@/components/visualizations/gps/speed-chart";
 import { LatLngExpression } from "leaflet";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
@@ -18,8 +17,8 @@ const MapComponent = dynamic(() => import("./map"), {
 
 type RunMeta = {
   uuid: string;
-  epochTimeS: bigint;
-  tickBaseUs: bigint;
+  epochTimeS: number;
+  tickBaseUs: number;
   streams: Stream[];
   isActive?: boolean;
 };
@@ -91,7 +90,7 @@ export function distanceMeters(
   return R * c;
 }
 
-function toMapPoints(dataPoints: DataPoint[], tickBaseUs: bigint): MapPoint[] {
+function toMapPoints(dataPoints: DataPoint[], tickBaseUs: number): MapPoint[] {
   // Split out datapoints into lat, lng, and alt
   const satellitesMap = new Map<number, number>();
   const latMap = new Map<number, number>();
@@ -144,7 +143,7 @@ function toMapPoints(dataPoints: DataPoint[], tickBaseUs: bigint): MapPoint[] {
       continue;
     }
 
-    const elapsedS = Number(tickBaseUs) * 1e-6 * tick;
+    const elapsedS = tickBaseUs * 1e-6 * tick;
     const position: LatLngExpression =
       alt !== undefined ? [lat, lng, alt] : [lat, lng];
 
@@ -248,8 +247,8 @@ export default function GpsVisualization({ runUuids }: { runUuids: string[] }) {
             const data = await res.json();
             const meta: RunMeta = {
               uuid: data.uuid,
-              epochTimeS: BigInt(data.epochTimeS),
-              tickBaseUs: BigInt(data.tickBaseUs),
+              epochTimeS: data.epochTimeS,
+              tickBaseUs: data.tickBaseUs,
               streams: data.streams,
               isActive: data.isActive,
             };
@@ -316,7 +315,7 @@ export default function GpsVisualization({ runUuids }: { runUuids: string[] }) {
             const data = await res.json();
             const dataPoints: DataPoint[] = data.map((p: any) => ({
               streamId: p.streamId,
-              tick: Number(p.tick),
+              tick: p.tick,
               data: Number(p.data),
             }));
 
@@ -392,7 +391,7 @@ export default function GpsVisualization({ runUuids }: { runUuids: string[] }) {
     return uuids
       .map((uuid) => ({
         id: uuid,
-        epochTimeS: Number(metaByRun[uuid]?.epochTimeS),
+        epochTimeS: metaByRun[uuid]?.epochTimeS,
         points: filteredPointsByRun[uuid] ?? [],
       }))
       .filter((t) => t.points.length > 0);

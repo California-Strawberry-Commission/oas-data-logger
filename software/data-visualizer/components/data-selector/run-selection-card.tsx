@@ -5,13 +5,11 @@ import { Button } from "@/components/ui/button";
 export default function RunSelectionCard({
   title,
   row,
-  runsRefreshKey,
   onChange,
   onRemove,
 }: {
   title?: string;
   row: { rowId: string; deviceId: string; runUuid: string };
-  runsRefreshKey: number;
   onChange: (patch: Partial<{ deviceId: string; runUuid: string }>) => void;
   onRemove?: () => void;
 }) {
@@ -45,7 +43,6 @@ export default function RunSelectionCard({
         <div className="text-sm font-medium">Run</div>
         {deviceId ? (
           <RunSelector
-            key={`${deviceId}:${runsRefreshKey}`} // forces refetch after delete
             deviceId={deviceId}
             value={runUuid}
             onValueChange={(nextRun) => onChange({ runUuid: nextRun })}

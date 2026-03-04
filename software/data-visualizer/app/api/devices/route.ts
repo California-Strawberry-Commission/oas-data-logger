@@ -1,6 +1,5 @@
 import { getCurrentUser } from "@/lib/auth";
-import prisma from "@/lib/prisma";
-import { devicesWhereForUser } from "@/lib/query-helpers";
+import prisma, { devicesWhereForUser } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {

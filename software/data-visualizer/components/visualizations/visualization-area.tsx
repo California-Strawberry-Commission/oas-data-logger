@@ -1,9 +1,7 @@
 "use client";
 
 import type { Selection } from "@/components/data-selector/data-selector";
-import { VisualizationType } from "@/components/data-selector/visualization-selector";
 import GpsVisualization from "@/components/visualizations/gps/gps-visualization";
-import useRunMeta from "@/lib/useRunMeta";
 
 export default function VisualizationArea({
   selection,

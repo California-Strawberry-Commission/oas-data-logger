@@ -1,12 +1,8 @@
 "use client";
 
 import Combobox from "@/components/ui/combobox";
-import { useEffect, useMemo, useState } from "react";
-
-type Device = {
-  id: string;
-  name: string | null;
-};
+import { useEffect, useMemo } from "react";
+import { useDevices, type Device } from "@/lib/api";
 
 function getDeviceLabel(device: Device): string {
   return device.name ? `${device.name} (${device.id})` : device.id;
@@ -19,95 +15,57 @@ export default function DeviceSelector({
   value: string;
   onValueChange: (deviceId: string) => void;
 }) {
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string>("");
+  const { data: devices = [], isLoading, error } = useDevices();
 
-  useEffect(() => {
-    let cancelled = false;
+  const sortedDevices = useMemo(() => {
+    const copy = [...devices];
+    copy.sort((a: Device, b: Device) => {
+      const aName = a.name ?? null;
+      const bName = b.name ?? null;
 
-    async function load() {
-      try {
-        setIsLoading(true);
-        setError("");
+      // Non-null names first
+      if (aName === null && bName !== null) {
+        return 1;
+      }
+      if (aName !== null && bName === null) {
+        return -1;
+      }
 
-        const res = await fetch("/api/devices");
-        if (!res.ok) {
-          throw new Error(`Failed to fetch devices (${res.status})`);
-        }
-
-        const data = await res.json();
-        if (cancelled) {
-          return;
-        }
-
-        const devices: Device[] = data.map((d: any) => ({
-          id: d.id,
-          name: d.name,
-        }));
-
-        const sorted = devices.sort((a: Device, b: Device) => {
-          // Non-null names first
-          if (a.name === null && b.name !== null) {
-            return 1;
-          }
-          if (a.name !== null && b.name === null) {
-            return -1;
-          }
-
-          // If both names exist, then compare name
-          if (a.name !== null && b.name !== null) {
-            const nameCmp = a.name.localeCompare(b.name, undefined, {
-              sensitivity: "base",
-            });
-            if (nameCmp !== 0) {
-              return nameCmp;
-            }
-          }
-
-          // If both names are null, then compare id
-          return a.id.localeCompare(b.id);
+      // If both names exist, then compare name
+      if (aName !== null && bName !== null) {
+        const nameCmp = aName.localeCompare(bName, undefined, {
+          sensitivity: "base",
         });
-
-        setDevices(sorted);
-      } catch (e) {
-        if (cancelled) {
-          return;
-        }
-        setDevices([]);
-        setError("Failed to load devices");
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
+        if (nameCmp !== 0) {
+          return nameCmp;
         }
       }
-    }
 
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+      // If both names are null, then compare id
+      return a.id.localeCompare(b.id);
+    });
+    return copy;
+  }, [devices]);
 
   // If the selected device no longer exists, clear it
   useEffect(() => {
-    if (!isLoading && value && !devices.some((d) => d.id === value)) {
+    if (!isLoading && value && !sortedDevices.some((d) => d.id === value)) {
       onValueChange("");
     }
-  }, [value, devices, isLoading, onValueChange]);
+  }, [value, sortedDevices, isLoading, onValueChange]);
 
   const items = useMemo(() => {
     if (isLoading) {
       return [{ value: "__loading__", label: "Loading devices..." }];
     }
     if (error) {
-      return [{ value: "__error__", label: error }];
+      return [{ value: "__error__", label: "Failed to load devices" }];
     }
-    return devices.map((device) => ({
+    return sortedDevices.map((device) => ({
       value: device.id,
       label: getDeviceLabel(device),
     }));
-  }, [devices, isLoading, error]);
+  }, [sortedDevices, isLoading, error]);
 
   const hasPlaceholder = items.length > 0 && items[0].value.startsWith("__");
 

@@ -1,7 +1,8 @@
 "use client";
 
-import type { Selection } from "@/components/data-selector/data-selector";
-import DataSelector from "@/components/data-selector/data-selector";
+import DataSelector, {
+  type Selection,
+} from "@/components/data-selector/data-selector";
 import VisualizationArea from "@/components/visualizations/visualization-area";
 import { useState } from "react";
 

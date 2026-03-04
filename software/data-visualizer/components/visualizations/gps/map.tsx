@@ -2,8 +2,8 @@
 
 import { Button } from "@/components/ui/button";
 import { distanceMeters } from "@/components/visualizations/gps/gps-visualization";
-import { colorForRun } from "@/lib/run-colors";
-import { Icon, LatLngExpression } from "leaflet";
+import { colorForRun } from "@/lib/utils";
+import { LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Pause, Play } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -27,14 +27,6 @@ export type Track = {
   epochTimeS: number;
   points: MapPoint[];
 };
-
-const ColorIcon = Icon.extend({
-  options: {
-    iconSize: [30, 30],
-    iconAnchor: [15, 30],
-    popupAnchor: [0, -25],
-  },
-});
 
 function formatElapsed(seconds: number): string {
   const h = Math.floor(seconds / 3600);

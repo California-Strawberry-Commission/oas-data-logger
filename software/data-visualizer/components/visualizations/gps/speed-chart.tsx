@@ -1,5 +1,5 @@
 import { ChartContainer, ChartTooltip } from "@/components/ui/chart";
-import { colorForRun } from "@/lib/run-colors";
+import { colorForRun } from "@/lib/utils";
 import { useMemo } from "react";
 import {
   Label,

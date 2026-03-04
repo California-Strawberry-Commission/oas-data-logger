@@ -12,8 +12,9 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { useDeleteRun } from "@/lib/api";
 import { Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export type RunSelectionRow = {
   rowId: string; // acts as stable key
@@ -41,10 +42,6 @@ export default function DataSelector({
   const [rows, setRows] = useState<RunSelectionRow[]>(() => [createRow()]);
 
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteErrorMsg, setDeleteErrorMsg] = useState("");
-  // Used to force RunSelector to refetch runs after deleting a run
-  const [runsRefreshKey, setRunsRefreshKey] = useState(0);
 
   // Publish selection changes to parent
   useEffect(() => {
@@ -80,48 +77,34 @@ export default function DataSelector({
   // Only show delete button when there is exactly one selected run
   const showDelete = !isCompareMode && primaryHasRun;
 
-  async function handleDeletePrimaryRun() {
-    if (!primary?.runUuid) {
+  const deleteRun = useDeleteRun(primary?.deviceId ?? "");
+  const deleteErrorMsg = useMemo(() => {
+    const err = deleteRun.error;
+    return err instanceof Error
+      ? err.message
+      : err
+        ? "Failed to delete run"
+        : "";
+  }, [deleteRun.error]);
+
+  function handleDeletePrimaryRun() {
+    if (!primary?.runUuid || !primary?.deviceId) {
       return;
     }
 
-    setIsDeleting(true);
-    setDeleteErrorMsg("");
+    deleteRun.mutate(primary.runUuid, {
+      onSuccess: () => {
+        // Close modal
+        setDeleteOpen(false);
 
-    try {
-      const res = await fetch(`/api/runs/${primary.runUuid}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) {
-        let msg = "Failed to delete run";
-        try {
-          const data = await res.json();
-          if (data?.error) {
-            msg = data.error;
-          }
-        } catch {}
-        throw new Error(msg);
-      }
-
-      // Close delete run modal
-      setDeleteOpen(false);
-
-      // Clear primary run selection
-      setRows((prev) => {
-        const next = [...prev];
-        next[0] = { ...next[0], runUuid: "" };
-        return next;
-      });
-
-      // Force refetching updated list of runs
-      setRunsRefreshKey((k) => k + 1);
-    } catch (e) {
-      setDeleteErrorMsg(
-        e instanceof Error ? e.message : "Failed to delete run",
-      );
-    } finally {
-      setIsDeleting(false);
-    }
+        // Clear primary run selection (and any other row state you want)
+        setRows((prev) => {
+          const next = [...prev];
+          next[0] = { ...next[0], runUuid: "" };
+          return next;
+        });
+      },
+    });
   }
 
   return (
@@ -131,7 +114,6 @@ export default function DataSelector({
           key={row.rowId}
           title={idx === 0 ? undefined : `Comparison ${idx}`}
           row={row}
-          runsRefreshKey={runsRefreshKey}
           onChange={(patch) => updateRow(row.rowId, patch)}
           onRemove={idx === 0 ? undefined : () => removeRow(row.rowId)}
         />
@@ -178,16 +160,16 @@ export default function DataSelector({
                   <Button
                     variant="outline"
                     onClick={() => setDeleteOpen(false)}
-                    disabled={isDeleting}
+                    disabled={deleteRun.isPending}
                   >
                     Cancel
                   </Button>
                   <Button
                     variant="destructive"
                     onClick={handleDeletePrimaryRun}
-                    disabled={isDeleting}
+                    disabled={deleteRun.isPending}
                   >
-                    {isDeleting ? "Deleting..." : "Confirm Delete"}
+                    {deleteRun.isPending ? "Deleting..." : "Confirm Delete"}
                   </Button>
                 </DialogFooter>
               </DialogContent>

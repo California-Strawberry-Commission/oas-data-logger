@@ -2,23 +2,22 @@ import { getCurrentUser } from "@/lib/auth";
 import prisma, { runsWhereForUser } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id: deviceId } = await params;
+
   try {
     const user = await getCurrentUser(request.headers);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { searchParams } = new URL(request.url);
-    const deviceId = searchParams.get("device_id");
-
     const authWhere = runsWhereForUser(user);
-    // Device filter if deviceId query param exists
-    const deviceWhere = deviceId
-      ? {
-          deviceId,
-        }
-      : {};
+    const deviceWhere = {
+      deviceId,
+    };
 
     const runs = await prisma.run.findMany({
       where: {
