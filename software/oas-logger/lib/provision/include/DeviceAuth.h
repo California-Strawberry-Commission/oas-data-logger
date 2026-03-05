@@ -9,15 +9,18 @@ constexpr const char* PREF_KEY_SECRET = "secret";
 
 class DeviceAuth {
  public:
-  DeviceAuth(const String& deviceId);
+  DeviceAuth(const char* deviceId);
 
-  bool loadSecret(String& secretBuffer);
+  bool loadSecret(char* secretBuffer, size_t secretLen);
 
-  String awaitProvisioning();
+  bool awaitProvisioning(char* secretBuffer, size_t secretLen);
+
+  bool loadSecretOrProvision(char* secretBuffer, size_t secretLen,
+                             bool rebootOnProvision = true);
 
  private:
-  String deviceId_;
+  char deviceId_[65];
 
-  void saveSecret(const String& secret);
+  void saveSecret(const char* secret);
 };
 }  // namespace device_auth

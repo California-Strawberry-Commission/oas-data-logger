@@ -285,21 +285,10 @@ void provisionDevice() {
   uint64_t raw = ESP.getEfuseMac();
   snprintf(deviceUid, sizeof(deviceUid), "%012llX", (unsigned long long)raw);
 
-  // TODO: Eliminate String from DeviceAuth
   device_auth::DeviceAuth auth(deviceUid);
-  String temp;
-  if (!auth.loadSecret(temp)) {
-    EZLOG_INFO("Device unprovisioned. Waiting for script...");
+  auth.loadSecretOrProvision(deviceSecret, sizeof(deviceSecret), true);
 
-    temp = auth.awaitProvisioning();
-
-    EZLOG_INFO("Provisioning successful. Rebooting in 3s...");
-    delay(3000);
-    restart();
-  } else {
-    EZLOG_INFO("Device already provisioned");
-  }
-  temp.toCharArray(deviceSecret, sizeof(deviceSecret));
+  EZLOG_INFO("Device provisioning verified.");
 }
 
 void updateLedPattern() {
