@@ -60,7 +60,6 @@ const int NUM_LEDS{1};
 const uint8_t LED_BRIGHTNESS{10};
 
 // GPS Configuration
-const int GPS_BAUD_RATE{38400};          // SAM-M10Q default
 const uint32_t GPS_UPDATE_RATE_MS{100};  // 10Hz update rate
 #define GPS_SERIAL Serial1               // GPS Serial port
 
