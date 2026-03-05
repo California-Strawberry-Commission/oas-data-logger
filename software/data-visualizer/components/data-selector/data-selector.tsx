@@ -26,6 +26,8 @@ export type Selection = {
   runs: RunSelectionRow[];
 };
 
+const MAX_SELECTION_ROWS = 4;
+
 function createRow(): RunSelectionRow {
   return {
     rowId: crypto.randomUUID(),
@@ -73,8 +75,12 @@ export default function DataSelector({
   const primaryHasRun = !!primary?.run;
   const isCompareMode = rows.length > 1;
 
-  // Only show delete button when there is exactly one selected run
-  const showDelete = !isCompareMode && primaryHasRun;
+  // Only show Delete button when there is exactly one selected run
+  const showDeleteButton = primaryHasRun && !isCompareMode;
+  // Only show Add Comparison button when there is a run selected and we
+  // haven't reached the max row limit yet
+  const showAddComparisonButton =
+    primaryHasRun && rows.length < MAX_SELECTION_ROWS;
 
   const deleteRun = useDeleteRun(primary?.device?.id ?? "");
   const deleteErrorMsg = useMemo(() => {
@@ -130,15 +136,17 @@ export default function DataSelector({
         <>
           <Separator />
 
-          <Button
-            variant="secondary"
-            className="w-full justify-start"
-            onClick={addNewRow}
-          >
-            + Add comparison
-          </Button>
+          {showAddComparisonButton && (
+            <Button
+              variant="secondary"
+              className="w-full justify-start"
+              onClick={addNewRow}
+            >
+              + Add comparison
+            </Button>
+          )}
 
-          {showDelete && (
+          {showDeleteButton && (
             <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
               <DialogTrigger asChild>
                 <Button
