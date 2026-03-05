@@ -382,24 +382,12 @@ export default function SpeedChart({
                       }
 
                       return (
-                        <div
-                          key={series.id}
-                          className="flex items-center justify-between gap-3"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span
-                              className="h-2 w-2 shrink-0 rounded-full"
-                              style={{ backgroundColor: series.color }}
-                            />
-                            <span className="truncate text-xs">
-                              {series.id}
-                            </span>
-                          </div>
-
+                        <div className="flex items-center gap-2 min-w-0">
                           <span
-                            className="text-xs tabular-nums"
-                            style={{ color: series.color }}
-                          >
+                            className="h-2 w-2 shrink-0 rounded-full"
+                            style={{ backgroundColor: series.color }}
+                          />
+                          <span className="tabular-nums text-xs">
                             {closest.speedMph.toFixed(1)} mph
                           </span>
                         </div>
