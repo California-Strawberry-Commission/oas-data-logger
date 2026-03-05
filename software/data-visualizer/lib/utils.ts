@@ -14,13 +14,6 @@ const RUN_COLORS = [
   "#0891b2", // cyan
 ];
 
-export function colorForRun(uuid: string): string {
-  // Use deterministic hash (in this case the FNV hash function) for
-  // stable color per run
-  let h = 2166136261;
-  for (let i = 0; i < uuid.length; i++) {
-    h ^= uuid.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return RUN_COLORS[Math.abs(h) % RUN_COLORS.length];
+export function colorForIndex(i: number): string {
+  return RUN_COLORS[i % RUN_COLORS.length];
 }

@@ -16,18 +16,9 @@ const MapComponent = dynamic(() => import("./map"), {
   loading: () => <LoadingMap />,
 });
 
-type RunMeta = {
-  uuid: string;
-  epochTimeS: number;
-  tickBaseUs: number;
-  streams: Stream[];
-  isActive?: boolean;
-};
-
-type Stream = {
-  streamId: string;
-  streamType: string;
-  count: number;
+export type RunWithColor = {
+  run: Run;
+  color?: string;
 };
 
 export const STREAM_ID_SATELLITES = "gpsData.satellites";
@@ -204,29 +195,33 @@ function ErrorMap({ msg }: { msg: string }) {
   );
 }
 
-export default function GpsVisualization({ runs }: { runs: Run[] }) {
+export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
   // TODO: Be able to toggle filter through UI
   const [filterEnabled, setFilterEnabled] = useState(true);
   const [selectedElapsedS, setSelectedElapsedS] = useState<number>(0);
 
   // Dedupe runs
-  const uniqueRuns = useMemo(() => {
+  const filteredRuns: RunWithColor[] = useMemo(() => {
     const seen = new Set<string>();
-    const result: Run[] = [];
-    for (const run of runs) {
-      if (!run?.uuid) {
+    const result: RunWithColor[] = [];
+    for (const r of runs) {
+      const runUuid = r.run.uuid;
+      if (!runUuid) {
         continue;
       }
-      if (seen.has(run.uuid)) {
+      if (seen.has(runUuid)) {
         continue;
       }
-      seen.add(run.uuid);
-      result.push(run);
+      seen.add(runUuid);
+      result.push(r);
     }
     return result;
   }, [runs]);
 
-  const runUuids = useMemo(() => uniqueRuns.map((r) => r.uuid), [uniqueRuns]);
+  const runUuids: string[] = useMemo(
+    () => filteredRuns.map((r) => r.run.uuid),
+    [filteredRuns],
+  );
 
   // Fetch each run's GPS streams
   const streamQueries = useRunStreamsMany(runUuids, GPS_STREAM_IDS);
@@ -238,8 +233,8 @@ export default function GpsVisualization({ runs }: { runs: Run[] }) {
   const rawPointsByRun = useMemo(() => {
     const result: Record<string, MapPoint[]> = {};
 
-    for (let i = 0; i < uniqueRuns.length; i++) {
-      const run = uniqueRuns[i];
+    for (let i = 0; i < filteredRuns.length; i++) {
+      const run = filteredRuns[i].run;
       const query = streamQueries[i];
 
       if (!query?.data) {
@@ -252,7 +247,7 @@ export default function GpsVisualization({ runs }: { runs: Run[] }) {
     }
 
     return result;
-  }, [uniqueRuns, streamQueries]);
+  }, [filteredRuns, streamQueries]);
 
   // Filter outliers from raw GPS data
   const filteredPointsByRun = useMemo(() => {
@@ -289,26 +284,28 @@ export default function GpsVisualization({ runs }: { runs: Run[] }) {
   }, [rawPointsByRun, filterEnabled]);
 
   const tracks: Track[] = useMemo(() => {
-    return uniqueRuns
-      .map((run) => ({
-        id: run.uuid,
-        epochTimeS: run?.epochTimeS,
-        points: filteredPointsByRun[run.uuid] ?? [],
+    return filteredRuns
+      .map((r) => ({
+        id: r.run.uuid,
+        epochTimeS: r.run.epochTimeS,
+        points: filteredPointsByRun[r.run.uuid] ?? [],
+        color: r.color,
       }))
       .filter((t) => t.points.length > 0);
-  }, [uniqueRuns, filteredPointsByRun]);
+  }, [filteredRuns, filteredPointsByRun]);
 
   const speedSeries: SpeedSeries[] = useMemo(() => {
-    return uniqueRuns
-      .map((run) => {
-        const points = filteredPointsByRun[run.uuid];
+    return filteredRuns
+      .map((r) => {
+        const points = filteredPointsByRun[r.run.uuid];
         return {
-          id: run.uuid,
+          id: r.run.uuid,
           samples: points ? toSpeedSamples(points) : [],
+          color: r.color,
         };
       })
       .filter((s) => s.samples.length > 0);
-  }, [uniqueRuns, filteredPointsByRun]);
+  }, [filteredRuns, filteredPointsByRun]);
 
   if (firstError) {
     return (
@@ -325,7 +322,7 @@ export default function GpsVisualization({ runs }: { runs: Run[] }) {
   }
 
   // No runs selected
-  if (uniqueRuns.length === 0) {
+  if (filteredRuns.length === 0) {
     return (
       <div className="w-full h-150">
         <NoDataMap />

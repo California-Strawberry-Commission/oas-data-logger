@@ -2,14 +2,17 @@ import DeviceSelector from "@/components/data-selector/device-selector";
 import RunSelector from "@/components/data-selector/run-selector";
 import { Button } from "@/components/ui/button";
 import { type Device, type Run } from "@/lib/api";
+import { colorForIndex } from "@/lib/utils";
 
 export default function RunSelectionCard({
   title,
+  index,
   row,
   onChange,
   onRemove,
 }: {
   title?: string;
+  index: number;
   row: { rowId: string; device: Device | null; run: Run | null };
   onChange: (
     patch: Partial<{ device: Device | null; run: Run | null }>,
@@ -17,12 +20,20 @@ export default function RunSelectionCard({
   onRemove?: () => void;
 }) {
   const { device, run } = row;
+  const color = colorForIndex(index);
 
   return (
     <div className="rounded-lg border p-4 space-y-4">
-      {title && onRemove && (
+      {(title || onRemove) && (
         <div className="flex items-center justify-between">
-          <div className="text-sm font-medium">{title}</div>
+          <div className="flex items-center gap-2">
+            <span
+              className="inline-flex h-3 w-3 rounded-full"
+              style={{ backgroundColor: color }}
+              aria-hidden
+            />
+            <span className="text-sm font-medium">{title}</span>
+          </div>
           {onRemove && (
             <Button variant="secondary" size="sm" onClick={onRemove}>
               Remove

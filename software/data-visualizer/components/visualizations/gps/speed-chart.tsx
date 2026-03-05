@@ -1,5 +1,4 @@
 import { ChartContainer, ChartTooltip } from "@/components/ui/chart";
-import { colorForRun } from "@/lib/utils";
 import { useMemo } from "react";
 import {
   Label,
@@ -19,6 +18,7 @@ export type SpeedSample = {
 export type SpeedSeries = {
   id: string;
   samples: SpeedSample[];
+  color?: string;
 };
 
 function formatElapsed(seconds: number): string {
@@ -218,9 +218,9 @@ const speedChartConfig = {
   },
 } as const;
 
-type FlatPoint = {
+type ChartPoint = {
   elapsedS: number;
-  [k: string]: number; // dynamic keys for each run's speed data (needed by Recharts)
+  [k: string]: number; // dynamic keys for each series' sample data (needed by Recharts)
 };
 
 export default function SpeedChart({
@@ -232,19 +232,20 @@ export default function SpeedChart({
   selectedElapsedS?: number;
   onSelectedElapsedChange?: (elapsedS: number) => void;
 }) {
-  // Prepare per-run rendered samples (smooth + downsample), and convert into
+  // Prepare per-series rendered samples (smooth + downsample), and convert into
   // a Recharts-friendly array format.
-  const { renderedData, lineKeys, keyToId, renderedDataByRun } = useMemo(() => {
+  const { renderedData, chartPoints } = useMemo(() => {
     const cleaned = data
-      .map(({ id, samples }) => ({
+      .map(({ id, samples, color }) => ({
         id,
         samples: samples.slice().sort((a, b) => a.elapsedS - b.elapsedS),
+        color,
       }))
       .filter((s) => s.samples.length > 0);
 
     const maxChartPoints = 1000;
-    const renderedDataByRun = cleaned.map(({ id, samples }) => {
-      // Smooth speed data to improve visualization since raw data is noisy
+    const renderedData = cleaned.map(({ id, samples, color }) => {
+      // Smooth data to improve visualization since raw data is noisy
       const smoothed = smoothSpeedEma(samples, 5);
       // Downsample points to improve performance since charts are very
       // expensive to render
@@ -256,68 +257,59 @@ export default function SpeedChart({
             )
           : smoothed;
 
-      return { id, samples: downsampled };
+      return { id, samples: downsampled, color };
     });
 
-    // renderedDataByRun looks like:
+    // renderedData looks like:
     // [ { id: "runA", samples: [...] },
     //   { id: "runB", samples: [...] }, ]
     // However, in order for Recharts to render multiple lines, the data
     // needs to be flattened into a single array in a specific format:
-    // [ { elapsedS: 0,  "speed:runA": 0,   "speed:runB": 0 },
-    //   { elapsedS: 1,  "speed:runA": 3.2, "speed:runB": 2.7 },
-    //   { elapsedS: 2,  "speed:runA": 5.1 },
-    //   { elapsedS: 3,                     "speed:runB": 6.4 }, ]
+    // [ { elapsedS: 0, "runA": 0, "runB": 0 },
+    //   { elapsedS: 1, "runA": 3.2, "runB": 2.7 },
+    //   { elapsedS: 2, "runA": 5.1 },
+    //   { elapsedS: 3, "runB": 6.4 }, ]
 
     // Build union of all elapsedS across all runs
     const tSet = new Set<number>();
-    for (const r of renderedDataByRun) {
+    for (const r of renderedData) {
       for (const s of r.samples) {
         tSet.add(s.elapsedS);
       }
     }
     const allElapsedS = Array.from(tSet).sort((a, b) => a - b);
 
-    // Define a line key for each run
-    const keyToId: Record<string, string> = {};
-    const lineKeys: string[] = renderedDataByRun.map((r) => {
-      const key = `speed:${r.id}`;
-      keyToId[key] = r.id;
-      return key;
-    });
-
     // In order to look up the speeds for each run at every elapsedS,
     // we create a map of elapsedS->speed for every run
     const runToDataMap = new Map<string, Map<number, number>>();
-    for (const r of renderedDataByRun) {
-      const m = new Map<number, number>();
-      for (const s of r.samples) {
-        m.set(s.elapsedS, s.speedMph);
+    for (const series of renderedData) {
+      const dataMap = new Map<number, number>();
+      for (const sample of series.samples) {
+        dataMap.set(sample.elapsedS, sample.speedMph);
       }
-      runToDataMap.set(r.id, m);
+      runToDataMap.set(series.id, dataMap);
     }
 
-    const renderedData: FlatPoint[] = allElapsedS.map((t) => {
-      const row: FlatPoint = { elapsedS: t };
-      for (const key of lineKeys) {
-        const id = keyToId[key];
-        const val = runToDataMap.get(id)?.get(t);
-        // Use null-ish (undefined) so Recharts breaks the line where no data exists.
+    // Construct flattened array for Recharts
+    const chartPoints: ChartPoint[] = allElapsedS.map((elapsedS) => {
+      const chartPoint: ChartPoint = { elapsedS };
+      for (const [id, data] of runToDataMap) {
+        const val = data.get(elapsedS);
         if (val !== undefined) {
-          row[key] = val;
+          chartPoint[id] = val;
         }
       }
-      return row;
+      return chartPoint;
     });
 
-    return { renderedData, lineKeys, keyToId, renderedDataByRun };
+    return { renderedData, chartPoints };
   }, [data]);
 
   return (
     <ChartContainer config={speedChartConfig} className="h-full w-full">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart
-          data={renderedData}
+          data={chartPoints}
           margin={{ top: 8, right: 12, bottom: 12, left: 0 }}
           onMouseMove={(state: any) => {
             if (!onSelectedElapsedChange) {
@@ -380,32 +372,33 @@ export default function SpeedChart({
                   </div>
 
                   <div className="space-y-1">
-                    {renderedDataByRun.map((run) => {
+                    {renderedData.map((series) => {
                       const closest = findClosestSample(
-                        run.samples,
+                        series.samples,
                         hoveredElapsed,
                       );
                       if (!closest) {
                         return null;
                       }
 
-                      const color = colorForRun(run.id);
                       return (
                         <div
-                          key={run.id}
+                          key={series.id}
                           className="flex items-center justify-between gap-3"
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <span
                               className="h-2 w-2 shrink-0 rounded-full"
-                              style={{ backgroundColor: color }}
+                              style={{ backgroundColor: series.color }}
                             />
-                            <span className="truncate text-xs">{run.id}</span>
+                            <span className="truncate text-xs">
+                              {series.id}
+                            </span>
                           </div>
 
                           <span
                             className="text-xs tabular-nums"
-                            style={{ color }}
+                            style={{ color: series.color }}
                           >
                             {closest.speedMph.toFixed(1)} mph
                           </span>
@@ -422,15 +415,15 @@ export default function SpeedChart({
             <ReferenceLine x={selectedElapsedS} strokeWidth={1} />
           )}
 
-          {lineKeys.map((k) => {
+          {renderedData.map((series) => {
             return (
               <Line
-                key={k}
+                key={series.id}
                 type="monotone"
-                dataKey={k}
+                dataKey={series.id}
                 dot={false}
                 isAnimationActive={false}
-                stroke={colorForRun(keyToId[k])}
+                stroke={series.color}
                 connectNulls={true}
               />
             );

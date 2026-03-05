@@ -112,7 +112,14 @@ export default function DataSelector({
       {rows.map((row, idx) => (
         <RunSelectionCard
           key={row.rowId}
-          title={idx === 0 ? undefined : `Comparison ${idx}`}
+          index={idx}
+          title={
+            idx === 0
+              ? isCompareMode
+                ? "Base"
+                : undefined
+              : `Comparison ${idx}`
+          }
           row={row}
           onChange={(patch) => updateRow(row.rowId, patch)}
           onRemove={idx === 0 ? undefined : () => removeRow(row.rowId)}

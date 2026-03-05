@@ -1,19 +1,22 @@
 "use client";
 
 import type { Selection } from "@/components/data-selector/data-selector";
-import GpsVisualization from "@/components/visualizations/gps/gps-visualization";
+import GpsVisualization, {
+  type RunWithColor,
+} from "@/components/visualizations/gps/gps-visualization";
 import { type Run } from "@/lib/api";
+import { colorForIndex } from "@/lib/utils";
 
 export default function VisualizationArea({
   selection,
 }: {
   selection: Selection;
 }) {
-  const runs = selection.runs
-    .map((r) => r.run)
-    .filter((run): run is Run => !!run);
+  const runsWithColor: RunWithColor[] = selection.runs
+    .map((r, idx) => (r.run ? { run: r.run, color: colorForIndex(idx) } : null))
+    .filter((x): x is { run: Run; color: string } => !!x);
 
-  if (runs.length === 0) {
+  if (runsWithColor.length === 0) {
     return (
       <div className="h-full w-full flex items-center justify-center text-muted-foreground p-4 text-center">
         Select a run.
@@ -23,7 +26,7 @@ export default function VisualizationArea({
 
   return (
     <div className="flex flex-col w-full items-center p-4 gap-4 md:overflow-y-auto">
-      <GpsVisualization runs={runs} />
+      <GpsVisualization runs={runsWithColor} />
     </div>
   );
 }

@@ -2,7 +2,6 @@
 
 import { Button } from "@/components/ui/button";
 import { distanceMeters } from "@/components/visualizations/gps/gps-visualization";
-import { colorForRun } from "@/lib/utils";
 import { LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Pause, Play } from "lucide-react";
@@ -26,6 +25,7 @@ export type Track = {
   id: string;
   epochTimeS: number;
   points: MapPoint[];
+  color?: string;
 };
 
 function formatElapsed(seconds: number): string {
@@ -142,6 +142,7 @@ export default function Map({
           id: track.id,
           epochTimeS: track.epochTimeS,
           points: decimated,
+          color: track.color,
         };
       })
       .filter((t) => t.points.length > 0);
@@ -258,9 +259,10 @@ export default function Map({
 
   // Per-track polylines
   const polylines = useMemo(() => {
-    return renderedTracks.map((t) => ({
-      id: t.id,
-      positions: t.points.map((p) => p.position),
+    return renderedTracks.map((track) => ({
+      id: track.id,
+      positions: track.points.map((point) => point.position),
+      color: track.color,
     }));
   }, [renderedTracks]);
 
@@ -273,18 +275,25 @@ export default function Map({
           return null;
         }
 
-        const p = track.points[idx];
-        return p
+        const point = track.points[idx];
+        return point
           ? {
               id: track.id,
-              point: p,
-              timestampS: track.epochTimeS + p.elapsedS,
+              point: point,
+              timestampS: track.epochTimeS + point.elapsedS,
+              color: track.color,
             }
           : null;
       })
       .filter(
-        (x): x is { id: string; point: MapPoint; timestampS: number } =>
-          x !== null,
+        (
+          x,
+        ): x is {
+          id: string;
+          point: MapPoint;
+          timestampS: number;
+          color: string | undefined;
+        } => x !== null,
       );
   }, [renderedTracks, currentElapsedS]);
 
@@ -317,20 +326,20 @@ export default function Map({
               <Polyline
                 key={polyline.id}
                 positions={polyline.positions}
-                color={colorForRun(polyline.id)}
+                color={polyline.color}
               />
             ))}
           </Pane>
 
           {/* One marker per run at the current elapsed position */}
           <Pane name="markers" style={{ zIndex: 600 }}>
-            {currentPoints.map(({ id, point, timestampS }) => (
+            {currentPoints.map(({ id, point, timestampS, color }) => (
               <CircleMarker
                 key={id}
                 center={point.position}
                 radius={6}
                 pathOptions={{
-                  fillColor: colorForRun(id),
+                  fillColor: color,
                   fillOpacity: 1,
                   weight: 3,
                   className: "gps-marker gps-pulse",
