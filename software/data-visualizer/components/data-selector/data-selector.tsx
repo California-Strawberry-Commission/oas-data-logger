@@ -12,14 +12,14 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { useDeleteRun } from "@/lib/api";
+import { useDeleteRun, type Device, type Run } from "@/lib/api";
 import { Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 export type RunSelectionRow = {
   rowId: string; // acts as stable key
-  deviceId: string;
-  runUuid: string;
+  device: Device | null;
+  run: Run | null;
 };
 
 export type Selection = {
@@ -29,8 +29,8 @@ export type Selection = {
 function createRow(): RunSelectionRow {
   return {
     rowId: crypto.randomUUID(),
-    deviceId: "",
-    runUuid: "",
+    device: null,
+    run: null,
   };
 }
 
@@ -40,7 +40,6 @@ export default function DataSelector({
   onSelectionChanged: (next: Selection) => void;
 }) {
   const [rows, setRows] = useState<RunSelectionRow[]>(() => [createRow()]);
-
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Publish selection changes to parent
@@ -71,13 +70,13 @@ export default function DataSelector({
   }
 
   const primary = rows[0];
-  const primaryHasRun = !!primary?.runUuid;
+  const primaryHasRun = !!primary?.run;
   const isCompareMode = rows.length > 1;
 
   // Only show delete button when there is exactly one selected run
   const showDelete = !isCompareMode && primaryHasRun;
 
-  const deleteRun = useDeleteRun(primary?.deviceId ?? "");
+  const deleteRun = useDeleteRun(primary?.device?.id ?? "");
   const deleteErrorMsg = useMemo(() => {
     const err = deleteRun.error;
     return err instanceof Error
@@ -88,19 +87,20 @@ export default function DataSelector({
   }, [deleteRun.error]);
 
   function handleDeletePrimaryRun() {
-    if (!primary?.runUuid || !primary?.deviceId) {
+    const runUuid = primary?.run?.uuid;
+    if (!runUuid || !primary?.device?.id) {
       return;
     }
 
-    deleteRun.mutate(primary.runUuid, {
+    deleteRun.mutate(runUuid, {
       onSuccess: () => {
         // Close modal
         setDeleteOpen(false);
 
-        // Clear primary run selection (and any other row state you want)
+        // Clear primary run selection
         setRows((prev) => {
           const next = [...prev];
-          next[0] = { ...next[0], runUuid: "" };
+          next[0] = { ...next[0], run: null };
           return next;
         });
       },

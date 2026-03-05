@@ -13,7 +13,7 @@ export default function DeviceSelector({
   onValueChange,
 }: {
   value: string;
-  onValueChange: (deviceId: string) => void;
+  onValueChange: (device: Device | null) => void;
 }) {
   const { data: devices = [], isLoading, error } = useDevices();
 
@@ -50,7 +50,7 @@ export default function DeviceSelector({
   // If the selected device no longer exists, clear it
   useEffect(() => {
     if (!isLoading && value && !sortedDevices.some((d) => d.id === value)) {
-      onValueChange("");
+      onValueChange(null);
     }
   }, [value, sortedDevices, isLoading, onValueChange]);
 
@@ -78,7 +78,9 @@ export default function DeviceSelector({
         if (next.startsWith("__")) {
           return;
         }
-        onValueChange(next);
+
+        const device = sortedDevices.find((d) => d.id === next) ?? null;
+        onValueChange(device);
       }}
       placeholder={isLoading ? "Loading devices..." : "Select device..."}
       searchPlaceholder={isLoading ? "Loading..." : "Search device..."}

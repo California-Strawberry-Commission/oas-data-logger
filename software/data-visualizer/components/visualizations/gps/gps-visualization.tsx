@@ -5,9 +5,10 @@ import SpeedChart, {
   type SpeedSample,
   type SpeedSeries,
 } from "@/components/visualizations/gps/speed-chart";
+import { useRunStreamsMany, type Run, type RunDataSample } from "@/lib/api";
 import { LatLngExpression } from "leaflet";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 // Lazy load Map
 const MapComponent = dynamic(() => import("./map"), {
@@ -29,16 +30,16 @@ type Stream = {
   count: number;
 };
 
-type DataPoint = {
-  streamId: string;
-  tick: number;
-  data: number;
-};
-
 export const STREAM_ID_SATELLITES = "gpsData.satellites";
 export const STREAM_ID_LATITUDE = "gpsData.lat";
 export const STREAM_ID_LONGITUDE = "gpsData.lng";
 export const STREAM_ID_ALTITUDE = "gpsData.alt";
+const GPS_STREAM_IDS = [
+  STREAM_ID_SATELLITES,
+  STREAM_ID_LATITUDE,
+  STREAM_ID_LONGITUDE,
+  STREAM_ID_ALTITUDE,
+];
 const MIN_NUM_SATELLITES = 1; // filter out GPS points that were logged with less than X satellites
 const MAX_JUMP_METERS = 100; // filter out GPS points that jump more than X meters from the previous point
 const MPS_TO_MPH = 2.2369362920544;
@@ -90,7 +91,10 @@ export function distanceMeters(
   return R * c;
 }
 
-function toMapPoints(dataPoints: DataPoint[], tickBaseUs: number): MapPoint[] {
+function toMapPoints(
+  dataPoints: RunDataSample[],
+  tickBaseUs: number,
+): MapPoint[] {
   // Split out datapoints into lat, lng, and alt
   const satellitesMap = new Map<number, number>();
   const latMap = new Map<number, number>();
@@ -99,16 +103,16 @@ function toMapPoints(dataPoints: DataPoint[], tickBaseUs: number): MapPoint[] {
   for (const dp of dataPoints) {
     switch (dp.streamId) {
       case STREAM_ID_SATELLITES:
-        satellitesMap.set(dp.tick, dp.data);
+        satellitesMap.set(dp.tick, Number(dp.data));
         break;
       case STREAM_ID_LATITUDE:
-        latMap.set(dp.tick, dp.data);
+        latMap.set(dp.tick, Number(dp.data));
         break;
       case STREAM_ID_LONGITUDE:
-        lngMap.set(dp.tick, dp.data);
+        lngMap.set(dp.tick, Number(dp.data));
         break;
       case STREAM_ID_ALTITUDE:
-        altMap.set(dp.tick, dp.data);
+        altMap.set(dp.tick, Number(dp.data));
         break;
     }
   }
@@ -200,158 +204,55 @@ function ErrorMap({ msg }: { msg: string }) {
   );
 }
 
-export default function GpsVisualization({ runUuids }: { runUuids: string[] }) {
-  const [metaByRun, setMetaByRun] = useState<
-    Record<string, RunMeta | undefined>
-  >({});
-  const [rawPointsByRun, setRawPointsByRun] = useState<
-    Record<string, MapPoint[]>
-  >({});
-  const [error, setError] = useState<string>("");
-
+export default function GpsVisualization({ runs }: { runs: Run[] }) {
   // TODO: Be able to toggle filter through UI
   const [filterEnabled, setFilterEnabled] = useState(true);
   const [selectedElapsedS, setSelectedElapsedS] = useState<number>(0);
 
-  // Dedupe runUuids and filter out empty
-  const uuids = useMemo(
-    () => Array.from(new Set(runUuids.filter(Boolean))),
-    [runUuids],
-  );
+  // Dedupe runs
+  const uniqueRuns = useMemo(() => {
+    const seen = new Set<string>();
+    const result: Run[] = [];
+    for (const run of runs) {
+      if (!run?.uuid) {
+        continue;
+      }
+      if (seen.has(run.uuid)) {
+        continue;
+      }
+      seen.add(run.uuid);
+      result.push(run);
+    }
+    return result;
+  }, [runs]);
 
-  // Fetch run metadata for all selected runs
-  useEffect(() => {
-    let cancelled = false;
+  const runUuids = useMemo(() => uniqueRuns.map((r) => r.uuid), [uniqueRuns]);
 
-    async function loadMeta() {
-      if (uuids.length === 0) {
-        setMetaByRun({});
-        setRawPointsByRun({});
-        setError("");
-        return;
+  // Fetch each run's GPS streams
+  const streamQueries = useRunStreamsMany(runUuids, GPS_STREAM_IDS);
+
+  const anyLoading = streamQueries.some((q) => q.isLoading);
+  const firstError = streamQueries.find((q) => q.isError)?.error;
+
+  // Build rawPointsByRun from query results
+  const rawPointsByRun = useMemo(() => {
+    const result: Record<string, MapPoint[]> = {};
+
+    for (let i = 0; i < uniqueRuns.length; i++) {
+      const run = uniqueRuns[i];
+      const query = streamQueries[i];
+
+      if (!query?.data) {
+        continue;
       }
 
-      setError("");
-
-      const results = await Promise.all(
-        uuids.map(async (uuid) => {
-          try {
-            const res = await fetch(`/api/runs/${uuid}`);
-            if (!res.ok) {
-              return {
-                uuid,
-                meta: undefined as RunMeta | undefined,
-                ok: false,
-              };
-            }
-            const data = await res.json();
-            const meta: RunMeta = {
-              uuid: data.uuid,
-              epochTimeS: data.epochTimeS,
-              tickBaseUs: data.tickBaseUs,
-              streams: data.streams,
-              isActive: data.isActive,
-            };
-            return { uuid, meta, ok: true };
-          } catch (e: any) {
-            return { uuid, meta: undefined as RunMeta | undefined, ok: false };
-          }
-        }),
-      );
-
-      if (cancelled) {
-        return;
-      }
-
-      const next: Record<string, RunMeta | undefined> = {};
-      let anyFailed = false;
-      for (const r of results) {
-        if (r.ok && r.meta) {
-          next[r.uuid] = r.meta;
-        } else {
-          anyFailed = true;
-        }
-      }
-
-      setMetaByRun(next);
-      if (anyFailed) {
-        setError("Failed to load run(s)");
-      }
+      const mapPoints = toMapPoints(query.data, run.tickBaseUs);
+      mapPoints.sort((a, b) => a.elapsedS - b.elapsedS);
+      result[run.uuid] = mapPoints;
     }
 
-    loadMeta();
-    return () => {
-      cancelled = true;
-    };
-  }, [uuids]);
-
-  // Fetch raw GPS data once meta is available
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadGpsData() {
-      const metas = uuids
-        .map((uuid) => ({ uuid, meta: metaByRun[uuid] }))
-        .filter((x): x is { uuid: string; meta: RunMeta } => !!x.meta);
-      if (metas.length === 0) {
-        setRawPointsByRun({});
-        return;
-      }
-
-      const results = await Promise.all(
-        metas.map(async ({ uuid, meta }) => {
-          try {
-            const res = await fetch(
-              `/api/runs/${uuid}/streams?stream_ids=${STREAM_ID_SATELLITES},${STREAM_ID_LATITUDE},${STREAM_ID_LONGITUDE},${STREAM_ID_ALTITUDE}`,
-            );
-            if (!res.ok) {
-              return {
-                uuid,
-                points: undefined as MapPoint[] | undefined,
-                ok: false,
-              };
-            }
-
-            const data = await res.json();
-            const dataPoints: DataPoint[] = data.map((p: any) => ({
-              streamId: p.streamId,
-              tick: p.tick,
-              data: Number(p.data),
-            }));
-
-            const mapPoints = toMapPoints(dataPoints, meta.tickBaseUs);
-            mapPoints.sort((a, b) => a.elapsedS - b.elapsedS);
-
-            return { uuid, points: mapPoints, ok: true };
-          } catch {
-            return {
-              uuid,
-              points: undefined as MapPoint[] | undefined,
-              ok: false,
-            };
-          }
-        }),
-      );
-
-      if (cancelled) {
-        return;
-      }
-
-      const next: Record<string, MapPoint[]> = {};
-      for (const r of results) {
-        if (r.ok && r.points) {
-          next[r.uuid] = r.points;
-        }
-      }
-
-      setRawPointsByRun(next);
-    }
-
-    loadGpsData();
-    return () => {
-      cancelled = true;
-    };
-  }, [uuids, metaByRun]);
+    return result;
+  }, [uniqueRuns, streamQueries]);
 
   // Filter outliers from raw GPS data
   const filteredPointsByRun = useMemo(() => {
@@ -388,48 +289,43 @@ export default function GpsVisualization({ runUuids }: { runUuids: string[] }) {
   }, [rawPointsByRun, filterEnabled]);
 
   const tracks: Track[] = useMemo(() => {
-    return uuids
-      .map((uuid) => ({
-        id: uuid,
-        epochTimeS: metaByRun[uuid]?.epochTimeS,
-        points: filteredPointsByRun[uuid] ?? [],
+    return uniqueRuns
+      .map((run) => ({
+        id: run.uuid,
+        epochTimeS: run?.epochTimeS,
+        points: filteredPointsByRun[run.uuid] ?? [],
       }))
       .filter((t) => t.points.length > 0);
-  }, [uuids, filteredPointsByRun]);
-
-  const speedDataByRun = useMemo(() => {
-    const result: Record<string, SpeedSample[]> = {};
-
-    for (const [uuid, points] of Object.entries(filteredPointsByRun)) {
-      result[uuid] = points && points.length > 0 ? toSpeedSamples(points) : [];
-    }
-
-    return result;
-  }, [filteredPointsByRun]);
+  }, [uniqueRuns, filteredPointsByRun]);
 
   const speedSeries: SpeedSeries[] = useMemo(() => {
-    return uuids
-      .map((uuid) => ({
-        id: uuid,
-        samples: speedDataByRun[uuid] ?? [],
-      }))
+    return uniqueRuns
+      .map((run) => {
+        const points = filteredPointsByRun[run.uuid];
+        return {
+          id: run.uuid,
+          samples: points ? toSpeedSamples(points) : [],
+        };
+      })
       .filter((s) => s.samples.length > 0);
-  }, [uuids, speedDataByRun]);
+  }, [uniqueRuns, filteredPointsByRun]);
 
-  const hasAnyMeta = Object.keys(metaByRun).length > 0;
-  const hasAnyRaw = Object.keys(rawPointsByRun).length > 0;
-  const hasAnyPoints = tracks.length > 0;
-
-  if (error) {
+  if (firstError) {
     return (
       <div className="w-full h-150">
-        <ErrorMap msg={error} />
+        <ErrorMap
+          msg={
+            firstError instanceof Error
+              ? firstError.message
+              : "Failed to load run(s)"
+          }
+        />
       </div>
     );
   }
 
   // No runs selected
-  if (uuids.length === 0) {
+  if (uniqueRuns.length === 0) {
     return (
       <div className="w-full h-150">
         <NoDataMap />
@@ -437,8 +333,8 @@ export default function GpsVisualization({ runUuids }: { runUuids: string[] }) {
     );
   }
 
-  // Still fetching meta and/or raw data
-  if (!hasAnyMeta || !hasAnyRaw) {
+  // Still fetching data
+  if (anyLoading) {
     return (
       <div className="w-full h-150">
         <LoadingMap />
@@ -447,7 +343,7 @@ export default function GpsVisualization({ runUuids }: { runUuids: string[] }) {
   }
 
   // Data fetched, but nothing to render
-  if (!hasAnyPoints) {
+  if (tracks.length === 0) {
     return (
       <div className="w-full h-150">
         <NoDataMap />

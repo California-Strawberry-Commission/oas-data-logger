@@ -2,6 +2,11 @@ import { getCurrentUser } from "@/lib/auth";
 import prisma, { runsWhereForUser } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
+/**
+ * GET /api/devices/[id]/runs
+ *
+ * Returns the list of runs associated with the device.
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -27,9 +32,9 @@ export async function GET(
         uuid: true,
         epochTimeS: true,
         tickBaseUs: true,
-        updatedAt: true,
+        metadata: true,
         isActive: true,
-        // get the latest tick available
+        // Get the latest tick available, used for calculating the duration
         runData: {
           select: {
             tick: true,
@@ -56,15 +61,18 @@ export async function GET(
 
       return {
         uuid: run.uuid,
+        deviceId,
         epochTimeS: Number(run.epochTimeS),
         durationS,
+        tickBaseUs: Number(run.tickBaseUs),
+        metadata: run.metadata,
         isActive: run.isActive,
       };
     });
 
     return NextResponse.json(runsWithStatus);
   } catch (err) {
-    console.error("GET /api/runs error:", err);
+    console.error("GET /api/devices/[id]/runs error:", err);
     return NextResponse.json(
       { error: "Failed to fetch runs" },
       { status: 500 },

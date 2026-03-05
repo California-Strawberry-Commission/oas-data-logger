@@ -64,7 +64,7 @@ export default function RunSelector({
 }: {
   deviceId: string;
   value: string;
-  onValueChange: (runUuid: string) => void;
+  onValueChange: (run: Run | null) => void;
 }) {
   const { data: runs = [], isLoading, error } = useRuns(deviceId);
 
@@ -82,7 +82,7 @@ export default function RunSelector({
     }
 
     if (!isLoading && value && !sortedRuns.some((r) => r.uuid === value)) {
-      onValueChange("");
+      onValueChange(null);
     }
   }, [deviceId, value, sortedRuns, isLoading, onValueChange]);
 
@@ -113,7 +113,9 @@ export default function RunSelector({
         if (next.startsWith("__")) {
           return;
         }
-        onValueChange(next);
+
+        const run = sortedRuns.find((r) => r.uuid === next) ?? null;
+        onValueChange(run);
       }}
       placeholder={isLoading ? "Loading runs..." : "Select run..."}
       searchPlaceholder={isLoading ? "Loading..." : "Search run..."}

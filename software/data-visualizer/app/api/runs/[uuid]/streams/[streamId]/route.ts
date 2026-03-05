@@ -2,11 +2,16 @@ import { getCurrentUser } from "@/lib/auth";
 import prisma, { getRunForUser } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
+/**
+ * GET /api/runs/[uuid]/streams/[streamId]
+ *
+ * Returns data points for the specific stream for the run.
+ */
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ uuid: string; stream_id: string }> },
+  { params }: { params: Promise<{ uuid: string; streamId: string }> },
 ) {
-  const { uuid, stream_id } = await params;
+  const { uuid, streamId } = await params;
 
   try {
     const user = await getCurrentUser(request.headers);
@@ -23,7 +28,7 @@ export async function GET(
     const runData = await prisma.runData.findMany({
       where: {
         runId: run.id,
-        streamId: stream_id,
+        streamId,
       },
       select: {
         streamType: true,
@@ -42,7 +47,7 @@ export async function GET(
       })),
     );
   } catch (err) {
-    console.error("GET /api/runs/[uuid]/streams/[stream_id] error:", err);
+    console.error("GET /api/runs/[uuid]/streams/[streamId] error:", err);
     return NextResponse.json(
       { error: "Error retrieving run data" },
       { status: 500 },

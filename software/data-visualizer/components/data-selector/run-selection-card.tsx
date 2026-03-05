@@ -1,6 +1,7 @@
 import DeviceSelector from "@/components/data-selector/device-selector";
 import RunSelector from "@/components/data-selector/run-selector";
 import { Button } from "@/components/ui/button";
+import { type Device, type Run } from "@/lib/api";
 
 export default function RunSelectionCard({
   title,
@@ -9,11 +10,13 @@ export default function RunSelectionCard({
   onRemove,
 }: {
   title?: string;
-  row: { rowId: string; deviceId: string; runUuid: string };
-  onChange: (patch: Partial<{ deviceId: string; runUuid: string }>) => void;
+  row: { rowId: string; device: Device | null; run: Run | null };
+  onChange: (
+    patch: Partial<{ device: Device | null; run: Run | null }>,
+  ) => void;
   onRemove?: () => void;
 }) {
-  const { deviceId, runUuid } = row;
+  const { device, run } = row;
 
   return (
     <div className="rounded-lg border p-4 space-y-4">
@@ -31,21 +34,21 @@ export default function RunSelectionCard({
       <div className="space-y-2">
         <div className="text-sm font-medium">Device</div>
         <DeviceSelector
-          value={deviceId}
+          value={device?.id ?? ""}
           onValueChange={(nextDevice) => {
             // Clear run if device changes
-            onChange({ deviceId: nextDevice, runUuid: "" });
+            onChange({ device: nextDevice, run: null });
           }}
         />
       </div>
 
       <div className="space-y-2">
         <div className="text-sm font-medium">Run</div>
-        {deviceId ? (
+        {device ? (
           <RunSelector
-            deviceId={deviceId}
-            value={runUuid}
-            onValueChange={(nextRun) => onChange({ runUuid: nextRun })}
+            deviceId={device.id}
+            value={run?.uuid ?? ""}
+            onValueChange={(nextRun) => onChange({ run: nextRun })}
           />
         ) : (
           <div className="rounded-md border border-dashed py-2 px-3 text-sm text-muted-foreground">
