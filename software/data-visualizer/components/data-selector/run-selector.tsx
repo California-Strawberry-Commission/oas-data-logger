@@ -1,14 +1,8 @@
 "use client";
 
 import Combobox from "@/components/ui/combobox";
-import { useEffect, useMemo, useState } from "react";
-
-type Run = {
-  uuid: string;
-  epochTimeS: bigint;
-  lastDataTimeS: bigint;
-  isActive: boolean;
-};
+import { useRuns, type Run } from "@/lib/api";
+import { useEffect, useMemo } from "react";
 
 function formatDate(date: Date): string {
   return date.toLocaleString("en-US", {
@@ -50,8 +44,8 @@ function formatTimeDiff(seconds: number): string {
 }
 
 function getRunLabel(run: Run): string {
-  const startTime = new Date(Number(run.epochTimeS) * 1000);
-  const lastDataTime = new Date(Number(run.lastDataTimeS) * 1000);
+  const startTime = new Date(run.epochTimeS * 1000);
+  const lastDataTime = new Date((run.epochTimeS + run.durationS) * 1000);
 
   if (run.isActive) {
     const now = new Date();
@@ -59,8 +53,7 @@ function getRunLabel(run: Run): string {
     const timeAgoStr = formatTimeDiff(secsSinceLastData);
     return `🟢 ${formatDate(startTime)} (Active - ${timeAgoStr}) <${run.uuid}>`;
   } else {
-    const durationS = (lastDataTime.getTime() - startTime.getTime()) / 1000;
-    return `${formatDate(startTime)} (${formatDuration(durationS)}) <${run.uuid}>`;
+    return `${formatDate(startTime)} (${formatDuration(run.durationS)}) <${run.uuid}>`;
   }
 }
 
@@ -71,75 +64,27 @@ export default function RunSelector({
 }: {
   deviceId: string;
   value: string;
-  onValueChange: (runUuid: string) => void;
+  onValueChange: (run: Run | null) => void;
 }) {
-  const [runs, setRuns] = useState<Run[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string>("");
+  const { data: runs = [], isLoading, error } = useRuns(deviceId);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      // No device selected yet
-      if (!deviceId) {
-        setRuns([]);
-        setError("");
-        setIsLoading(false);
-        return;
-      }
-
-      try {
-        setIsLoading(true);
-        setError("");
-
-        const res = await fetch(
-          `/api/runs?device_id=${encodeURIComponent(deviceId)}`,
-        );
-        if (!res.ok) {
-          throw new Error(`Failed to fetch runs (${res.status})`);
-        }
-
-        const data = await res.json();
-        if (cancelled) {
-          return;
-        }
-
-        const runs: Run[] = data.map((r: any) => ({
-          uuid: r.uuid,
-          epochTimeS: BigInt(r.epochTimeS),
-          lastDataTimeS: BigInt(r.lastDataTimeS),
-          isActive: r.isActive,
-        }));
-
-        // Newest first
-        runs.sort((a, b) => Number(b.epochTimeS - a.epochTimeS));
-        setRuns(runs);
-      } catch (e) {
-        if (cancelled) {
-          return;
-        }
-        setRuns([]);
-        setError("Failed to load runs");
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [deviceId]);
+  const sortedRuns = useMemo(() => {
+    // Newest first by epochTimeS
+    const copy = [...runs];
+    copy.sort((a: Run, b: Run) => b.epochTimeS - a.epochTimeS);
+    return copy;
+  }, [runs]);
 
   // If the selected run no longer exists, clear it
   useEffect(() => {
-    if (!isLoading && value && !runs.some((r) => r.uuid === value)) {
-      onValueChange("");
+    if (!deviceId) {
+      return;
     }
-  }, [value, runs, isLoading, onValueChange]);
+
+    if (!isLoading && value && !sortedRuns.some((r) => r.uuid === value)) {
+      onValueChange(null);
+    }
+  }, [deviceId, value, sortedRuns, isLoading, onValueChange]);
 
   const items = useMemo(() => {
     if (!deviceId) {
@@ -149,13 +94,13 @@ export default function RunSelector({
       return [{ value: "__loading__", label: "Loading runs..." }];
     }
     if (error) {
-      return [{ value: "__error__", label: error }];
+      return [{ value: "__error__", label: "Failed to load runs" }];
     }
-    return runs.map((run) => ({
+    return sortedRuns.map((run) => ({
       value: run.uuid,
       label: getRunLabel(run),
     }));
-  }, [deviceId, isLoading, error, runs]);
+  }, [deviceId, isLoading, error, sortedRuns]);
 
   const hasPlaceholder = items.length > 0 && items[0].value.startsWith("__");
 
@@ -168,7 +113,9 @@ export default function RunSelector({
         if (next.startsWith("__")) {
           return;
         }
-        onValueChange(next);
+
+        const run = sortedRuns.find((r) => r.uuid === next) ?? null;
+        onValueChange(run);
       }}
       placeholder={isLoading ? "Loading runs..." : "Select run..."}
       searchPlaceholder={isLoading ? "Loading..." : "Search run..."}

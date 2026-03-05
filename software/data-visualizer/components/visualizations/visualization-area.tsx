@@ -1,60 +1,32 @@
 "use client";
 
 import type { Selection } from "@/components/data-selector/data-selector";
-import { VisualizationType } from "@/components/data-selector/visualization-selector";
-import GpsVisualization from "@/components/visualizations/gps/gps-visualization";
-import useRunMeta from "@/lib/useRunMeta";
+import GpsVisualization, {
+  type RunWithColor,
+} from "@/components/visualizations/gps/gps-visualization";
+import { type Run } from "@/lib/api";
+import { colorForIndex } from "@/lib/utils";
 
 export default function VisualizationArea({
   selection,
 }: {
   selection: Selection;
 }) {
-  const isSelectionValid =
-    selection.deviceId !== "" &&
-    selection.runUuid !== "" &&
-    selection.visualizationType !== VisualizationType.NONE;
+  const runsWithColor: RunWithColor[] = selection.runs
+    .map((r, idx) => (r.run ? { run: r.run, color: colorForIndex(idx) } : null))
+    .filter((x): x is { run: Run; color: string } => !!x);
 
-  const { run, error, refreshKey } = useRunMeta(selection.runUuid);
-
-  // No selection yet
-  if (!isSelectionValid) {
+  if (runsWithColor.length === 0) {
     return (
       <div className="h-full w-full flex items-center justify-center text-muted-foreground p-4 text-center">
-        Select a device, run, and visualization type.
+        Select a run.
       </div>
     );
   }
 
-  // Error
-  if (error) {
-    return (
-      <div className="h-full w-full flex items-center justify-center text-destructive p-4 text-center">
-        {error}
-      </div>
-    );
-  }
-
-  // Loading
-  if (!run) {
-    return (
-      <div className="h-full w-full flex items-center justify-center text-muted-foreground">
-        Loading...
-      </div>
-    );
-  }
-
-  // Render viz
   return (
     <div className="flex flex-col w-full items-center p-4 gap-4 md:overflow-y-auto">
-      {selection.visualizationType === VisualizationType.GPS ? (
-        <GpsVisualization
-          key={refreshKey}
-          runUuid={run.uuid}
-          epochTimeS={run.epochTimeS}
-          tickBaseUs={run.tickBaseUs}
-        />
-      ) : null}
+      <GpsVisualization runs={runsWithColor} />
     </div>
   );
 }

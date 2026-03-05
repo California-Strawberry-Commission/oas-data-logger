@@ -1,8 +1,12 @@
 import { getCurrentUser } from "@/lib/auth";
-import prisma from "@/lib/prisma";
-import { devicesWhereForUser } from "@/lib/query-helpers";
+import prisma, { devicesWhereForUser } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
+/**
+ * GET /api/devices
+ *
+ * Returns the list of devices that belong to the authenticated user.
+ */
 export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser(request.headers);
@@ -17,7 +21,6 @@ export async function GET(request: NextRequest) {
       select: {
         id: true,
         name: true,
-        createdAt: true,
       },
     });
 

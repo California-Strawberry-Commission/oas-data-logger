@@ -1,8 +1,15 @@
 import { getCurrentUser } from "@/lib/auth";
-import prisma from "@/lib/prisma";
-import { getRunForUser } from "@/lib/query-helpers";
+import prisma, { getRunForUser } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
+/**
+ * GET /api/runs/[uuid]/streams
+ *
+ * Fetches stream data records for a specific run.
+ *
+ * Query Parameters:
+ * - stream_ids (required): Comma-separated list of stream IDs to retrieve.
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ uuid: string }> },
@@ -51,7 +58,7 @@ export async function GET(
     return NextResponse.json(
       runData.map((d) => ({
         ...d,
-        tick: d.tick.toString(),
+        tick: Number(d.tick),
       })),
     );
   } catch (err) {

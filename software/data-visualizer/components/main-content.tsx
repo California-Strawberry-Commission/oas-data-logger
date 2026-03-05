@@ -1,17 +1,13 @@
 "use client";
 
-import type { Selection } from "@/components/data-selector/data-selector";
-import DataSelector from "@/components/data-selector/data-selector";
-import { VisualizationType } from "@/components/data-selector/visualization-selector";
+import DataSelector, {
+  type Selection,
+} from "@/components/data-selector/data-selector";
 import VisualizationArea from "@/components/visualizations/visualization-area";
 import { useState } from "react";
 
 export default function MainContent() {
-  const [selection, setSelection] = useState<Selection>({
-    deviceId: "",
-    runUuid: "",
-    visualizationType: VisualizationType.NONE,
-  });
+  const [selection, setSelection] = useState<Selection>({ runs: [] });
 
   return (
     <>

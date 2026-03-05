@@ -1,25 +1,28 @@
 import { getCurrentUser } from "@/lib/auth";
-import prisma from "@/lib/prisma";
-import { runsWhereForUser } from "@/lib/query-helpers";
+import prisma, { runsWhereForUser } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(request: NextRequest) {
+/**
+ * GET /api/devices/[id]/runs
+ *
+ * Returns the list of runs associated with the device.
+ */
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id: deviceId } = await params;
+
   try {
     const user = await getCurrentUser(request.headers);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { searchParams } = new URL(request.url);
-    const deviceId = searchParams.get("device_id");
-
     const authWhere = runsWhereForUser(user);
-    // Device filter if deviceId query param exists
-    const deviceWhere = deviceId
-      ? {
-          deviceId,
-        }
-      : {};
+    const deviceWhere = {
+      deviceId,
+    };
 
     const runs = await prisma.run.findMany({
       where: {
@@ -29,9 +32,9 @@ export async function GET(request: NextRequest) {
         uuid: true,
         epochTimeS: true,
         tickBaseUs: true,
-        updatedAt: true,
+        metadata: true,
         isActive: true,
-        // get the latest tick available
+        // Get the latest tick available, used for calculating the duration
         runData: {
           select: {
             tick: true,
@@ -44,30 +47,32 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Transform the data to include last data time
+    // Transform the data to include run duration
     const runsWithStatus = runs.map((run) => {
       // Calculate last data time based on the highest tick
-      let lastDataTimeS: bigint = run.epochTimeS; // default to start time
+      let durationS: number = 0;
       if (run.runData.length > 0) {
         const lastTick: bigint = run.runData[0].tick;
         const tickUs: bigint = run.tickBaseUs ?? 100_000n; // default 100ms if not set
 
         // Perform calculation with bigint to avoid precision loss
-        const elapsedSeconds = (lastTick * tickUs) / 1_000_000n;
-        lastDataTimeS = run.epochTimeS + elapsedSeconds;
+        durationS = Number((lastTick * tickUs) / 1_000_000n);
       }
 
       return {
         uuid: run.uuid,
-        epochTimeS: run.epochTimeS.toString(), // convert BigInt to string for JSON serialization
-        lastDataTimeS: lastDataTimeS.toString(), // convert BigInt to string for JSON serialization
+        deviceId,
+        epochTimeS: Number(run.epochTimeS),
+        durationS,
+        tickBaseUs: Number(run.tickBaseUs),
+        metadata: run.metadata,
         isActive: run.isActive,
       };
     });
 
     return NextResponse.json(runsWithStatus);
   } catch (err) {
-    console.error("GET /api/runs error:", err);
+    console.error("GET /api/devices/[id]/runs error:", err);
     return NextResponse.json(
       { error: "Failed to fetch runs" },
       { status: 500 },
