@@ -88,14 +88,33 @@ export function useRunStreamsMany(runUuids: string[], streamIds: string[]) {
   // Note: streamIds must be stable and order-stable for a stable queryKey
   const streamKey = streamIds.join(",");
   return useQueries({
-    queries: runUuids.map((uuid) => ({
-      queryKey: ["runStreams", uuid, streamKey],
-      queryFn: () => fetchRunStreams(uuid, streamIds),
-      enabled: !!uuid && runUuids.length > 0 && streamIds.length > 0,
+    queries: runUuids.map((runUuid) => ({
+      queryKey: ["runStreams", runUuid, streamKey],
+      queryFn: () => fetchRunStreams(runUuid, streamIds),
+      enabled: runUuids.length > 0 && !!runUuid,
       staleTime: 60 * 1000,
       gcTime: 15 * 60 * 1000,
       refetchOnWindowFocus: false,
     })),
+    combine: (results) => {
+      const anyLoading = results.some((r) => r.isLoading);
+      const firstError = results.find((r) => r.isError)?.error;
+
+      const dataByUuid: Record<string, RunDataSample[]> = {};
+      for (let i = 0; i < results.length; i++) {
+        const uuid = runUuids[i];
+        const data = results[i]?.data;
+        if (uuid && data !== undefined) {
+          dataByUuid[uuid] = data;
+        }
+      }
+
+      return {
+        anyLoading,
+        firstError,
+        dataByUuid,
+      };
+    },
   });
 }
 

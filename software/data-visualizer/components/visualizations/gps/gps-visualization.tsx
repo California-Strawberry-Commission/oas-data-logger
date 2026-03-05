@@ -224,30 +224,28 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
   );
 
   // Fetch each run's GPS streams
-  const streamQueries = useRunStreamsMany(runUuids, GPS_STREAM_IDS);
-
-  const anyLoading = streamQueries.some((q) => q.isLoading);
-  const firstError = streamQueries.find((q) => q.isError)?.error;
+  const { anyLoading, firstError, dataByUuid } = useRunStreamsMany(
+    runUuids,
+    GPS_STREAM_IDS,
+  );
 
   // Build rawPointsByRun from query results
   const rawPointsByRun = useMemo(() => {
     const result: Record<string, MapPoint[]> = {};
 
-    for (let i = 0; i < filteredRuns.length; i++) {
-      const run = filteredRuns[i].run;
-      const query = streamQueries[i];
-
-      if (!query?.data) {
+    for (const r of filteredRuns) {
+      const run = r.run;
+      const data = dataByUuid[run.uuid];
+      if (!data) {
         continue;
       }
 
-      const mapPoints = toMapPoints(query.data, run.tickBaseUs);
+      const mapPoints = toMapPoints(data, run.tickBaseUs);
       mapPoints.sort((a, b) => a.elapsedS - b.elapsedS);
       result[run.uuid] = mapPoints;
     }
-
     return result;
-  }, [filteredRuns, streamQueries]);
+  }, [filteredRuns, dataByUuid]);
 
   // Filter outliers from raw GPS data
   const filteredPointsByRun = useMemo(() => {
