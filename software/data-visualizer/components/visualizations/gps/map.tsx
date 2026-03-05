@@ -338,12 +338,10 @@ export default function Map({
                 key={id}
                 center={point.position}
                 radius={6}
-                pathOptions={{
-                  fillColor: color,
-                  fillOpacity: 1,
-                  weight: 3,
-                  className: "gps-marker gps-pulse",
-                }}
+                color="white"
+                fillColor={color}
+                fillOpacity={1}
+                weight={2}
               >
                 <Popup>
                   <div className="max-w-[220px] break-words text-sm">
