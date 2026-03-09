@@ -442,8 +442,14 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
   WiFiClient& stream{httpClient.getStream()};
   stream.setTimeout(
       config_.firmwareTimeoutMs);  // controls how long readBytes() blocks
-  const size_t BUF_SZ{1024};
-  uint8_t buf[BUF_SZ];
+  // Allocate the firmware download buffer on the heap to avoid hitting
+  // stack limit
+  const size_t BUF_SZ{2048};
+  std::unique_ptr<uint8_t[]> buf{new (std::nothrow) uint8_t[BUF_SZ]};
+  if (!buf) {
+    Update.abort();
+    return updateError("Failed to allocate firmware buffer");
+  }
   size_t writtenTotal{0};
 
   uint32_t lastProgressMs{millis()};
@@ -464,7 +470,7 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
     }
 
     size_t readBytes{stream.readBytes(
-        buf, static_cast<size_t>(min(availableBytes, (int)BUF_SZ)))};
+        buf.get(), static_cast<size_t>(min(availableBytes, (int)BUF_SZ)))};
     if (readBytes == 0) {
       // Stream timeout
       if (millis() - lastProgressMs > STALL_TIMEOUT_MS) {
@@ -477,13 +483,14 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
     lastProgressMs = millis();
 
     // Update SHA
-    if (!sha.update(buf, static_cast<size_t>(readBytes))) {
+    if (!sha.update(buf.get(), static_cast<size_t>(readBytes))) {
       Update.abort();
       return updateError("SHA256 update failed");
     }
 
     // Write to OTA partition
-    size_t writtenBytes{Update.write(buf, static_cast<size_t>(readBytes))};
+    size_t writtenBytes{
+        Update.write(buf.get(), static_cast<size_t>(readBytes))};
     if (writtenBytes != static_cast<size_t>(readBytes)) {
       Update.abort();
       return updateError("Update.write failed: %s", Update.errorString());

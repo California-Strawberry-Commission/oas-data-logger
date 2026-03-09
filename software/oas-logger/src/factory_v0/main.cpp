@@ -19,8 +19,8 @@ const int NUM_LEDS{1};
 const uint8_t LED_BRIGHTNESS{10};
 
 // Security and Provisioning
-char deviceUid[13];     // Populated at boot
-char deviceSecret[65];  // Populated from NVS at boot
+char deviceUid[13]{0};     // Populated at boot
+char deviceSecret[65]{0};  // Populated from NVS at boot
 
 // Backend endpoints
 const char* OTA_MANIFEST_ENDPOINT{
@@ -104,7 +104,7 @@ void setup() {
   // Read to indicate whether the user button is pressed
   pinMode(PIN_USER_BUTTON, INPUT_PULLUP);
 
-  // Add delay to give time for serial to initialize
+  // Add delay to give dev some time to connect to Serial Monitor
   vTaskDelay(pdMS_TO_TICKS(1000));
 
   connectWifiWithPortal();
@@ -116,4 +116,4 @@ void setup() {
   runOtaUpdate();
 }
 
-void loop() { delay(10); }
+void loop() { delay(1000); }

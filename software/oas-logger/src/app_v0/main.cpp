@@ -77,8 +77,8 @@ static volatile bool wifiConnecting = false;
 static uint32_t wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;
 
 // Security and Provisioning
-char deviceUid[13];     // Populated at boot
-char deviceSecret[65];  // Populated from NVS at boot
+char deviceUid[13]{0};     // Populated at boot
+char deviceSecret[65]{0};  // Populated from NVS at boot
 
 // Backend endpoints
 const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};

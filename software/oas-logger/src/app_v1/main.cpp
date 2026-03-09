@@ -67,8 +67,8 @@ const uint32_t GPS_UPDATE_RATE_MS{100};  // 10Hz update rate
 static volatile bool wifiConnecting = false;
 
 // Security and Provisioning
-char deviceUid[13];     // Populated at boot
-char deviceSecret[65];  // Populated from NVS at boot
+char deviceUid[13]{0};     // Populated at boot
+char deviceSecret[65]{0};  // Populated from NVS at boot
 
 // Backend endpoints
 const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
