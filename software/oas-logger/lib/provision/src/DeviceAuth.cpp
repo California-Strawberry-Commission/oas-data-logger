@@ -28,15 +28,16 @@ DeviceAuth::DeviceAuth(const char* deviceId) {
   snprintf(deviceId_, sizeof(deviceId_), "%s", deviceId);
 }
 
-bool DeviceAuth::loadSecretOrProvision(char* secretBuffer, size_t secretLen,
+bool DeviceAuth::loadSecretOrProvision(char* secretBuffer,
+                                       size_t secretBufferLen,
                                        bool rebootOnProvision) {
-  if (loadSecret(secretBuffer, secretLen)) {
+  if (loadSecret(secretBuffer, secretBufferLen)) {
     Serial.println("[Auth] Device already provisioned.");
     return true;
   }
 
   Serial.println("[Auth] Device unprovisioned. Waiting for script...");
-  awaitProvisioning(secretBuffer, secretLen);
+  awaitProvisioning(secretBuffer, secretBufferLen);
 
   Serial.println("[Auth] Provisioning successful.");
 
@@ -49,10 +50,11 @@ bool DeviceAuth::loadSecretOrProvision(char* secretBuffer, size_t secretLen,
   return true;
 }
 
-bool DeviceAuth::loadSecret(char* secretBuffer, size_t secretLen) {
+bool DeviceAuth::loadSecret(char* secretBuffer, size_t secretBufferLen) {
   Preferences preferences;
   preferences.begin(PREF_NAMESPACE, true);  // Read-only
-  size_t len = preferences.getString(PREF_KEY_SECRET, secretBuffer, secretLen);
+  size_t len =
+      preferences.getString(PREF_KEY_SECRET, secretBuffer, secretBufferLen);
   preferences.end();
 
   return len > 0;
@@ -65,13 +67,13 @@ void DeviceAuth::saveSecret(const char* secret) {
   preferences.end();
 }
 
-bool DeviceAuth::awaitProvisioning(char* secretBuffer, size_t secretLen) {
+bool DeviceAuth::awaitProvisioning(char* secretBuffer, size_t secretBufferLen) {
   Serial.println("[Auth] Waiting for command: PROV_SET:<SECRET>");
 
   // !!! BLOCKING LOOP !!!
   // The device will NOT exit this loop until a valid secret is sent.
+  unsigned long lastPrint = 0;
   while (true) {
-    static unsigned long lastPrint = 0;
     if (millis() - lastPrint > 1000) {
       lastPrint = millis();
       Serial.printf("DEVICE_ID:%s\n", deviceId_);
@@ -99,7 +101,7 @@ bool DeviceAuth::awaitProvisioning(char* secretBuffer, size_t secretLen) {
           Serial.println("PROV_SUCCESS");
           delay(1000);
 
-          snprintf(secretBuffer, secretLen, "%s", newSecret);
+          snprintf(secretBuffer, secretBufferLen, "%s", newSecret);
 
           return true;
         } else {
