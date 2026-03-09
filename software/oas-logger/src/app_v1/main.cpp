@@ -160,7 +160,6 @@ void startLoggerRun();
 void gpsTask(void* args);
 void sleepMonitorTask(void* args);
 void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info);
-void restart();
 
 void setup() {
   Serial.begin(SERIAL_BAUD_RATE);
@@ -285,6 +284,7 @@ void provisionDevice() {
   uint64_t raw = ESP.getEfuseMac();
   snprintf(deviceUid, sizeof(deviceUid), "%012llX", (unsigned long long)raw);
 
+  // Load device secret
   device_auth::DeviceAuth auth(deviceUid);
   auth.loadSecretOrProvision(deviceSecret, sizeof(deviceSecret), true);
 
@@ -469,19 +469,23 @@ void handleOtaUpdate() {
   }
 
   ota::OtaUpdater::Config otaConfig;
-  otaConfig.manifestEndpoint = OTA_MANIFEST_ENDPOINT;
-  otaConfig.firmwareEndpoint = OTA_FIRMWARE_ENDPOINT;
-  otaConfig.deviceType = DEVICE_TYPE;
-  otaConfig.channel = OTA_CHANNEL;
+  snprintf(otaConfig.manifestEndpoint, sizeof(otaConfig.manifestEndpoint), "%s",
+           OTA_MANIFEST_ENDPOINT);
+  snprintf(otaConfig.firmwareEndpoint, sizeof(otaConfig.firmwareEndpoint), "%s",
+           OTA_FIRMWARE_ENDPOINT);
+  snprintf(otaConfig.deviceType, sizeof(otaConfig.deviceType), "%s",
+           DEVICE_TYPE);
+  snprintf(otaConfig.channel, sizeof(otaConfig.channel), "%s", OTA_CHANNEL);
   otaConfig.currentBuildNumber = FW_BUILD_NUMBER;
-  otaConfig.deviceId = deviceUid;
-  otaConfig.deviceSecret = deviceSecret;
+  snprintf(otaConfig.deviceId, sizeof(otaConfig.deviceId), "%s", deviceUid);
+  snprintf(otaConfig.deviceSecret, sizeof(otaConfig.deviceSecret), "%s",
+           deviceSecret);
   ota::OtaUpdater otaUpdater(otaConfig);
   auto res{otaUpdater.updateIfAvailable(true)};
   if (res.ok) {
-    EZLOG_INFO("[OTA] Success: %s", res.message.c_str());
+    EZLOG_INFO("[OTA] Success: %s", res.message);
   } else {
-    EZLOG_ERROR("[OTA] Error when updating firmware: %s", res.message.c_str());
+    EZLOG_ERROR("[OTA] Error when updating firmware: %s", res.message);
   }
 
   transitionToState(SystemState::WAIT_GPS);
@@ -580,7 +584,7 @@ void handleErrorState() {
 
   // Restart after 10 seconds
   if (millis() - errorStartMillis > 10000) {
-    restart();
+    ESP.restart();
   }
 }
 
@@ -803,7 +807,7 @@ void sleepMonitorTask(void* args) {
             wifiManager.resetSettings();  // uses vTaskDelay internally
             EZLOG_INFO(
                 "[WiFi Reconfiguration] Rebooting device into AP mode...");
-            restart();
+            ESP.restart();
             break;
           }
           yield();
@@ -836,5 +840,3 @@ void sleepMonitorTask(void* args) {
   // Task will be deleted when system enters sleep
   vTaskDelete(NULL);
 }
-
-void restart() { ESP.restart(); }

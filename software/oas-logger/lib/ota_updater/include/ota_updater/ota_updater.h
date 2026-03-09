@@ -5,47 +5,46 @@
 
 namespace ota {
 
-struct Manifest {
-  String deviceType;
-  String channel;
-  String version;
-  int buildNumber = -1;
-  String sha256;
-  size_t size = 0;  // bytes
-};
-
 class OtaUpdater {
  public:
-  struct Config {
-    String manifestEndpoint =
-        "https://oas-data-logger.vercel.app/api/ota/manifest/%s/%s";
-    String firmwareEndpoint =
-        "https://oas-data-logger.vercel.app/api/ota/firmware/%s/%s/%d";
-    String deviceType;            // "V0" or "V1"
-    String channel;               // "STABLE" or "BETA"
-    int currentBuildNumber = -1;  // currently installed build number
-    String deviceId;
-    String deviceSecret;
+  struct Manifest {
+    char deviceType[16]{0};
+    char channel[16]{0};
+    char version[32]{0};
+    int buildNumber{-1};
+    char sha256[65]{0};
+    size_t size{0};  // bytes
+  };
 
-    uint32_t manifestTimeoutMs = 3000;
-    uint32_t firmwareTimeoutMs = 20000;
-    uint32_t firmwareStallGraceMs = 5000;
+  struct Config {
+    char manifestEndpoint[128]{
+        "https://oas-data-logger.vercel.app/api/ota/manifest/%s/%s"};
+    char firmwareEndpoint[128]{
+        "https://oas-data-logger.vercel.app/api/ota/firmware/%s/%s/%d"};
+    char deviceType[16]{"V1"};   // "V0" or "V1"
+    char channel[16]{"STABLE"};  // "STABLE" or "BETA"
+    int currentBuildNumber{-1};  // currently installed build number
+    char deviceId[13]{0};
+    char deviceSecret[65]{0};
+    uint32_t manifestTimeoutMs{3000};
+    uint32_t firmwareTimeoutMs{20000};
+    uint32_t firmwareStallGraceMs{5000};
   };
 
   struct ManifestResult {
-    bool ok = false;
-    String message;
-    Manifest manifest;
+    bool ok{false};
+    char message[128]{0};
+    Manifest manifest{};
   };
 
   struct UpdateResult {
-    bool ok = false;
-    bool updateApplied = false;
-    String message;
-    int newBuildNumber = -1;
+    bool ok{false};
+    bool updateApplied{false};
+    char message[128]{0};
+    int newBuildNumber{-1};
   };
 
-  explicit OtaUpdater(Config cfg);
+  explicit OtaUpdater(const Config& cfg);
 
   /**
    * Fetch the latest manifest.
@@ -78,8 +77,8 @@ class OtaUpdater {
   Config config_;
   dlf::auth::RequestSigner signer_;
 
-  String getManifestUrl() const;
-  String getFirmwareUrl(int buildNumber) const;
+  bool getManifestUrl(char* outUrl, size_t outUrlSize) const;
+  bool getFirmwareUrl(int buildNumber, char* outUrl, size_t outUrlSize) const;
   UpdateResult downloadAndUpdate(const Manifest& manifest,
                                  bool rebootOnSuccess);
 };
