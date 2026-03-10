@@ -24,55 +24,86 @@
 
 namespace device_auth {
 
-DeviceAuth::DeviceAuth(const String& deviceId) : deviceId_(deviceId) {}
-
-bool DeviceAuth::loadSecret(String& secretBuffer) {
-  Preferences preferences;
-  preferences.begin(PREF_NAMESPACE, true);  // Read-only
-  String s = preferences.getString(PREF_KEY_SECRET, "");
-  preferences.end();
-
-  if (s.length() > 0) {
-    secretBuffer = s;
-    return true;
-  }
-  return false;
+DeviceAuth::DeviceAuth(const char* deviceId) {
+  snprintf(deviceId_, sizeof(deviceId_), "%s", deviceId);
 }
 
-void DeviceAuth::saveSecret(const String& secret) {
+bool DeviceAuth::loadSecretOrProvision(char* secretBuffer,
+                                       size_t secretBufferLen,
+                                       bool rebootOnProvision) {
+  if (loadSecret(secretBuffer, secretBufferLen)) {
+    Serial.println("[Auth] Device already provisioned.");
+    return true;
+  }
+
+  Serial.println("[Auth] Device unprovisioned. Waiting for script...");
+  awaitProvisioning(secretBuffer, secretBufferLen);
+
+  Serial.println("[Auth] Provisioning successful.");
+
+  if (rebootOnProvision) {
+    Serial.println("[Auth] Rebooting in 3s...");
+    delay(3000);
+    ESP.restart();
+  }
+
+  return true;
+}
+
+bool DeviceAuth::loadSecret(char* secretBuffer, size_t secretBufferLen) {
+  Preferences preferences;
+  preferences.begin(PREF_NAMESPACE, true);  // Read-only
+  size_t len =
+      preferences.getString(PREF_KEY_SECRET, secretBuffer, secretBufferLen);
+  preferences.end();
+
+  return len > 0;
+}
+
+void DeviceAuth::saveSecret(const char* secret) {
   Preferences preferences;
   preferences.begin(PREF_NAMESPACE, false);  // Read-Write
   preferences.putString(PREF_KEY_SECRET, secret);
   preferences.end();
 }
 
-String DeviceAuth::awaitProvisioning() {
+bool DeviceAuth::awaitProvisioning(char* secretBuffer, size_t secretBufferLen) {
   Serial.println("[Auth] Waiting for command: PROV_SET:<SECRET>");
 
   // !!! BLOCKING LOOP !!!
   // The device will NOT exit this loop until a valid secret is sent.
+  unsigned long lastPrint = 0;
   while (true) {
-    static unsigned long lastPrint = 0;
     if (millis() - lastPrint > 1000) {
       lastPrint = millis();
-      Serial.printf("DEVICE_ID:%s\n", deviceId_.c_str());
+      Serial.printf("DEVICE_ID:%s\n", deviceId_);
     }
 
     if (Serial.available()) {
-      String input = Serial.readStringUntil('\n');
-      input.trim();
+      char input[128];
+      size_t len = Serial.readBytesUntil('\n', input, sizeof(input) - 1);
+      input[len] = '\0';
 
-      if (input.startsWith("PROV_SET:")) {
-        String newSecret = input.substring(9);
+      if (len > 0 && input[len - 1] == '\r') {
+        input[len - 1] = '\0';
+      }
+
+      if (strncmp(input, "PROV_SET:", 9) == 0) {
+        const char* newSecret =
+            input + 9;  // PROV_SET: is 9 characters long, skip to secret.
+        size_t newSecretLen = strlen(newSecret);
 
         // This validates the length is 64 chars and strspn returns a count of
         // valid chars, i.e. 64 if all are valid hex.
-        if (newSecret.length() == 64 &&
-            strspn(newSecret.c_str(), "0123456789abcdefABCDEF") == 64) {
+        if (newSecretLen == 64 &&
+            strspn(newSecret, "0123456789abcdefABCDEF") == 64) {
           saveSecret(newSecret);
           Serial.println("PROV_SUCCESS");
           delay(1000);
-          return newSecret;
+
+          snprintf(secretBuffer, secretBufferLen, "%s", newSecret);
+
+          return true;
         } else {
           Serial.println("PROV_FAIL: Invalid Length");
         }

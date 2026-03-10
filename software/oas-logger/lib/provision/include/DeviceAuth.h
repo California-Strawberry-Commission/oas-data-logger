@@ -9,15 +9,20 @@ constexpr const char* PREF_KEY_SECRET = "secret";
 
 class DeviceAuth {
  public:
-  DeviceAuth(const String& deviceId);
+  DeviceAuth(const char* deviceId);
 
-  bool loadSecret(String& secretBuffer);
+  // secretBuffer must have room for 65 bytes at minimum
+  // 64 for secret + 1 for null terminator
+  bool loadSecret(char* secretBuffer, size_t secretBufferLen);
 
-  String awaitProvisioning();
+  bool awaitProvisioning(char* secretBuffer, size_t secretBufferLen);
+
+  bool loadSecretOrProvision(char* secretBuffer, size_t secretBufferLen,
+                             bool rebootOnProvision = true);
 
  private:
-  String deviceId_;
+  char deviceId_[65];
 
-  void saveSecret(const String& secret);
+  void saveSecret(const char* secret);
 };
 }  // namespace device_auth
