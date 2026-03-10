@@ -122,11 +122,11 @@ inline bool joinPath(char* out, size_t outSize, const char* a, const char* b) {
 }
 
 struct UrlParts {
-  char scheme[8];
-  char host[128];
-  uint16_t port;
-  char path[128];
-  bool ok;  // true if parsing succeeded
+  char scheme[8] = {0};
+  char host[128] = {0};
+  uint16_t port = 0;
+  char path[128] = {0};
+  bool ok = false;  // true if parsing succeeded
 };
 
 /**

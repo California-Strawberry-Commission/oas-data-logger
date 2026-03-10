@@ -4,59 +4,81 @@
 #include <HTTPClient.h>
 #include <Update.h>
 #include <WiFiClientSecure.h>
+#include <dlflib/util/util.h>
 #include <mbedtls/sha256.h>
 
 namespace {
 
-struct UrlParts {
-  String scheme;
-  String host;
-  uint16_t port;
-  String path;
-};
+bool bytesToHexLower(const uint8_t* bytes, size_t len, char* out,
+                     size_t outSize) {
+  static constexpr char HEX_MAP[]{"0123456789abcdef"};
 
-UrlParts parseUrl(const String& url) {
-  UrlParts urlParts;
-  int schemeEnd{url.indexOf("://")};
-  if (schemeEnd < 0) {
-    // Invalid URL
-    return urlParts;
+  if (!bytes || !out || outSize < (len * 2 + 1)) {
+    return false;
   }
 
-  urlParts.scheme = url.substring(0, schemeEnd);
+  for (size_t i = 0; i < len; ++i) {
+    out[i * 2] = HEX_MAP[(bytes[i] >> 4) & 0x0F];
+    out[i * 2 + 1] = HEX_MAP[bytes[i] & 0x0F];
+  }
+  out[len * 2] = '\0';
+  return true;
+}
 
-  int hostStart{schemeEnd + 3};
-  int pathStart{url.indexOf('/', hostStart)};
-  if (pathStart < 0) {
-    pathStart = url.length();
+bool copyStr(char* dst, size_t dstSize, const char* src) {
+  if (!dst || dstSize == 0) {
+    return false;
   }
 
-  int colonPos{url.indexOf(':', hostStart)};
-  if (colonPos >= 0 && colonPos < pathStart) {
-    // host:port
-    urlParts.host = url.substring(hostStart, colonPos);
-    urlParts.port = url.substring(colonPos + 1, pathStart).toInt();
-  } else {
-    // host, no explicit port
-    urlParts.host = url.substring(hostStart, pathStart);
-    urlParts.port = (urlParts.scheme == "https") ? 443 : 80;
+  if (!src) {
+    dst[0] = '\0';
+    return true;
   }
 
-  urlParts.path = (pathStart < url.length()) ? url.substring(pathStart) : "/";
-  return urlParts;
+  const size_t srcLen{strlen(src)};
+  if (srcLen >= dstSize) {
+    dst[0] = '\0';
+    return false;
+  }
+
+  memcpy(dst, src, srcLen + 1);
+  return true;
+}
+
+bool hexEqualsIgnoreCase(const char* a, const char* b) {
+  if (!a || !b) {
+    return false;
+  }
+
+  while (*a && *b) {
+    char ca{*a};
+    char cb{*b};
+
+    if (ca >= 'A' && ca <= 'Z') {
+      ca = static_cast<char>(ca - 'A' + 'a');
+    }
+    if (cb >= 'A' && cb <= 'Z') {
+      cb = static_cast<char>(cb - 'A' + 'a');
+    }
+
+    if (ca != cb) {
+      return false;
+    }
+    ++a;
+    ++b;
+  }
+
+  return *a == '\0' && *b == '\0';
 }
 
 struct WiFiClientHolder {
   WiFiClient* client;
-  bool secure;
 
-  WiFiClientHolder(WiFiClient* c, bool isSecure)
-      : client(c), secure(isSecure) {}
+  WiFiClientHolder(WiFiClient* c) : client(c) {}
 
   WiFiClientHolder(const WiFiClientHolder&) = delete;
   WiFiClientHolder& operator=(const WiFiClientHolder&) = delete;
-  WiFiClientHolder(WiFiClientHolder&& other) noexcept
-      : client(other.client), secure(other.secure) {
+  WiFiClientHolder(WiFiClientHolder&& other) noexcept : client(other.client) {
     other.client = nullptr;
   }
 
@@ -64,7 +86,6 @@ struct WiFiClientHolder {
     if (this != &other) {
       delete client;
       client = other.client;
-      secure = other.secure;
       other.client = nullptr;
     }
     return *this;
@@ -73,15 +94,14 @@ struct WiFiClientHolder {
   ~WiFiClientHolder() { delete client; }
 };
 
-WiFiClientHolder createWiFiClient(const String& url) {
-  UrlParts parts{parseUrl(url)};
-  if (parts.scheme == "https") {
+WiFiClientHolder createWiFiClient(bool secure) {
+  if (secure) {
     auto* secureClient{new WiFiClientSecure()};
     secureClient->setInsecure();  // TODO: replace with cert pinning
-    return WiFiClientHolder{secureClient, true};
+    return WiFiClientHolder{secureClient};
   }
 
-  return WiFiClientHolder{new WiFiClient(), false};
+  return WiFiClientHolder{new WiFiClient()};
 }
 
 // We must be sure to end the HTTPClient to avoid memory and socket leaks.
@@ -141,54 +161,59 @@ bool isRedirectCode(int code) {
          code == 308;
 }
 
-ota::OtaUpdater::ManifestResult getManifestResultForError(const String& err) {
+ota::OtaUpdater::ManifestResult manifestError(const char* fmt, ...) {
   ota::OtaUpdater::ManifestResult res;
   res.ok = false;
-  res.message = err;
+
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(res.message, sizeof(res.message), fmt, args);
+  va_end(args);
+
   return res;
 }
 
-ota::OtaUpdater::UpdateResult getUpdateResultForError(const String& err) {
+ota::OtaUpdater::UpdateResult updateError(const char* fmt, ...) {
   ota::OtaUpdater::UpdateResult res;
   res.ok = false;
   res.updateApplied = false;
-  res.message = err;
-  return res;
-}
 
-String bytesToHexLower(const uint8_t* bytes, size_t len) {
-  static const char* HEX_MAP{"0123456789abcdef"};
-  String out;
-  out.reserve(len * 2);
-  for (size_t i = 0; i < len; ++i) {
-    out += HEX_MAP[(bytes[i] >> 4) & 0x0F];
-    out += HEX_MAP[(bytes[i] >> 0) & 0x0F];
-  }
-  return out;
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(res.message, sizeof(res.message), fmt, args);
+  va_end(args);
+
+  return res;
 }
 
 }  // namespace
 
 namespace ota {
 
-OtaUpdater::OtaUpdater(Config config)
-    : config_(std::move(config)),
-      signer_(config_.deviceId.c_str(), config_.deviceSecret.c_str()) {}
+OtaUpdater::OtaUpdater(const Config& cfg)
+    : config_(cfg), signer_(config_.deviceId, config_.deviceSecret) {}
 
 OtaUpdater::ManifestResult OtaUpdater::fetchLatestManifest() {
   if (WiFi.status() != WL_CONNECTED) {
-    return getManifestResultForError("WiFi not connected");
+    return manifestError("WiFi not connected");
   }
 
   // Create and parse manifest URL
-  String manifestUrl{getManifestUrl()};
-  UrlParts parts{parseUrl(manifestUrl)};
-  if (parts.scheme.length() == 0 || parts.host.length() == 0) {
-    return getManifestResultForError("Invalid manifest URL");
+  char manifestUrl[256]{0};
+  if (!getManifestUrl(manifestUrl, sizeof(manifestUrl))) {
+    return manifestError("Failed to build manifest URL");
+  }
+  dlf::util::UrlParts parts{dlf::util::parseUrl(manifestUrl)};
+  if (!parts.ok) {
+    return manifestError("Invalid manifest URL");
   }
 
   // Create HTTPClient
-  auto wifiClientHolder{createWiFiClient(manifestUrl)};
+  const bool useHttps{strcmp(parts.scheme, "https") == 0};
+  auto wifiClientHolder{createWiFiClient(useHttps)};
+  if (!wifiClientHolder.client) {
+    return manifestError("Failed to create WiFi client");
+  }
   wifiClientHolder.client->setTimeout(config_.manifestTimeoutMs / 1000);
   HTTPClient httpClient;
   // Use an RAII guard to automatically end the HTTPClient when it goes out of
@@ -199,20 +224,19 @@ OtaUpdater::ManifestResult OtaUpdater::fetchLatestManifest() {
 
   // Set up HTTP request for manifest
   if (!httpClient.begin(*wifiClientHolder.client, manifestUrl)) {
-    return getManifestResultForError("HTTP begin failed (manifest)");
+    return manifestError("HTTP begin failed (manifest)");
   }
   // Sign the request
   if (!signer_.writeAuthHeaders(httpClient)) {
-    return getManifestResultForError("Failed to add auth headers (manifest)");
+    return manifestError("Failed to add auth headers (manifest)");
   }
   // Send the GET request
   const int code{httpClient.GET()};
   if (code <= 0) {
-    return getManifestResultForError(String("HTTP GET failed (manifest): ") +
-                                     httpClient.errorToString(code));
+    return manifestError("HTTP GET failed (manifest): %s",
+                         httpClient.errorToString(code).c_str());
   } else if (code != 200) {
-    return getManifestResultForError(String("HTTP GET status (manifest): ") +
-                                     code);
+    return manifestError("HTTP GET status (manifest): %d", code);
   }
 
   // Parse JSON from stream
@@ -227,29 +251,34 @@ OtaUpdater::ManifestResult OtaUpdater::fetchLatestManifest() {
     }
     stream.read();  // discard junk
   }
+
+  // Deserialize JSON
   JsonDocument jsonDoc;
   DeserializationError jsonErr{deserializeJson(jsonDoc, stream)};
   if (jsonErr) {
-    return getManifestResultForError(String("Manifest JSON parse error: ") +
-                                     jsonErr.c_str());
+    return manifestError("Manifest JSON parse error: %s", jsonErr.c_str());
   }
 
   if (jsonDoc["latest"].isNull()) {
-    return getManifestResultForError("No published firmware in manifest");
+    return manifestError("No published firmware in manifest");
   }
 
-  ota::OtaUpdater::ManifestResult res;
-  res.manifest.deviceType = jsonDoc["deviceType"] | "";
-  res.manifest.channel = jsonDoc["channel"] | "";
+  ManifestResult res;
+  copyStr(res.manifest.deviceType, sizeof(res.manifest.deviceType),
+          jsonDoc["deviceType"] | "");
+  copyStr(res.manifest.channel, sizeof(res.manifest.channel),
+          jsonDoc["channel"] | "");
 
   JsonObject latest{jsonDoc["latest"]};
-  res.manifest.version = latest["version"] | "";
+  copyStr(res.manifest.version, sizeof(res.manifest.version),
+          latest["version"] | "");
   res.manifest.buildNumber = latest["buildNumber"] | -1;
-  res.manifest.sha256 = latest["sha256"] | "";
-  res.manifest.size = (size_t)(latest["size"] | 0);
+  copyStr(res.manifest.sha256, sizeof(res.manifest.sha256),
+          latest["sha256"] | "");
+  res.manifest.size = static_cast<size_t>(latest["size"] | 0);
 
+  copyStr(res.message, sizeof(res.message), "Manifest fetched successfully");
   res.ok = true;
-  res.message = "Manifest fetched successfully";
   return res;
 }
 
@@ -264,50 +293,57 @@ bool OtaUpdater::isUpdateAvailable(const Manifest& manifest) const {
 OtaUpdater::UpdateResult OtaUpdater::updateIfAvailable(bool rebootOnSuccess) {
   auto manifestResult{fetchLatestManifest()};
   if (!manifestResult.ok) {
-    return getUpdateResultForError(manifestResult.message);
+    return updateError("%s", manifestResult.message);
   }
 
   if (!isUpdateAvailable(manifestResult.manifest)) {
     OtaUpdater::UpdateResult updateResult;
     updateResult.ok = true;
     updateResult.updateApplied = false;
-    updateResult.message = "Already up to date";
     updateResult.newBuildNumber = manifestResult.manifest.buildNumber;
+    copyStr(updateResult.message, sizeof(updateResult.message),
+            "Already up to date");
     return updateResult;
   }
 
   return downloadAndUpdate(manifestResult.manifest, rebootOnSuccess);
 }
 
-String OtaUpdater::getManifestUrl() const {
-  char urlBuf[256];
-  snprintf(urlBuf, sizeof(urlBuf), config_.manifestEndpoint.c_str(),
-           config_.deviceType.c_str(), config_.channel.c_str());
-  return String(urlBuf);
+bool OtaUpdater::getManifestUrl(char* outUrl, size_t outUrlSize) const {
+  if (!outUrl || outUrlSize == 0) {
+    return false;
+  }
+
+  const int n{snprintf(outUrl, outUrlSize, config_.manifestEndpoint,
+                       config_.deviceType, config_.channel)};
+  return n > 0 && static_cast<size_t>(n) < outUrlSize;
 }
 
-String OtaUpdater::getFirmwareUrl(int buildNumber) const {
-  char urlBuf[256];
-  snprintf(urlBuf, sizeof(urlBuf), config_.firmwareEndpoint.c_str(),
-           config_.deviceType.c_str(), config_.channel.c_str(), buildNumber);
-  return String(urlBuf);
+bool OtaUpdater::getFirmwareUrl(int buildNumber, char* outUrl,
+                                size_t outUrlSize) const {
+  if (!outUrl || outUrlSize == 0) {
+    return false;
+  }
+
+  const int n{snprintf(outUrl, outUrlSize, config_.firmwareEndpoint,
+                       config_.deviceType, config_.channel, buildNumber)};
+  return n > 0 && static_cast<size_t>(n) < outUrlSize;
 }
 
 OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
                                                        bool rebootOnSuccess) {
   if (WiFi.status() != WL_CONNECTED) {
-    return getUpdateResultForError("WiFi not connected");
+    return updateError("WiFi not connected");
   }
 
   if (manifest.buildNumber < 0) {
-    return getUpdateResultForError("Manifest missing buildNumber");
+    return updateError("Manifest missing buildNumber");
   }
 
-  // Create and parse firmware URL
-  String url{getFirmwareUrl(manifest.buildNumber)};
-  UrlParts parts{parseUrl(url)};
-  if (parts.scheme.length() == 0 || parts.host.length() == 0) {
-    return getUpdateResultForError("Invalid firmware URL");
+  // Create firmware URL
+  char firmwareUrl[512]{0};  // note: redirect URLs may be quite long
+  if (!getFirmwareUrl(manifest.buildNumber, firmwareUrl, sizeof(firmwareUrl))) {
+    return updateError("Failed to build firmware URL");
   }
 
   // Create HTTPClient
@@ -325,31 +361,36 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
   int code{0};
   // We need to keep wifiClientHolder alive for the entire time while httpClient
   // is in scope, so initialize it here.
-  WiFiClientHolder wifiClientHolder{nullptr, false};
+  WiFiClientHolder wifiClientHolder{nullptr};
   for (int redirectCount = 0; redirectCount < 5; ++redirectCount) {
     // End any previous session before calling begin() again on same HTTPClient
     httpClient.end();
 
     // Create a separate WiFiClient for each hop as the redirect may switch
     // host/scheme
-    wifiClientHolder = createWiFiClient(url);
+    dlf::util::UrlParts parts{dlf::util::parseUrl(firmwareUrl)};
+    if (!parts.ok) {
+      return updateError("Invalid firmware URL");
+    }
+    const bool useHttps{strcmp(parts.scheme, "https") == 0};
+    wifiClientHolder = createWiFiClient(useHttps);
     if (!wifiClientHolder.client) {
-      return getUpdateResultForError("Failed to create WiFi client");
+      return updateError("Failed to create WiFi client");
     }
 
     // Set up HTTP request for firmware
-    if (!httpClient.begin(*wifiClientHolder.client, url)) {
-      return getUpdateResultForError("HTTP begin failed (firmware)");
+    if (!httpClient.begin(*wifiClientHolder.client, firmwareUrl)) {
+      return updateError("HTTP begin failed (firmware)");
     }
     // Sign the request
     if (!signer_.writeAuthHeaders(httpClient)) {
-      return getUpdateResultForError("Failed to add auth headers (firmware)");
+      return updateError("Failed to add auth headers (firmware)");
     }
     // Send the GET request
     code = httpClient.GET();
     if (code <= 0) {
-      return getUpdateResultForError(String("HTTP GET failed (firmware): ") +
-                                     httpClient.errorToString(code));
+      return updateError("HTTP GET failed (firmware): %s",
+                         httpClient.errorToString(code).c_str());
     }
 
     if (!isRedirectCode(code)) {
@@ -357,53 +398,58 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
     }
 
     // Go to next redirect hop
-    String location{httpClient.header("Location")};
+    const String location{httpClient.header("Location")};
     if (location.length() == 0) {
-      return getUpdateResultForError(
-          String("HTTP redirect (firmware), code = ") + code +
-          ", missing Location header");
+      return updateError(
+          "HTTP redirect (firmware), code = %d, missing Location header", code);
     }
-    url = location;
+    location.toCharArray(firmwareUrl, sizeof(firmwareUrl));
   }
 
   if (isRedirectCode(code)) {
-    return getUpdateResultForError("Too many redirects when fetching firmware");
+    return updateError("Too many redirects when fetching firmware");
   } else if (code != 200) {
-    String msg = String("HTTP status (firmware): ") + code;
-    String body = httpClient.getString();
+    const String body{httpClient.getString()};
     if (body.length() > 0) {
-      msg += " body: ";
-      msg += body.substring(0, 200);
+      char bodyBuf[201];
+      body.toCharArray(bodyBuf, sizeof(bodyBuf));
+      return updateError("HTTP status (firmware): %d body: %s", code, bodyBuf);
+    } else {
+      return updateError("HTTP status (firmware): %d", code);
     }
-    return getUpdateResultForError(msg);
   }
 
   // Validate content size
   int contentLen{httpClient.getSize()};
   if (manifest.size > 0 && contentLen > 0 &&
-      (size_t)contentLen != manifest.size) {
-    return getUpdateResultForError("Firmware size does not match manifest");
+      static_cast<size_t>(contentLen) != manifest.size) {
+    return updateError("Firmware size does not match manifest");
   }
 
   // Start OTA update
   if (!Update.begin(contentLen > 0 ? contentLen : UPDATE_SIZE_UNKNOWN)) {
-    return getUpdateResultForError(String("Update.begin failed: ") +
-                                   Update.errorString());
+    return updateError("Update.begin failed: %s", Update.errorString());
   }
 
   // Initialize SHA-256
   Sha256Guard sha;
   if (!sha.ok) {
     Update.abort();
-    return getUpdateResultForError("SHA256 init failed");
+    return updateError("SHA256 init failed");
   }
 
   // Stream body into Update, reading in chunks to avoid huge RAM use
   WiFiClient& stream{httpClient.getStream()};
   stream.setTimeout(
       config_.firmwareTimeoutMs);  // controls how long readBytes() blocks
+  // Allocate the firmware download buffer on the heap to avoid hitting
+  // stack limit
   const size_t BUF_SZ{2048};
-  uint8_t buf[BUF_SZ];
+  std::unique_ptr<uint8_t[]> buf{new (std::nothrow) uint8_t[BUF_SZ]};
+  if (!buf) {
+    Update.abort();
+    return updateError("Failed to allocate firmware buffer");
+  }
   size_t writtenTotal{0};
 
   uint32_t lastProgressMs{millis()};
@@ -417,19 +463,19 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
     if (availableBytes <= 0) {
       if (millis() - lastProgressMs > STALL_TIMEOUT_MS) {
         Update.abort();
-        return getUpdateResultForError("Firmware download stalled (no data)");
+        return updateError("Firmware download stalled (no data)");
       }
       delay(1);
       continue;
     }
 
-    size_t readBytes{
-        stream.readBytes(buf, (size_t)min(availableBytes, (int)BUF_SZ))};
+    size_t readBytes{stream.readBytes(
+        buf.get(), static_cast<size_t>(min(availableBytes, (int)BUF_SZ)))};
     if (readBytes == 0) {
       // Stream timeout
       if (millis() - lastProgressMs > STALL_TIMEOUT_MS) {
         Update.abort();
-        return getUpdateResultForError("Firmware read timed out");
+        return updateError("Firmware read timed out");
       }
       continue;
     }
@@ -437,62 +483,63 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
     lastProgressMs = millis();
 
     // Update SHA
-    if (!sha.update(buf, (size_t)readBytes)) {
+    if (!sha.update(buf.get(), static_cast<size_t>(readBytes))) {
       Update.abort();
-      return getUpdateResultForError("SHA256 update failed");
+      return updateError("SHA256 update failed");
     }
 
     // Write to OTA partition
-    size_t writtenBytes{Update.write(buf, (size_t)readBytes)};
-    if (writtenBytes != (size_t)readBytes) {
+    size_t writtenBytes{
+        Update.write(buf.get(), static_cast<size_t>(readBytes))};
+    if (writtenBytes != static_cast<size_t>(readBytes)) {
       Update.abort();
-      return getUpdateResultForError(String("Update.write failed: ") +
-                                     Update.errorString());
+      return updateError("Update.write failed: %s", Update.errorString());
     }
     writtenTotal += writtenBytes;
 
     // If we know the content length, stop once we reach it
-    if (contentLen > 0 && writtenTotal >= (size_t)contentLen) {
+    if (contentLen > 0 && writtenTotal >= static_cast<size_t>(contentLen)) {
       break;
     }
   }
 
   // Verify written bytes against content length
-  if (contentLen > 0 && writtenTotal != (size_t)contentLen) {
+  if (contentLen > 0 && writtenTotal != static_cast<size_t>(contentLen)) {
     Update.abort();
-    return getUpdateResultForError("Firmware download ended early");
+    return updateError("Firmware download ended early");
   }
 
   // Finish SHA and validate
   uint8_t digest[32];
   if (!sha.finish(digest)) {
     Update.abort();
-    return getUpdateResultForError("SHA256 finish failed");
+    return updateError("SHA256 finish failed");
   }
-  String gotSha{bytesToHexLower(digest, sizeof(digest))};
-  String expectedSha{manifest.sha256};
-  expectedSha.toLowerCase();
-  if (gotSha != expectedSha) {
+  char gotSha[65]{0};
+  if (!bytesToHexLower(digest, sizeof(digest), gotSha, sizeof(gotSha))) {
     Update.abort();
-    return getUpdateResultForError("Firmware SHA256 mismatch");
+    return updateError("Failed to encode SHA256");
+  }
+  if (!hexEqualsIgnoreCase(gotSha, manifest.sha256)) {
+    Update.abort();
+    return updateError("Firmware SHA256 mismatch");
   }
 
   // Finalize Update
   if (!Update.end(true)) {
     Update.abort();
-    return getUpdateResultForError(String("Update.end failed: ") +
-                                   Update.errorString());
+    return updateError("Update.end failed: %s", Update.errorString());
   }
   if (!Update.isFinished()) {
     Update.abort();
-    return getUpdateResultForError("Update not finished");
+    return updateError("Update not finished");
   }
 
   UpdateResult res;
   res.ok = true;
   res.updateApplied = true;
-  res.message = "Update applied";
   res.newBuildNumber = manifest.buildNumber;
+  copyStr(res.message, sizeof(res.message), "Update applied");
 
   if (rebootOnSuccess) {
     delay(200);

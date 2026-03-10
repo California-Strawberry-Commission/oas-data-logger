@@ -77,8 +77,8 @@ static volatile bool wifiConnecting = false;
 static uint32_t wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;
 
 // Security and Provisioning
-char deviceUid[13];     // Populated at boot
-char deviceSecret[65];  // Populated from NVS at boot
+char deviceUid[13]{0};     // Populated at boot
+char deviceSecret[65]{0};  // Populated from NVS at boot
 
 // Backend endpoints
 const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
@@ -163,7 +163,6 @@ void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info);
 void gpsTask(void* args);
 void sleepMonitorTask(void* args);
 void sleepCleanup();
-void restart();
 
 void setup() {
   Serial.begin(SERIAL_BAUD_RATE);
@@ -337,21 +336,11 @@ void provisionDevice() {
   uint64_t raw = ESP.getEfuseMac();
   snprintf(deviceUid, sizeof(deviceUid), "%012llX", (unsigned long long)raw);
 
-  // TODO: Eliminate String from DeviceAuth
+  // Load device secret
   device_auth::DeviceAuth auth(deviceUid);
-  String temp;
-  if (!auth.loadSecret(temp)) {
-    EZLOG_INFO("Device unprovisioned. Waiting for script...");
+  auth.loadSecretOrProvision(deviceSecret, sizeof(deviceSecret), true);
 
-    temp = auth.awaitProvisioning();
-
-    EZLOG_INFO("Provisioning successful. Rebooting in 3s...");
-    delay(3000);
-    restart();
-  } else {
-    EZLOG_INFO("Device already provisioned");
-  }
-  temp.toCharArray(deviceSecret, sizeof(deviceSecret));
+  EZLOG_INFO("Device provisioning verified.");
 }
 
 void transitionToState(SystemState newState) {
@@ -473,21 +462,24 @@ void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
 
 void handleOtaUpdate() {
   if (ENABLE_OTA_UPDATE && WiFi.status() == WL_CONNECTED) {
-    ota::OtaUpdater::Config otaConfig;
-    otaConfig.manifestEndpoint = OTA_MANIFEST_ENDPOINT;
-    otaConfig.firmwareEndpoint = OTA_FIRMWARE_ENDPOINT;
-    otaConfig.deviceType = DEVICE_TYPE;
-    otaConfig.channel = OTA_CHANNEL;
+    ota::OtaUpdater::Config otaConfig{};
+    snprintf(otaConfig.manifestEndpoint, sizeof(otaConfig.manifestEndpoint),
+             "%s", OTA_MANIFEST_ENDPOINT);
+    snprintf(otaConfig.firmwareEndpoint, sizeof(otaConfig.firmwareEndpoint),
+             "%s", OTA_FIRMWARE_ENDPOINT);
+    snprintf(otaConfig.deviceType, sizeof(otaConfig.deviceType), "%s",
+             DEVICE_TYPE);
+    snprintf(otaConfig.channel, sizeof(otaConfig.channel), "%s", OTA_CHANNEL);
     otaConfig.currentBuildNumber = FW_BUILD_NUMBER;
-    otaConfig.deviceId = deviceUid;
-    otaConfig.deviceSecret = deviceSecret;
+    snprintf(otaConfig.deviceId, sizeof(otaConfig.deviceId), "%s", deviceUid);
+    snprintf(otaConfig.deviceSecret, sizeof(otaConfig.deviceSecret), "%s",
+             deviceSecret);
     ota::OtaUpdater otaUpdater(otaConfig);
     auto res{otaUpdater.updateIfAvailable(true)};
     if (res.ok) {
-      EZLOG_INFO("[OTA] Success: %s", res.message.c_str());
+      EZLOG_INFO("[OTA] Success: %s", res.message);
     } else {
-      EZLOG_ERROR("[OTA] Error when updating firmware: %s",
-                  res.message.c_str());
+      EZLOG_ERROR("[OTA] Error when updating firmware: %s", res.message);
     }
   }
 
@@ -595,7 +587,7 @@ void handleErrorState() {
 
   // Restart after 10 seconds
   if (millis() - errorStartMillis > 10000) {
-    restart();
+    ESP.restart();
   }
 }
 
@@ -779,7 +771,7 @@ void sleepMonitorTask(void* args) {
             wifiManager.resetSettings();  // uses vTaskDelay internally
             EZLOG_INFO(
                 "[WiFi Reconfiguration] Rebooting device into AP mode...");
-            restart();
+            ESP.restart();
             break;
           }
           yield();
@@ -821,5 +813,3 @@ void sleepCleanup() {
     runHandle = 0;
   }
 }
-
-void restart() { ESP.restart(); }
