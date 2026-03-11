@@ -1,10 +1,10 @@
 "use client";
 
 import type { MapPoint, Track } from "@/components/visualizations/gps/map";
-import SpeedChart, {
-  type SpeedSample,
-  type SpeedSeries,
-} from "@/components/visualizations/gps/speed-chart";
+import TimeSeriesChart, {
+  type TimeSeriesSample,
+  type TimeSeries,
+} from "@/components/visualizations/gps/time-series-chart";
 import { useRunStreamsMany, type Run, type RunDataSample } from "@/lib/api";
 import { LatLngExpression } from "leaflet";
 import dynamic from "next/dynamic";
@@ -148,24 +148,24 @@ function toMapPoints(
   return mapPoints;
 }
 
-function toSpeedSamples(points: MapPoint[]): SpeedSample[] {
+function toSpeedSamples(points: MapPoint[]): TimeSeriesSample[] {
   if (points.length === 0) {
     return [];
   }
 
-  const out: SpeedSample[] = [{ elapsedS: points[0].elapsedS, speedMph: 0 }];
+  const out: TimeSeriesSample[] = [{ elapsedS: points[0].elapsedS, value: 0 }];
 
   for (let i = 1; i < points.length; i++) {
     const dt = points[i].elapsedS - points[i - 1].elapsedS;
     if (!Number.isFinite(dt) || dt <= 0) {
-      out.push({ elapsedS: points[i].elapsedS, speedMph: 0 });
+      out.push({ elapsedS: points[i].elapsedS, value: 0 });
       continue;
     }
     const distM = distanceMeters(points[i - 1].position, points[i].position);
     const mph = (distM / dt) * MPS_TO_MPH;
     out.push({
       elapsedS: points[i].elapsedS,
-      speedMph: Number.isFinite(mph) ? mph : 0,
+      value: Number.isFinite(mph) ? mph : 0,
     });
   }
   return out;
@@ -198,7 +198,7 @@ function ErrorMap({ msg }: { msg: string }) {
 export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
   // TODO: Be able to toggle filter through UI
   const [filterEnabled, setFilterEnabled] = useState(true);
-  const [selectedElapsedS, setSelectedElapsedS] = useState<number>(0);
+  const [selectedElapsedS, setSelectedElapsedS] = useState<number | null>(null);
 
   // Dedupe runs
   const filteredRuns: RunWithColor[] = useMemo(() => {
@@ -292,7 +292,7 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
       .filter((t) => t.points.length > 0);
   }, [filteredRuns, filteredPointsByRun]);
 
-  const speedSeries: SpeedSeries[] = useMemo(() => {
+  const speedSeries: TimeSeries[] = useMemo(() => {
     return filteredRuns
       .map((r) => {
         const points = filteredPointsByRun[r.run.uuid];
@@ -300,6 +300,7 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
           id: r.run.uuid,
           samples: points ? toSpeedSamples(points) : [],
           color: r.color,
+          label: "",
         };
       })
       .filter((s) => s.samples.length > 0);
@@ -351,15 +352,17 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
       <div className="w-full h-150 border rounded-md overflow-hidden">
         <MapComponent
           tracks={tracks}
-          selectedElapsedS={selectedElapsedS}
+          selectedElapsedS={selectedElapsedS ?? 0}
           onSelectedElapsedChange={setSelectedElapsedS}
         />
       </div>
       <div className="w-full h-60 p-4 border rounded-md overflow-hidden">
-        <SpeedChart
+        <TimeSeriesChart
           data={speedSeries}
-          selectedElapsedS={selectedElapsedS}
+          selectedElapsedS={selectedElapsedS ?? undefined}
           onSelectedElapsedChange={setSelectedElapsedS}
+          yAxisLabel="Speed (mph)"
+          tooltipValueFormatter={(v) => `${v.toFixed(1)} mph`}
         />
       </div>
     </>
