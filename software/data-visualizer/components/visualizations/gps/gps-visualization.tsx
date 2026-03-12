@@ -2,8 +2,9 @@
 
 import type { MapPoint, Track } from "@/components/visualizations/gps/map";
 import TimeSeriesChart, {
-  type TimeSeriesSample,
+  formatElapsed,
   type TimeSeries,
+  type TimeSeriesSample,
 } from "@/components/visualizations/gps/time-series-chart";
 import { useRunStreamsMany, type Run, type RunDataSample } from "@/lib/api";
 import { LatLngExpression } from "leaflet";
@@ -33,7 +34,8 @@ const GPS_STREAM_IDS = [
 ];
 const MIN_NUM_SATELLITES = 1; // filter out GPS points that were logged with less than X satellites
 const MAX_JUMP_METERS = 100; // filter out GPS points that jump more than X meters from the previous point
-const MPS_TO_MPH = 2.2369362920544;
+const MPS_TO_MPH = 2.2369362920544; // meters per second to miles per hour
+const SPEED_OUTLIER_MPH = 100; // consider any speeds above this as outliers
 
 export function toLatLng(position: LatLngExpression): {
   lat: number;
@@ -80,6 +82,17 @@ export function distanceMeters(
   const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 
   return R * c;
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) {
+    return 0;
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
 }
 
 function toMapPoints(
@@ -148,27 +161,103 @@ function toMapPoints(
   return mapPoints;
 }
 
-function toSpeedSamples(points: MapPoint[]): TimeSeriesSample[] {
+function toSpeedMphSamples(points: MapPoint[]): TimeSeriesSample[] {
   if (points.length === 0) {
     return [];
   }
 
-  const out: TimeSeriesSample[] = [{ elapsedS: points[0].elapsedS, value: 0 }];
-
+  const speedsMph: number[] = new Array(points.length).fill(0);
   for (let i = 1; i < points.length; i++) {
     const dt = points[i].elapsedS - points[i - 1].elapsedS;
-    if (!Number.isFinite(dt) || dt <= 0) {
-      out.push({ elapsedS: points[i].elapsedS, value: 0 });
+    if (!Number.isFinite(dt)) {
+      speedsMph[i] = 0;
       continue;
     }
+
+    if (dt <= 0) {
+      speedsMph[i] = speedsMph[i - 1];
+      continue;
+    }
+
     const distM = distanceMeters(points[i - 1].position, points[i].position);
-    const mph = (distM / dt) * MPS_TO_MPH;
-    out.push({
-      elapsedS: points[i].elapsedS,
-      value: Number.isFinite(mph) ? mph : 0,
-    });
+    const rawSpeed = (distM / dt) * MPS_TO_MPH;
+    // Ignore outlier speeds
+    speedsMph[i] =
+      Number.isFinite(rawSpeed) && rawSpeed <= SPEED_OUTLIER_MPH
+        ? rawSpeed
+        : speedsMph[i - 1];
   }
-  return out;
+
+  // Median filter to suppress single-sample spikes
+  const filteredSpeedsMph: number[] = new Array(points.length).fill(0);
+  filteredSpeedsMph[0] = speedsMph[0];
+  for (let i = 1; i < points.length; i++) {
+    const window = [
+      speedsMph[Math.max(0, i - 1)],
+      speedsMph[i],
+      speedsMph[Math.min(points.length - 1, i + 1)],
+    ];
+    filteredSpeedsMph[i] = median(window);
+  }
+
+  const speedMphSamples: TimeSeriesSample[] = new Array(points.length);
+  for (let i = 0; i < points.length; i++) {
+    speedMphSamples[i] = {
+      elapsedS: points[i].elapsedS,
+      value: filteredSpeedsMph[i],
+    };
+  }
+
+  return speedMphSamples;
+}
+
+function toDwellMinsSamples(
+  points: MapPoint[],
+  speeds: TimeSeriesSample[],
+): TimeSeriesSample[] {
+  if (points.length <= 1) {
+    return [];
+  }
+
+  // Hysteresis thresholds for stopped/moving
+  const ENTER_STOPPED_MPH = 0.2;
+  const EXIT_STOPPED_MPH = 0.5;
+
+  const result: TimeSeriesSample[] = new Array(points.length);
+  result[0] = { elapsedS: points[0].elapsedS, value: 0 };
+  let stopped = false;
+  let dwellS = 0;
+
+  for (let i = 1; i < points.length; i++) {
+    const speed = speeds[i]?.value ?? 0;
+    const dt = Math.max(0, points[i].elapsedS - points[i - 1].elapsedS);
+
+    if (!stopped) {
+      if (speed <= ENTER_STOPPED_MPH) {
+        // Entered dwell
+        stopped = true;
+        dwellS += dt;
+      } else {
+        // Moving along
+        dwellS = 0;
+      }
+    } else {
+      if (speed >= EXIT_STOPPED_MPH) {
+        // Exiting dwell
+        stopped = false;
+        dwellS = 0;
+      } else {
+        // Still dwelling
+        dwellS += dt;
+      }
+    }
+
+    result[i] = {
+      elapsedS: points[i].elapsedS,
+      value: dwellS / 60,
+    };
+  }
+  return result;
 }
 
 function LoadingMap() {
@@ -292,18 +381,32 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
       .filter((t) => t.points.length > 0);
   }, [filteredRuns, filteredPointsByRun]);
 
-  const speedSeries: TimeSeries[] = useMemo(() => {
-    return filteredRuns
-      .map((r) => {
-        const points = filteredPointsByRun[r.run.uuid];
-        return {
-          id: r.run.uuid,
-          samples: points ? toSpeedSamples(points) : [],
-          color: r.color,
-          label: "",
-        };
-      })
-      .filter((s) => s.samples.length > 0);
+  const { speedMphSeries, dwellMinsSeries } = useMemo(() => {
+    const speedMphSeries: TimeSeries[] = [];
+    const dwellMinsSeries: TimeSeries[] = [];
+
+    for (const r of filteredRuns) {
+      const points = filteredPointsByRun[r.run.uuid];
+      if (!points || points.length === 0) {
+        continue;
+      }
+
+      const speeds = toSpeedMphSamples(points);
+      speedMphSeries.push({
+        id: r.run.uuid,
+        samples: speeds,
+        color: r.color,
+      });
+
+      const dwell = toDwellMinsSamples(points, speeds);
+      dwellMinsSeries.push({
+        id: r.run.uuid,
+        samples: dwell,
+        color: r.color,
+      });
+    }
+
+    return { speedMphSeries, dwellMinsSeries };
   }, [filteredRuns, filteredPointsByRun]);
 
   if (firstError) {
@@ -358,11 +461,22 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
       </div>
       <div className="w-full h-60 p-4 border rounded-md overflow-hidden">
         <TimeSeriesChart
-          data={speedSeries}
+          data={speedMphSeries}
           selectedElapsedS={selectedElapsedS ?? undefined}
           onSelectedElapsedChange={setSelectedElapsedS}
           yAxisLabel="Speed (mph)"
+          yAxisLabelOffset={25}
           tooltipValueFormatter={(v) => `${v.toFixed(1)} mph`}
+        />
+      </div>
+      <div className="w-full h-60 p-4 border rounded-md overflow-hidden">
+        <TimeSeriesChart
+          data={dwellMinsSeries}
+          selectedElapsedS={selectedElapsedS ?? undefined}
+          onSelectedElapsedChange={setSelectedElapsedS}
+          yAxisLabel="Dwell time (minutes)"
+          yAxisLabelOffset={50}
+          tooltipValueFormatter={(v) => `${formatElapsed(v * 60)}`}
         />
       </div>
     </>

@@ -27,7 +27,7 @@ type ChartPoint = {
   [k: string]: number; // dynamic keys for each series' sample data (needed by Recharts)
 };
 
-function formatElapsed(seconds: number): string {
+export function formatElapsed(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
@@ -233,9 +233,10 @@ export default function TimeSeriesChart({
   onSelectedElapsedChange,
   xAxisLabel = "Elapsed Time",
   yAxisLabel = "Value",
+  yAxisLabelOffset = 0,
   yTickFormatter = (value: number) => `${Math.round(value)}`,
   tooltipValueFormatter = (value: number) => value.toFixed(1),
-  smooth = true,
+  smooth = false,
   smoothingHalfLifeS = 5,
   maxChartPoints = 1000,
 }: {
@@ -244,6 +245,7 @@ export default function TimeSeriesChart({
   onSelectedElapsedChange?: (elapsedS: number | null) => void;
   xAxisLabel?: string;
   yAxisLabel?: string;
+  yAxisLabelOffset?: number;
   yTickFormatter?: (value: number) => string;
   tooltipValueFormatter?: (value: number) => string;
   smooth?: boolean;
@@ -263,7 +265,7 @@ export default function TimeSeriesChart({
       .filter((s) => s.samples.length > 0);
 
     const renderedData = cleaned.map(({ id, samples, color, label }) => {
-      // Smooth data to improve visualization since raw data is noisy
+      // Smooth data to improve visualization since data may be noisy
       const maybeSmoothed = smooth
         ? smoothEma(samples, smoothingHalfLifeS)
         : samples;
@@ -366,6 +368,7 @@ export default function TimeSeriesChart({
               position="insideLeft"
               textAnchor="middle"
               offset={10}
+              dy={yAxisLabelOffset}
             />
           </YAxis>
 
