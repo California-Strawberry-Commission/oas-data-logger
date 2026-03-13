@@ -405,7 +405,7 @@ export default function TimeSeriesChart({
                       }
 
                       return (
-                        <div className="flex items-center gap-2 min-w-0">
+                        <div key={series.id} className="flex items-center gap-2 min-w-0">
                           <span
                             className="h-2 w-2 shrink-0 rounded-full"
                             style={{ backgroundColor: series.color }}

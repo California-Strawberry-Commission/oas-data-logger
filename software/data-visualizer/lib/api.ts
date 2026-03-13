@@ -40,8 +40,11 @@ async function deleteRun(runUuid: string): Promise<void> {
 
 export const fetchDevices = () => getJSON<Device[]>("/api/devices");
 
-export const fetchRuns = (deviceId: string) =>
+export const fetchDeviceRuns = (deviceId: string) =>
   getJSON<Run[]>(`/api/devices/${encodeURIComponent(deviceId)}/runs`);
+
+export const fetchRuns = (runUuids: string[]) =>
+  getJSON<Run[]>(`/api/runs?uuids=${encodeURIComponent(runUuids.join(","))}`);
 
 export const fetchRunStreams = (runUuid: string, streamIds: string[]) =>
   getJSON<RunDataSample[]>(
@@ -60,11 +63,24 @@ export function useDevices() {
   });
 }
 
-export function useRuns(deviceId: string) {
+export function useDeviceRuns(deviceId: string) {
   return useQuery({
-    queryKey: ["runs", deviceId],
-    queryFn: () => fetchRuns(deviceId),
+    queryKey: ["deviceRuns", deviceId],
+    queryFn: () => fetchDeviceRuns(deviceId),
     enabled: !!deviceId,
+    staleTime: 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useRuns(runUuids: string[]) {
+  // Note: runUuids must be order-stable for a stable queryKey
+  const uuidsKey = runUuids.join(",");
+  return useQuery({
+    queryKey: ["runs", uuidsKey],
+    queryFn: () => fetchRuns(runUuids),
+    enabled: runUuids.length > 0,
     staleTime: 60 * 1000,
     gcTime: 15 * 60 * 1000,
     refetchOnWindowFocus: false,

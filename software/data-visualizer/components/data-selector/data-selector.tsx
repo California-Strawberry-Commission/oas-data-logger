@@ -14,7 +14,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { useDeleteRun, type Device, type Run } from "@/lib/api";
 import { Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export type RunSelectionRow = {
   rowId: string; // acts as stable key
@@ -37,12 +37,23 @@ function createRow(): RunSelectionRow {
 }
 
 export default function DataSelector({
+  initialRows,
   onSelectionChanged,
 }: {
+  initialRows?: RunSelectionRow[];
   onSelectionChanged: (next: Selection) => void;
 }) {
   const [rows, setRows] = useState<RunSelectionRow[]>(() => [createRow()]);
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // One-time initialization of rows from initialRows
+  const initialized = useRef(false);
+  useEffect(() => {
+    if (initialRows && !initialized.current) {
+      initialized.current = true;
+      setRows(initialRows.length > 0 ? initialRows : [createRow()]);
+    }
+  }, [initialRows]);
 
   // Publish selection changes to parent
   useEffect(() => {

@@ -52,7 +52,6 @@ export async function GET(
     if (run.runData.length > 0) {
       const lastTick: bigint = run.runData[0].tick;
       const tickUs: bigint = run.tickBaseUs ?? 100_000n; // default 100ms if not set
-
       // Perform calculation with bigint to avoid precision loss
       durationS = Number((lastTick * tickUs) / 1_000_000n);
     }
@@ -68,10 +67,7 @@ export async function GET(
     });
   } catch (err) {
     console.error("GET /api/runs/[uuid] error:", err);
-    return NextResponse.json(
-      { error: "Failed to fetch run data" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Failed to fetch run" }, { status: 500 });
   }
 }
 
