@@ -1,5 +1,6 @@
 import LoginModal from "@/components/login-modal";
 import MainContent from "@/components/main-content";
+import { Suspense } from "react";
 import AccountButton from "@/components/top-bar/account-button";
 import AdminButton from "@/components/top-bar/admin-button";
 import { getCurrentUser } from "@/lib/auth";
@@ -34,7 +35,9 @@ export default async function Home() {
 
       {/* Page content */}
       <main className="flex flex-col md:flex-row md:flex-1 md:min-h-0">
-        <MainContent />
+        <Suspense>
+          <MainContent />
+        </Suspense>
       </main>
     </div>
   );

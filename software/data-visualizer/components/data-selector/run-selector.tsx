@@ -1,7 +1,7 @@
 "use client";
 
 import Combobox from "@/components/ui/combobox";
-import { useRuns, type Run } from "@/lib/api";
+import { useDeviceRuns, type Run } from "@/lib/api";
 import { useEffect, useMemo } from "react";
 
 function formatDate(date: Date): string {
@@ -66,7 +66,7 @@ export default function RunSelector({
   value: string;
   onValueChange: (run: Run | null) => void;
 }) {
-  const { data: runs = [], isLoading, error } = useRuns(deviceId);
+  const { data: runs = [], isLoading, error } = useDeviceRuns(deviceId);
 
   const sortedRuns = useMemo(() => {
     // Newest first by epochTimeS
