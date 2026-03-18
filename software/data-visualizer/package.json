@@ -38,6 +38,7 @@
     "leaflet.heat": "^0.2.0",
     "lucide-react": "^0.503.0",
     "next": "^16.1.6",
+    "posthog-js": "^1.361.1",
     "radix-ui": "^1.4.3",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
