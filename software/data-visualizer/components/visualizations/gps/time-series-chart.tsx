@@ -7,7 +7,6 @@ import {
   LineChart,
   ReferenceArea,
   ReferenceLine,
-  ResponsiveContainer,
   XAxis,
   YAxis,
 } from "recharts";
@@ -399,136 +398,134 @@ export default function TimeSeriesChart({
         </Button>
       )}
       <ChartContainer config={chartConfig} className="h-full w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart
-            data={chartPoints}
-            margin={{ top: 8, right: 12, bottom: 12, left: 0 }}
-            style={{
-              userSelect: "none",
-              cursor: isSelecting ? "col-resize" : undefined,
-            }}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={() => {
-              if (!isSelecting) {
-                onSelectedElapsedChange?.(null);
-              }
-            }}
+        <LineChart
+          data={chartPoints}
+          margin={{ top: 8, right: 12, bottom: 12, left: 0 }}
+          style={{
+            userSelect: "none",
+            cursor: isSelecting ? "col-resize" : undefined,
+          }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={() => {
+            if (!isSelecting) {
+              onSelectedElapsedChange?.(null);
+            }
+          }}
+        >
+          <XAxis
+            dataKey="elapsedS"
+            type="number"
+            domain={zoomRange ?? ["dataMin", "dataMax"]}
+            allowDataOverflow
+            tickFormatter={(v) => formatElapsed(Number(v))}
+            minTickGap={24}
           >
-            <XAxis
-              dataKey="elapsedS"
-              type="number"
-              domain={zoomRange ?? ["dataMin", "dataMax"]}
-              allowDataOverflow
-              tickFormatter={(v) => formatElapsed(Number(v))}
-              minTickGap={24}
-            >
-              <Label
-                value={xAxisLabel}
-                position="insideBottom"
-                textAnchor="middle"
-                offset={-6}
-              />
-            </XAxis>
-            <YAxis width={42} tickFormatter={(v) => yTickFormatter(Number(v))}>
-              <Label
-                value={yAxisLabel}
-                angle={-90}
-                position="insideLeft"
-                textAnchor="middle"
-                offset={10}
-                dy={yAxisLabelOffset}
-              />
-            </YAxis>
-
-            <ChartTooltip
-              cursor={false}
-              content={({ active, payload }) => {
-                if (!active || isSelecting) {
-                  return null;
-                }
-
-                const hoveredElapsed = payload?.[0]?.payload?.elapsedS;
-                if (
-                  typeof hoveredElapsed !== "number" ||
-                  !Number.isFinite(hoveredElapsed)
-                ) {
-                  return null;
-                }
-
-                // Custom tooltip that looks up nearest values for all runs and color codes the labels
-                return (
-                  <div className="rounded-lg border bg-background p-2 shadow-sm">
-                    <div className="mb-1 text-xs text-muted-foreground">
-                      {formatElapsed(hoveredElapsed)}
-                    </div>
-
-                    <div className="space-y-1">
-                      {renderedData.map((series) => {
-                        const closest = findClosestSample(
-                          series.samples,
-                          hoveredElapsed,
-                        );
-                        if (!closest) {
-                          return null;
-                        }
-
-                        return (
-                          <div
-                            key={series.id}
-                            className="flex items-center gap-2 min-w-0"
-                          >
-                            <span
-                              className="h-2 w-2 shrink-0 rounded-full"
-                              style={{ backgroundColor: series.color }}
-                            />
-                            {series.label && (
-                              <span className="truncate text-xs">
-                                {series.label}
-                              </span>
-                            )}
-                            <span className="tabular-nums text-xs">
-                              {tooltipValueFormatter(closest.value)}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              }}
+            <Label
+              value={xAxisLabel}
+              position="insideBottom"
+              textAnchor="middle"
+              offset={-6}
             />
+          </XAxis>
+          <YAxis width={42} tickFormatter={(v) => yTickFormatter(Number(v))}>
+            <Label
+              value={yAxisLabel}
+              angle={-90}
+              position="insideLeft"
+              textAnchor="middle"
+              offset={10}
+              dy={yAxisLabelOffset}
+            />
+          </YAxis>
 
-            {selectedElapsedS !== undefined && selectedElapsedS > 0 && (
-              <ReferenceLine x={selectedElapsedS} strokeWidth={1} />
-            )}
+          <ChartTooltip
+            cursor={false}
+            content={({ active, payload }) => {
+              if (!active || isSelecting) {
+                return null;
+              }
 
-            {referenceAreaStart !== null && referenceAreaEnd !== null && (
-              <ReferenceArea
-                x1={referenceAreaStart}
-                x2={referenceAreaEnd}
-                fill="hsl(var(--muted))"
-                fillOpacity={0.1}
-                strokeOpacity={0.3}
-              />
-            )}
+              const hoveredElapsed = payload?.[0]?.payload?.elapsedS;
+              if (
+                typeof hoveredElapsed !== "number" ||
+                !Number.isFinite(hoveredElapsed)
+              ) {
+                return null;
+              }
 
-            {renderedData.map((series) => {
+              // Custom tooltip that looks up nearest values for all runs and color codes the labels
               return (
-                <Line
-                  key={series.id}
-                  type="monotone"
-                  dataKey={series.id}
-                  dot={false}
-                  isAnimationActive={false}
-                  stroke={series.color}
-                  connectNulls={true}
-                />
+                <div className="rounded-lg border bg-background p-2 shadow-sm">
+                  <div className="mb-1 text-xs text-muted-foreground">
+                    {formatElapsed(hoveredElapsed)}
+                  </div>
+
+                  <div className="space-y-1">
+                    {renderedData.map((series) => {
+                      const closest = findClosestSample(
+                        series.samples,
+                        hoveredElapsed,
+                      );
+                      if (!closest) {
+                        return null;
+                      }
+
+                      return (
+                        <div
+                          key={series.id}
+                          className="flex items-center gap-2 min-w-0"
+                        >
+                          <span
+                            className="h-2 w-2 shrink-0 rounded-full"
+                            style={{ backgroundColor: series.color }}
+                          />
+                          {series.label && (
+                            <span className="truncate text-xs">
+                              {series.label}
+                            </span>
+                          )}
+                          <span className="tabular-nums text-xs">
+                            {tooltipValueFormatter(closest.value)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               );
-            })}
-          </LineChart>
-        </ResponsiveContainer>
+            }}
+          />
+
+          {selectedElapsedS !== undefined && selectedElapsedS > 0 && (
+            <ReferenceLine x={selectedElapsedS} strokeWidth={1} />
+          )}
+
+          {referenceAreaStart !== null && referenceAreaEnd !== null && (
+            <ReferenceArea
+              x1={referenceAreaStart}
+              x2={referenceAreaEnd}
+              fill="hsl(var(--muted))"
+              fillOpacity={0.1}
+              strokeOpacity={0.3}
+            />
+          )}
+
+          {renderedData.map((series) => {
+            return (
+              <Line
+                key={series.id}
+                type="monotone"
+                dataKey={series.id}
+                dot={false}
+                isAnimationActive={false}
+                stroke={series.color}
+                connectNulls={true}
+              />
+            );
+          })}
+        </LineChart>
       </ChartContainer>
     </div>
   );
