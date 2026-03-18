@@ -385,6 +385,39 @@ export default function TimeSeriesChart({
     setReferenceAreaEnd(null);
   }
 
+  // When zoomed, derive Y domain from values visible in the zoomed X range
+  const yDomain = useMemo<[number, number] | null>(() => {
+    if (!zoomRange) {
+      return null;
+    }
+
+    const [x0, x1] = zoomRange;
+    let min = Infinity;
+    let max = -Infinity;
+    for (const point of chartPoints) {
+      if (point.elapsedS < x0 || point.elapsedS > x1) {
+        continue;
+      }
+      for (const key of Object.keys(point)) {
+        if (key === "elapsedS") {
+          continue;
+        }
+        const v = point[key];
+        if (v < min) {
+          min = v;
+        }
+        if (v > max) {
+          max = v;
+        }
+      }
+    }
+    if (!Number.isFinite(min)) {
+      return null;
+    }
+    const padding = (max - min) * 0.05;
+    return [min - padding, max + padding];
+  }, [zoomRange, chartPoints]);
+
   return (
     <div className="relative h-full w-full">
       {zoomRange && (
@@ -429,7 +462,12 @@ export default function TimeSeriesChart({
               offset={-6}
             />
           </XAxis>
-          <YAxis width={42} tickFormatter={(v) => yTickFormatter(Number(v))}>
+          <YAxis
+            width={42}
+            domain={yDomain ?? undefined}
+            allowDataOverflow
+            tickFormatter={(v) => yTickFormatter(Number(v))}
+          >
             <Label
               value={yAxisLabel}
               angle={-90}
