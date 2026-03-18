@@ -389,6 +389,7 @@ export default function Map({
         {/* Scrubber playback button */}
         <div className="m-2 flex items-center justify-center gap-2">
           <Button
+            variant="secondary"
             size="sm"
             onClick={() => {
               // If at end, restart from beginning when hitting play
