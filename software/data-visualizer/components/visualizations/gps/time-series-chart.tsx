@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { ChartContainer, ChartTooltip } from "@/components/ui/chart";
+import posthog from "posthog-js";
 import { useMemo, useState } from "react";
 import {
   Label,
@@ -376,6 +377,7 @@ export default function TimeSeriesChart({
       referenceAreaEnd !== null &&
       referenceAreaStart !== referenceAreaEnd
     ) {
+      posthog.capture("chart_zoomed", { chart_name: yAxisLabel });
       setZoomRange([
         Math.min(referenceAreaStart, referenceAreaEnd),
         Math.max(referenceAreaStart, referenceAreaEnd),
@@ -425,7 +427,10 @@ export default function TimeSeriesChart({
           variant="secondary"
           size="sm"
           className="absolute top-1 right-1 z-10"
-          onClick={() => setZoomRange(null)}
+          onClick={() => {
+            posthog.capture("chart_zoom_reset", { chart_name: yAxisLabel });
+            setZoomRange(null);
+          }}
         >
           Reset zoom
         </Button>

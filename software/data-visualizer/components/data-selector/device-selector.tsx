@@ -1,8 +1,9 @@
 "use client";
 
 import Combobox from "@/components/ui/combobox";
-import { useEffect, useMemo } from "react";
 import { useDevices, type Device } from "@/lib/api";
+import posthog from "posthog-js";
+import { useEffect, useMemo } from "react";
 
 function getDeviceLabel(device: Device): string {
   return device.name ? `${device.name} (${device.id})` : device.id;
@@ -80,6 +81,10 @@ export default function DeviceSelector({
         }
 
         const device = sortedDevices.find((d) => d.id === next) ?? null;
+        posthog.capture("device_selected", {
+          device_id: device?.id,
+          device_name: device?.name,
+        });
         onValueChange(device);
       }}
       placeholder={isLoading ? "Loading devices..." : "Select device..."}
