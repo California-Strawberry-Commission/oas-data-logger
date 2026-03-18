@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { LogOut, User } from "lucide-react";
+import posthog from "posthog-js";
 import { useState } from "react";
 
 export default function AccountButton({ email }: { email: string }) {
@@ -15,6 +16,8 @@ export default function AccountButton({ email }: { email: string }) {
 
   async function logout() {
     setLoading(true);
+    posthog.capture("logout");
+    posthog.reset();
     await fetch("/api/auth/logout", { method: "POST" });
     // Refresh page to re-render as logged-out
     window.location.reload();

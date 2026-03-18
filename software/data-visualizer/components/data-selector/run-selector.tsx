@@ -2,6 +2,7 @@
 
 import Combobox from "@/components/ui/combobox";
 import { useDeviceRuns, type Run } from "@/lib/api";
+import posthog from "posthog-js";
 import { useEffect, useMemo } from "react";
 
 function formatDate(date: Date): string {
@@ -115,6 +116,10 @@ export default function RunSelector({
         }
 
         const run = sortedRuns.find((r) => r.uuid === next) ?? null;
+        posthog.capture("run_selected", {
+          run_uuid: run?.uuid,
+          is_active: run?.isActive,
+        });
         onValueChange(run);
       }}
       placeholder={isLoading ? "Loading runs..." : "Select run..."}

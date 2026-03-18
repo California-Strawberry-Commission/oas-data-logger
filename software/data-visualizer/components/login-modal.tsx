@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DialogDescription } from "@radix-ui/react-dialog";
 import { AlertCircleIcon } from "lucide-react";
+import posthog from "posthog-js";
 import { useState } from "react";
 
 export default function LoginModal() {
@@ -37,9 +38,12 @@ export default function LoginModal() {
         throw new Error(data.error || "Login failed");
       }
 
+      posthog.identify(email);
+      posthog.capture("login");
       // Refresh to reload server-rendered components with user session
       window.location.reload();
     } catch (err: any) {
+      posthog.capture("login_failed", { error: err.message });
       setError(err.message || "Something went wrong");
     } finally {
       setLoading(false);

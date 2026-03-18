@@ -5,6 +5,7 @@ import { distanceMeters } from "@/components/visualizations/gps/gps-visualizatio
 import { LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Pause, Play } from "lucide-react";
+import posthog from "posthog-js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CircleMarker,
@@ -392,6 +393,10 @@ export default function Map({
             variant="secondary"
             size="sm"
             onClick={() => {
+              const nextPlaying = !isPlaying;
+              posthog.capture("map_playback_toggled", {
+                action: nextPlaying ? "play" : "pause",
+              });
               // If at end, restart from beginning when hitting play
               if (!isPlaying && currentElapsedS >= maxElapsedS) {
                 setCurrentElapsedS(0);

@@ -14,6 +14,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { useDeleteRun, type Device, type Run } from "@/lib/api";
 import { Trash2 } from "lucide-react";
+import posthog from "posthog-js";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 export type RunSelectionRow = {
@@ -70,10 +71,12 @@ export default function DataSelector({
   }
 
   function addNewRow() {
+    posthog.capture("comparison_added");
     setRows((prev) => [...prev, createRow()]);
   }
 
   function removeRow(rowId: string) {
+    posthog.capture("comparison_removed");
     setRows((prev) => {
       if (prev.length === 1) {
         return prev;
@@ -109,6 +112,7 @@ export default function DataSelector({
       return;
     }
 
+    posthog.capture("run_deleted", { run_uuid: runUuid });
     deleteRun.mutate(runUuid, {
       onSuccess: () => {
         // Close modal

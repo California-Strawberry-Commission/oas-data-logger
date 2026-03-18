@@ -1,5 +1,6 @@
 import LoginModal from "@/components/login-modal";
 import MainContent from "@/components/main-content";
+import PostHogIdentify from "@/components/posthog-identify";
 import { Suspense } from "react";
 import AccountButton from "@/components/top-bar/account-button";
 import AdminButton from "@/components/top-bar/admin-button";
@@ -31,6 +32,7 @@ export default async function Home() {
             <AccountButton email={user.email} />
           </div>
         </div>
+        <PostHogIdentify email={user.email} />
       </header>
 
       {/* Page content */}
