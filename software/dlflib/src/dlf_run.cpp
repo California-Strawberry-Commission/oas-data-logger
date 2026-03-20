@@ -43,7 +43,7 @@ Run::Run(fs::FS& fs, const char* fsDir,
   status_ = LOGGING;
 
   // Setup ticks
-  xTaskCreate(taskSampler, "Sampler", 4096 * 2, this, 5, NULL);
+  xTaskCreate(taskSampler, "Sampler", 2560, this, 5, NULL);
 }
 
 void Run::close() {
