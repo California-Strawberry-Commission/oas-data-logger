@@ -116,7 +116,7 @@ export default function RunSelector({
         }
 
         const run = sortedRuns.find((r) => r.uuid === next) ?? null;
-        posthog.capture("run_selected", {
+        posthog.capture("selection:run_selected", {
           run_uuid: run?.uuid,
           is_active: run?.isActive,
         });
