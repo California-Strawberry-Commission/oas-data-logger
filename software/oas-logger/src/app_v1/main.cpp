@@ -22,7 +22,7 @@ const dlf::components::UploaderComponent::RetentionMode LOGGER_RETENTION_MODE{
     dlf::components::UploaderComponent::RetentionMode::MARK};
 const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{0};  // <= 0 means disabled
 const int WIFI_RECONFIG_BUTTON_HOLD_TIME_MS{2000};
-const bool ENABLE_OTA_UPDATE{false};
+const bool ENABLE_OTA_UPDATE{true};
 
 // Testing overrides
 const bool WAIT_FOR_VALID_TIME{true};
