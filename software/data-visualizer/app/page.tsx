@@ -4,6 +4,7 @@ import PostHogIdentify from "@/components/posthog-identify";
 import { Suspense } from "react";
 import AccountButton from "@/components/top-bar/account-button";
 import AdminButton from "@/components/top-bar/admin-button";
+import ShareButton from "@/components/top-bar/share-button";
 import { getCurrentUser } from "@/lib/auth";
 import Image from "next/image";
 
@@ -29,6 +30,7 @@ export default async function Home() {
           </div>
           <div className="flex items-center gap-2">
             {isAdmin && <AdminButton />}
+            <ShareButton />
             <AccountButton email={user.email} />
           </div>
         </div>

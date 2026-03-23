@@ -81,7 +81,7 @@ export default function DeviceSelector({
         }
 
         const device = sortedDevices.find((d) => d.id === next) ?? null;
-        posthog.capture("device_selected", {
+        posthog.capture("selection:device_selected", {
           device_id: device?.id,
           device_name: device?.name,
         });

@@ -386,7 +386,7 @@ export default function TimeSeriesChart({
       referenceAreaEnd !== null &&
       referenceAreaStart !== referenceAreaEnd
     ) {
-      posthog.capture("chart_zoomed", { chart_name: yAxisLabel });
+      posthog.capture("visualization:chart_zoomed", { chart_name: yAxisLabel });
       setZoomRange([
         Math.min(referenceAreaStart, referenceAreaEnd),
         Math.max(referenceAreaStart, referenceAreaEnd),
@@ -435,7 +435,9 @@ export default function TimeSeriesChart({
           size="sm"
           className="absolute top-1 right-1 z-10"
           onClick={() => {
-            posthog.capture("chart_zoom_reset", { chart_name: yAxisLabel });
+            posthog.capture("visualization:chart_zoom_reset", {
+              chart_name: yAxisLabel,
+            });
             setZoomRange(null);
           }}
         >

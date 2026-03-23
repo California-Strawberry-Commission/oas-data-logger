@@ -394,7 +394,7 @@ export default function Map({
             size="sm"
             onClick={() => {
               const nextPlaying = !isPlaying;
-              posthog.capture("map_playback_toggled", {
+              posthog.capture("visualization:map_playback_toggled", {
                 action: nextPlaying ? "play" : "pause",
               });
               // If at end, restart from beginning when hitting play

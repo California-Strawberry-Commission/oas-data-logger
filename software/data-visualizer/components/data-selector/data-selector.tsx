@@ -71,12 +71,12 @@ export default function DataSelector({
   }
 
   function addNewRow() {
-    posthog.capture("comparison_added");
+    posthog.capture("selection:comparison_added");
     setRows((prev) => [...prev, createRow()]);
   }
 
   function removeRow(rowId: string) {
-    posthog.capture("comparison_removed");
+    posthog.capture("selection:comparison_removed");
     setRows((prev) => {
       if (prev.length === 1) {
         return prev;
@@ -112,7 +112,7 @@ export default function DataSelector({
       return;
     }
 
-    posthog.capture("run_deleted", { run_uuid: runUuid });
+    posthog.capture("selection:run_deleted", { run_uuid: runUuid });
     deleteRun.mutate(runUuid, {
       onSuccess: () => {
         // Close modal
