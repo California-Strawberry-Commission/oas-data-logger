@@ -37,7 +37,7 @@ const dlf::components::UploaderComponent::RetentionMode LOGGER_RETENTION_MODE{
     dlf::components::UploaderComponent::RetentionMode::MARK};
 const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{0};  // <= 0 means disabled
 const int WIFI_RECONFIG_BUTTON_HOLD_TIME_MS{2000};
-const bool ENABLE_OTA_UPDATE{false};
+const bool ENABLE_OTA_UPDATE{true};
 
 // Testing overrides
 const bool WAIT_FOR_VALID_TIME{true};
@@ -81,11 +81,11 @@ char deviceUid[13]{0};     // Populated at boot
 char deviceSecret[65]{0};  // Populated from NVS at boot
 
 // Backend endpoints
-const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
+const char* UPLOAD_ENDPOINT{"http://192.168.1.79:3000/api/upload/%s"};
 const char* OTA_MANIFEST_ENDPOINT{
-    "https://oas-data-logger.vercel.app/api/ota/manifest/%s/%s"};
+    "http://192.168.1.79:3000/api/ota/manifest/%s/%s"};
 const char* OTA_FIRMWARE_ENDPOINT{
-    "https://oas-data-logger.vercel.app/api/ota/firmware/%s/%s/%d"};
+    "http://192.168.1.79:3000/api/ota/firmware/%s/%s/%d"};
 
 // State Machine States
 enum class SystemState {
@@ -201,7 +201,7 @@ void setup() {
 
   // Start sleep monitor task to trigger sleep mode when USB power is
   // disconnected, or sleep button is pressed
-  xTaskCreate(sleepMonitorTask, "sleep_monitor", 4096, NULL, 5, NULL);
+  xTaskCreate(sleepMonitorTask, "sleep_monitor", 2560, NULL, 5, NULL);
 
   // If the device was turned on with USB power, enter standard mode.
   // Otherwise, enter offload mode.
@@ -531,7 +531,7 @@ void handleWaitTimeState() {
     }
   }
 
-  xTaskCreate(gpsTask, "gps", 4096, NULL, 5, &gpsTaskHandle);
+  xTaskCreate(gpsTask, "gps", 2560, NULL, 5, &gpsTaskHandle);
   // Initialize logger and start run
   initializeDLFLogger();
   startLoggerRun();
