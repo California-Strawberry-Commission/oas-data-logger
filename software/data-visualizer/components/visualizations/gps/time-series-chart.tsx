@@ -255,10 +255,18 @@ export default function TimeSeriesChart({
   smoothingHalfLifeS?: number;
   maxChartPoints?: number;
 }) {
+  // Chart zoom range selection
+  const [zoomRange, setZoomRange] = useState<[number, number] | null>(null);
+  const [referenceAreaStart, setReferenceAreaStart] = useState<number | null>(
+    null,
+  );
+  const [referenceAreaEnd, setReferenceAreaEnd] = useState<number | null>(null);
+  const isSelecting = referenceAreaStart !== null;
+
   // Prepare per-series rendered samples (smooth + downsample), and convert into
   // a Recharts-friendly array format.
   const { renderedData, chartPoints } = useMemo(() => {
-    const cleaned = data
+    const cleanedData = data
       .map(({ id, samples, color, label }) => ({
         id,
         samples: samples.slice().sort((a, b) => a.elapsedS - b.elapsedS),
@@ -267,20 +275,29 @@ export default function TimeSeriesChart({
       }))
       .filter((s) => s.samples.length > 0);
 
-    const renderedData = cleaned.map(({ id, samples, color, label }) => {
+    const renderedData = cleanedData.map(({ id, samples, color, label }) => {
       // Smooth data to improve visualization since data may be noisy
-      const maybeSmoothed = smooth
+      const smoothedSamples = smooth
         ? smoothEma(samples, smoothingHalfLifeS)
         : samples;
+
+      // When zoomed, limit samples to the visible range so the entire
+      // downsampling budget is spent on the visible range
+      const samplesInZoomRange = zoomRange
+        ? smoothedSamples.filter(
+            (s) => s.elapsedS >= zoomRange[0] && s.elapsedS <= zoomRange[1],
+          )
+        : smoothedSamples;
+
       // Downsample points to improve performance since charts are very
       // expensive to render
       const downsampled =
-        maybeSmoothed.length > maxChartPoints
+        samplesInZoomRange.length > maxChartPoints
           ? downsampleMinMaxByTime(
-              maybeSmoothed,
+              samplesInZoomRange,
               Math.max(1, Math.floor(maxChartPoints / 2)),
             )
-          : maybeSmoothed;
+          : samplesInZoomRange;
 
       return { id, samples: downsampled, color, label };
     });
@@ -290,10 +307,10 @@ export default function TimeSeriesChart({
     //   { id: "runB", samples: [...] }, ]
     // However, in order for Recharts to render multiple lines, the data
     // needs to be flattened into a single array in a specific format:
-    // [ { elapsedS: 0, "runA": 0, "runB": 0 },
-    //   { elapsedS: 1, "runA": 3.2, "runB": 2.7 },
-    //   { elapsedS: 2, "runA": 5.1 },
-    //   { elapsedS: 3, "runB": 6.4 }, ]
+    // [ { "elapsedS": 0, "runA": 0, "runB": 0 },
+    //   { "elapsedS": 1, "runA": 3.2, "runB": 2.7 },
+    //   { "elapsedS": 2, "runA": 5.1 },
+    //   { "elapsedS": 3, "runB": 6.4 }, ]
 
     // Build union of all elapsedS across all runs
     const tSet = new Set<number>();
@@ -328,15 +345,7 @@ export default function TimeSeriesChart({
     });
 
     return { renderedData, chartPoints };
-  }, [data, maxChartPoints, smooth, smoothingHalfLifeS]);
-
-  // Chart zoom range selection
-  const [zoomRange, setZoomRange] = useState<[number, number] | null>(null);
-  const [referenceAreaStart, setReferenceAreaStart] = useState<number | null>(
-    null,
-  );
-  const [referenceAreaEnd, setReferenceAreaEnd] = useState<number | null>(null);
-  const isSelecting = referenceAreaStart !== null;
+  }, [data, maxChartPoints, smooth, smoothingHalfLifeS, zoomRange]);
 
   function getActiveElapsedS(state: CategoricalChartState): number | null {
     // activeLabel is the XAxis value at the hovered point
@@ -393,13 +402,11 @@ export default function TimeSeriesChart({
       return null;
     }
 
-    const [x0, x1] = zoomRange;
     let min = Infinity;
     let max = -Infinity;
+    // chartPoints is already filtered to the zoom window, so just scan all points to get the min
+    // and max Y values
     for (const point of chartPoints) {
-      if (point.elapsedS < x0 || point.elapsedS > x1) {
-        continue;
-      }
       for (const key of Object.keys(point)) {
         if (key === "elapsedS") {
           continue;

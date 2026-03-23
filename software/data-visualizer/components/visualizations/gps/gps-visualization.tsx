@@ -467,6 +467,8 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
           yAxisLabel="Speed (mph)"
           yAxisLabelOffset={25}
           tooltipValueFormatter={(v) => `${v.toFixed(1)} mph`}
+          smooth
+          smoothingHalfLifeS={2}
         />
       </div>
       <div className="w-full h-60 p-4 border rounded-md overflow-hidden">
