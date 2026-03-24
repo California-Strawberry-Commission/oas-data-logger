@@ -93,6 +93,7 @@ model Run {
   deviceId   String // relation field
   epochTimeS BigInt
   tickBaseUs BigInt
+  durationS  Int     @default(0)
   metadata   Json
   isActive   Boolean @default(false)
 
