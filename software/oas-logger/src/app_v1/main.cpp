@@ -200,7 +200,7 @@ void setup() {
   vTaskDelay(pdMS_TO_TICKS(500));  // Give SD card time to power up
 
   // Start sleep monitor task
-  xTaskCreate(sleepMonitorTask, "sleep_monitor", 2560, NULL, 5, NULL);
+  xTaskCreate(sleepMonitorTask, "sleep_monitor", 4096, NULL, 5, NULL);
 
   // Determine initial mode based on USB power
   offloadMode = !hasUsbPower();
