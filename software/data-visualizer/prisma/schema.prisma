@@ -93,25 +93,12 @@ model Run {
   deviceId   String // relation field
   epochTimeS BigInt
   tickBaseUs BigInt
+  durationS  Int     @default(0)
   metadata   Json
   isActive   Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  runData RunData[]
-}
-
-model RunData {
-  id         Int        @id @default(autoincrement())
-  run        Run        @relation(fields: [runId], references: [id], onDelete: Cascade)
-  runId      Int // relation field
-  streamType StreamType
-  streamId   String
-  tick       BigInt
-  data       String
-
-  @@index([runId, streamType, streamId, tick])
 }
 
 // ------------------------------------------------------------

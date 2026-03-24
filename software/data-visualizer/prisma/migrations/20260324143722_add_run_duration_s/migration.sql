@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Run" ADD COLUMN     "durationS" INTEGER NOT NULL DEFAULT 0;

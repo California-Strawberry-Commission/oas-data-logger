@@ -1,4 +1,5 @@
 import { getCurrentUser } from "@/lib/auth";
+import { getRunDlfAdapter } from "@/lib/dlf-s3";
 import prisma, { getRunForUser } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -21,31 +22,49 @@ export async function GET(
 
     const run = await getRunForUser(user, uuid, { select: { id: true } });
     if (!run) {
-      // Either run doesn't exist, or user has no access to it
+      // Either run doesn't exist, or user does not have access to it
       return NextResponse.json({ error: "Run not found" }, { status: 404 });
     }
 
-    const runData = await prisma.runData.findMany({
-      where: {
-        runId: run.id,
-        streamId,
-      },
-      select: {
-        streamType: true,
-        tick: true,
-        data: true,
-      },
-      orderBy: {
-        tick: "asc",
-      },
-    });
+    // Try reading from S3 DLF files first
+    const adapter = await getRunDlfAdapter(uuid);
+    if (!adapter) {
+      return NextResponse.json([]);
+    }
 
-    return NextResponse.json(
-      runData.map((d) => ({
-        ...d,
-        tick: Number(d.tick),
-      })),
-    );
+    const [polledSamples, eventSamples] = await Promise.all([
+      adapter.polled_data(),
+      adapter.events_data(),
+    ]);
+
+    const result: { streamId: string; tick: number; data: unknown }[] = [];
+
+    // Process polled data
+    for (const sample of polledSamples) {
+      if (sample.stream.id !== streamId) {
+        continue;
+      }
+      result.push({
+        streamId: sample.stream.id,
+        tick: Number(sample.tick),
+        data: sample.data,
+      });
+    }
+
+    // Process event data
+    for (const sample of eventSamples) {
+      if (sample.stream.id !== streamId) {
+        continue;
+      }
+      result.push({
+        streamId: sample.stream.id,
+        tick: Number(sample.tick),
+        data: sample.data,
+      });
+    }
+
+    result.sort((a, b) => a.tick - b.tick);
+    return NextResponse.json(result);
   } catch (err) {
     console.error("GET /api/runs/[uuid]/streams/[streamId] error:", err);
     return NextResponse.json(
