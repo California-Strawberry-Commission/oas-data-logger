@@ -28,64 +28,43 @@ export async function GET(
 
     // Try reading from S3 DLF files first
     const adapter = await getRunDlfAdapter(uuid);
-    if (adapter) {
-      const [polledSamples, eventSamples] = await Promise.all([
-        adapter.polled_data(),
-        adapter.events_data(),
-      ]);
-
-      const result: { streamId: string; tick: number; data: unknown }[] = [];
-
-      // Process polled data
-      for (const sample of polledSamples) {
-        if (sample.stream.id !== streamId) {
-          continue;
-        }
-        result.push({
-          streamId: sample.stream.id,
-          tick: Number(sample.tick),
-          data: sample.data,
-        });
-      }
-
-      // Process event data
-      for (const sample of eventSamples) {
-        if (sample.stream.id !== streamId) {
-          continue;
-        }
-        result.push({
-          streamId: sample.stream.id,
-          tick: Number(sample.tick),
-          data: sample.data,
-        });
-      }
-
-      result.sort((a, b) => a.tick - b.tick);
-      return NextResponse.json(result);
+    if (!adapter) {
+      return NextResponse.json([]);
     }
 
-    // Fall back to RunData table for old runs
-    const runData = await prisma.runData.findMany({
-      where: {
-        runId: run.id,
-        streamId,
-      },
-      select: {
-        streamType: true,
-        tick: true,
-        data: true,
-      },
-      orderBy: {
-        tick: "asc",
-      },
-    });
+    const [polledSamples, eventSamples] = await Promise.all([
+      adapter.polled_data(),
+      adapter.events_data(),
+    ]);
 
-    return NextResponse.json(
-      runData.map((d) => ({
-        ...d,
-        tick: Number(d.tick),
-      })),
-    );
+    const result: { streamId: string; tick: number; data: unknown }[] = [];
+
+    // Process polled data
+    for (const sample of polledSamples) {
+      if (sample.stream.id !== streamId) {
+        continue;
+      }
+      result.push({
+        streamId: sample.stream.id,
+        tick: Number(sample.tick),
+        data: sample.data,
+      });
+    }
+
+    // Process event data
+    for (const sample of eventSamples) {
+      if (sample.stream.id !== streamId) {
+        continue;
+      }
+      result.push({
+        streamId: sample.stream.id,
+        tick: Number(sample.tick),
+        data: sample.data,
+      });
+    }
+
+    result.sort((a, b) => a.tick - b.tick);
+    return NextResponse.json(result);
   } catch (err) {
     console.error("GET /api/runs/[uuid]/streams/[streamId] error:", err);
     return NextResponse.json(

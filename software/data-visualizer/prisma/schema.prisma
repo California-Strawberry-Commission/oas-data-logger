@@ -99,20 +99,6 @@ model Run {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  runData RunData[]
-}
-
-model RunData {
-  id         Int        @id @default(autoincrement())
-  run        Run        @relation(fields: [runId], references: [id], onDelete: Cascade)
-  runId      Int // relation field
-  streamType StreamType
-  streamId   String
-  tick       BigInt
-  data       String
-
-  @@index([runId, streamType, streamId, tick])
 }
 
 // ------------------------------------------------------------

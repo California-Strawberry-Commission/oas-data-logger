@@ -27,18 +27,9 @@ export async function GET(
         deviceId: true,
         epochTimeS: true,
         tickBaseUs: true,
+        durationS: true,
         metadata: true,
         isActive: true,
-        // Get the latest tick available, used for calculating the duration
-        runData: {
-          select: {
-            tick: true,
-          },
-          orderBy: {
-            tick: "desc",
-          },
-          take: 1,
-        },
       },
     });
 
@@ -47,21 +38,12 @@ export async function GET(
       return NextResponse.json({ error: "Run not found" }, { status: 404 });
     }
 
-    // Calculate duration
-    let durationS: number = 0;
-    if (run.runData.length > 0) {
-      const lastTick: bigint = run.runData[0].tick;
-      const tickUs: bigint = run.tickBaseUs ?? 100_000n; // default 100ms if not set
-      // Perform calculation with bigint to avoid precision loss
-      durationS = Number((lastTick * tickUs) / 1_000_000n);
-    }
-
     return NextResponse.json({
       uuid: run.uuid,
       deviceId: run.deviceId,
       epochTimeS: Number(run.epochTimeS),
-      durationS,
       tickBaseUs: Number(run.tickBaseUs),
+      durationS: run.durationS,
       metadata: run.metadata,
       isActive: run.isActive,
     });

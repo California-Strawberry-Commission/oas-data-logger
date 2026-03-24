@@ -37,6 +37,10 @@ async function fetchS3Object(key: string): Promise<Buffer | null> {
   }
 }
 
+export function dlfS3Key(runUuid: string, filename: string): string {
+  return `runs/${runUuid}/${filename}`;
+}
+
 /**
  * Returns a BufferAdapter loaded with this run's DLF files from S3,
  * or null if no DLF files exist for this run.
@@ -45,9 +49,9 @@ export async function getRunDlfAdapter(
   runUuid: string,
 ): Promise<BufferAdapter | null> {
   const [polled, events, meta] = await Promise.all([
-    fetchS3Object(`runs/${runUuid}/polled.dlf`),
-    fetchS3Object(`runs/${runUuid}/event.dlf`),
-    fetchS3Object(`runs/${runUuid}/meta.dlf`),
+    fetchS3Object(dlfS3Key(runUuid, "polled.dlf")),
+    fetchS3Object(dlfS3Key(runUuid, "event.dlf")),
+    fetchS3Object(dlfS3Key(runUuid, "meta.dlf")),
   ]);
 
   if (!polled && !events && !meta) {

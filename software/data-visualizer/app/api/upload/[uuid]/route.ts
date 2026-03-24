@@ -1,3 +1,4 @@
+import { dlfS3Key } from "@/lib/dlf-s3";
 import prisma from "@/lib/prisma";
 import { s3Client } from "@/lib/s3";
 import { verifyDeviceSignature } from "@/lib/verifydevice";
@@ -18,10 +19,6 @@ function getRunUploadDir(runUuid: string) {
   return resolve(UPLOAD_DIR, runUuid);
 }
 
-function dlfS3Key(runUuid: string, filename: string) {
-  return `runs/${runUuid}/${filename}`;
-}
-
 /**
  * Compute run duration in seconds by finding the max tick across all polled and
  * event samples. Returns 0 if no data is present or files are unreadable.
@@ -35,7 +32,7 @@ async function computeRunDurationS(
     adapter.events_data().catch(() => []),
   ]);
 
-  let maxTick: bigint = 0n;
+  let maxTick: bigint = 0n; // sample.tick is bigint, so use bigint for maxTick to avoid precision loss
   for (const sample of polledSamples) {
     if (sample.tick > maxTick) {
       maxTick = sample.tick;
@@ -173,14 +170,14 @@ export async function POST(
         const metaHeader = await adapter.meta_header();
         const durationS = await computeRunDurationS(
           adapter,
-          metaHeader.tick_base_us,
+          BigInt(metaHeader.tick_base_us),
         );
         await prisma.run.create({
           data: {
             uuid,
             deviceId,
-            epochTimeS: metaHeader.epoch_time_s,
-            tickBaseUs: metaHeader.tick_base_us,
+            epochTimeS: BigInt(metaHeader.epoch_time_s),
+            tickBaseUs: BigInt(metaHeader.tick_base_us),
             durationS,
             metadata: {},
             isActive,
@@ -211,7 +208,6 @@ export async function POST(
       // Upload DLF files to S3
       // TODO: Add retries with exponential backoff in case of transient S3 errors
       // TODO: Use Vercel Workflow instead of after()
-      // TODO: Make sure we can isolate dev/preview/prod S3 buckets and not accidentally upload test data to prod
       const bucket = process.env.S3_BUCKET_NAME!;
       await Promise.all(
         [...uploadedFiles].map((filename) => {
