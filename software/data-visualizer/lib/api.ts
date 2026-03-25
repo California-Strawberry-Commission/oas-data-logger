@@ -134,14 +134,13 @@ export function useRunStreamsMany(runUuids: string[], streamIds: string[]) {
   });
 }
 
-export function useDeleteRun(deviceId: string) {
+export function useDeleteDeviceRun(deviceId: string) {
   const qc = useQueryClient();
 
   return useMutation({
     mutationFn: deleteRun,
     onSuccess: () => {
-      // Invalidate useRuns query cache
-      qc.invalidateQueries({ queryKey: ["runs", deviceId] });
+      qc.invalidateQueries({ queryKey: ["deviceRuns", deviceId] });
     },
   });
 }

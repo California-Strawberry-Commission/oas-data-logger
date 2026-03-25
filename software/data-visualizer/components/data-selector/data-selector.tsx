@@ -12,7 +12,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { useDeleteRun, type Device, type Run } from "@/lib/api";
+import { useDeleteDeviceRun, type Device, type Run } from "@/lib/api";
 import { Trash2 } from "lucide-react";
 import posthog from "posthog-js";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -96,7 +96,7 @@ export default function DataSelector({
   const showAddComparisonButton =
     primaryHasRun && rows.length < MAX_SELECTION_ROWS;
 
-  const deleteRun = useDeleteRun(primary?.device?.id ?? "");
+  const deleteRun = useDeleteDeviceRun(primary?.device?.id ?? "");
   const deleteErrorMsg = useMemo(() => {
     const err = deleteRun.error;
     return err instanceof Error
