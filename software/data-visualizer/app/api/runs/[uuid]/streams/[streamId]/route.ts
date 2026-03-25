@@ -26,7 +26,7 @@ export async function GET(
       return NextResponse.json({ error: "Run not found" }, { status: 404 });
     }
 
-    // Try reading from S3 DLF files first
+    // Fetch DLF files from S3 and read data
     const adapter = await getRunDlfAdapter(uuid);
     if (!adapter) {
       return NextResponse.json([]);

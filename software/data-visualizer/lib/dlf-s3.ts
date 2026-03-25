@@ -32,7 +32,9 @@ async function fetchS3Object(key: string): Promise<Buffer | null> {
     );
     return Buffer.from(await res.Body!.transformToByteArray());
   } catch (err: any) {
-    if (err?.name === "NoSuchKey") return null;
+    if (err?.name === "NoSuchKey") {
+      return null;
+    }
     throw err;
   }
 }

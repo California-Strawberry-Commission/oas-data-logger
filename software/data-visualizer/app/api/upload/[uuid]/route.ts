@@ -3,7 +3,7 @@ import prisma from "@/lib/prisma";
 import { s3Client } from "@/lib/s3";
 import { verifyDeviceSignature } from "@/lib/verifydevice";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { Adapter, FSAdapter } from "dlflib-js";
+import { FSAdapter } from "dlflib-js";
 import { createReadStream, mkdirSync, rmSync, writeFileSync } from "fs";
 import { NextRequest, NextResponse, after } from "next/server";
 import { resolve } from "path";
@@ -19,19 +19,37 @@ function getRunUploadDir(runUuid: string) {
   return resolve(UPLOAD_DIR, runUuid);
 }
 
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  {
+    maxAttempts = 4,
+    delayMs = 1000,
+  }: { maxAttempts?: number; delayMs?: number } = {},
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (attempt < maxAttempts) {
+        // Delay until the next attempt
+        await new Promise((res) => setTimeout(res, delayMs));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 /**
  * Compute run duration in seconds by finding the max tick across all polled and
  * event samples. Returns 0 if no data is present or files are unreadable.
  */
 async function computeRunDurationS(
-  adapter: Adapter,
+  polledSamples: any[],
+  eventSamples: any[],
   tickBaseUs: bigint,
 ): Promise<number> {
-  const [polledSamples, eventSamples] = await Promise.all([
-    adapter.polled_data().catch(() => []),
-    adapter.events_data().catch(() => []),
-  ]);
-
   let maxTick: bigint = 0n; // sample.tick is bigint, so use bigint for maxTick to avoid precision loss
   for (const sample of polledSamples) {
     if (sample.tick > maxTick) {
@@ -167,9 +185,14 @@ export async function POST(
       // Create or update run
       const adapter = new FSAdapter(uploadDir);
       if (!runExists) {
-        const metaHeader = await adapter.meta_header();
+        const [metaHeader, polledSamples, eventSamples] = await Promise.all([
+          adapter.meta_header(),
+          adapter.polled_data().catch(() => []),
+          adapter.events_data().catch(() => []),
+        ]);
         const durationS = await computeRunDurationS(
-          adapter,
+          polledSamples,
+          eventSamples,
           BigInt(metaHeader.tick_base_us),
         );
         await prisma.run.create({
@@ -191,8 +214,13 @@ export async function POST(
           isActive,
         };
         if (uploadedFiles.has("polled.dlf") || uploadedFiles.has("event.dlf")) {
+          const [polledSamples, eventSamples] = await Promise.all([
+            adapter.polled_data().catch(() => []),
+            adapter.events_data().catch(() => []),
+          ]);
           updateData.durationS = await computeRunDurationS(
-            adapter,
+            polledSamples,
+            eventSamples,
             existingRun.tickBaseUs,
           );
         }
@@ -206,20 +234,21 @@ export async function POST(
       }
 
       // Upload DLF files to S3
-      // TODO: Add retries with exponential backoff in case of transient S3 errors
-      // TODO: Use Vercel Workflow instead of after()
       const bucket = process.env.S3_BUCKET_NAME!;
       await Promise.all(
         [...uploadedFiles].map((filename) => {
           const key = dlfS3Key(uuid, filename);
+          const filePath = resolve(uploadDir, filename);
           console.log(`[api/upload] Uploading to S3: ${key}`);
-          return s3Client.send(
-            new PutObjectCommand({
-              Bucket: bucket,
-              Key: key,
-              Body: createReadStream(resolve(uploadDir, filename)),
-              ContentType: "application/octet-stream",
-            }),
+          return withRetry(() =>
+            s3Client.send(
+              new PutObjectCommand({
+                Bucket: bucket,
+                Key: key,
+                Body: createReadStream(filePath),
+                ContentType: "application/octet-stream",
+              }),
+            ),
           );
         }),
       );
