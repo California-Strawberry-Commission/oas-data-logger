@@ -14,6 +14,7 @@ import {
   Polyline,
   Popup,
   TileLayer,
+  useMap,
 } from "react-leaflet";
 
 export type MapPoint = {
@@ -118,6 +119,21 @@ function decimateByDistance(
   }
 
   return result;
+}
+
+/**
+ * Pans the map when `center` changes.
+ *
+ * This is needed because MapContainer's `center` prop is only used for initialization. Note that
+ * this component must be rendered as a child of MapContainer in order to access its map context
+ * via useMap.
+ */
+function MapCenterController({ center }: { center: LatLngExpression }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setView(center);
+  }, [map, center]);
+  return null;
 }
 
 export default function Map({
@@ -315,6 +331,7 @@ export default function Map({
           doubleClickZoom={true}
           className="h-full w-full flex-1"
         >
+          <MapCenterController center={center} />
           <TileLayer
             attribution="Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community"
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
