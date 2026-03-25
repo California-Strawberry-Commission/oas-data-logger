@@ -193,8 +193,8 @@ bool UploaderComponent::uploadRun(fs::File runDir, const char* runUuid,
       char status[64] = {0};
       size_t n = client->readBytesUntil('\n', status, sizeof(status) - 1);
       status[n] = '\0';
-      bool ok = (strncmp(status, "HTTP/1.1 200", 12) == 0) ||
-                (strncmp(status, "HTTP/1.0 200", 12) == 0);
+      bool ok = (strncmp(status, "HTTP/1.1 202", 12) == 0) ||
+                (strncmp(status, "HTTP/1.0 202", 12) == 0);
       return ok;
     }
   }
