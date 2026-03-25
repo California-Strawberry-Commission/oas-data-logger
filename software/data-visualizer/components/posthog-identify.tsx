@@ -4,7 +4,6 @@ import posthog from "posthog-js";
 import { useEffect } from "react";
 
 export default function PostHogIdentify({ email }: { email: string }) {
-  console.log(`PostHogIdentify: ${email}`);
   useEffect(() => {
     posthog.identify(email);
   }, [email]);
