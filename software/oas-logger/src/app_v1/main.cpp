@@ -754,9 +754,10 @@ void initializeDLFLogger() {
 
   dlf::components::UploaderComponent::Options options;
   options.retentionMode = LOGGER_RETENTION_MODE;
+  options.secret = deviceSecret;
   options.partialRunUploadIntervalSecs =
       LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS;
-  logger.syncTo(UPLOAD_ENDPOINT, deviceUid, deviceSecret, options).begin();
+  logger.syncTo(UPLOAD_ENDPOINT, deviceUid, options).begin();
 
   EZLOG_INFO("DLF logger initialized");
 }

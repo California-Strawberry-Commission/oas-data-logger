@@ -25,8 +25,8 @@
 namespace dlf::auth {
 
 RequestSigner::RequestSigner(const char* deviceId, const char* secret) {
-  snprintf(deviceId_, sizeof(deviceId_), "%s", deviceId);
-  snprintf(secret_, sizeof(secret_), "%s", secret);
+  snprintf(deviceId_, sizeof(deviceId_), "%s", deviceId ? deviceId : "");
+  snprintf(secret_, sizeof(secret_), "%s", secret ? secret : "");
 }
 
 void RequestSigner::bytesToHex(const byte* bytes, size_t len, char* outHex,
