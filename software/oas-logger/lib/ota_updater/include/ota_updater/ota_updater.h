@@ -26,9 +26,16 @@ class OtaUpdater {
     int currentBuildNumber{-1};  // currently installed build number
     char deviceId[13]{0};
     char deviceSecret[65]{0};
-    uint32_t manifestTimeoutMs{3000};
-    uint32_t firmwareTimeoutMs{20000};
-    uint32_t firmwareStallGraceMs{5000};
+    uint32_t manifestTimeoutMs{5000};
+    uint32_t firmwareTimeoutMs{10000};
+    // Size of the heap-allocated buffer used to stream firmware chunks.
+    size_t firmwareBufferSize{8192};
+    // PEM-encoded CA certificate for manifest + initial firmware request). If
+    // nullptr, certificate validation is skipped (insecure).
+    const char* caCert{nullptr};
+    // PEM-encoded CA certificate for any firmware redirects. If nullptr,
+    // certificate validation is skipped (insecure).
+    const char* redirectCaCert{nullptr};
   };
 
   struct ManifestResult {

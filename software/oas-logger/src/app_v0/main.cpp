@@ -475,6 +475,8 @@ void handleOtaUpdate() {
     snprintf(otaConfig.deviceId, sizeof(otaConfig.deviceId), "%s", deviceUid);
     snprintf(otaConfig.deviceSecret, sizeof(otaConfig.deviceSecret), "%s",
              deviceSecret);
+    otaConfig.caCert = vercel_root_ca_pem_start;
+    otaConfig.redirectCaCert = s3_root_ca_pem_start;
     ota::OtaUpdater otaUpdater(otaConfig);
     auto res{otaUpdater.updateIfAvailable(true)};
     if (res.ok) {
