@@ -24,6 +24,9 @@ class UploaderComponent : public Component {
     // Secret used to sign upload requests. nullptr or empty string disables
     // signing.
     const char* secret = nullptr;
+    // PEM-encoded CA certificate for HTTPS connections. If nullptr, certificate
+    // validation is skipped (insecure).
+    const char* caCert = nullptr;
     // Attempts to upload the active runs' data at a regular interval. <= 0
     // disables partial run uploads.
     int partialRunUploadIntervalSecs = 0;

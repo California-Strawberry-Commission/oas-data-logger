@@ -6,14 +6,14 @@
 #include <SD_MMC.h>
 #include <SparkFun_u-blox_GNSS_v3.h>
 #include <WiFi.h>
-#include <WiFiClientSecure.h>
 #include <WiFiManager.h>
 #include <dlflib/dlf_logger.h>
 #include <driver/sdmmc_host.h>
 #include <esp_log.h>
+#include <memory_monitor/memory_monitor.h>
+#include <ota_updater/ota_updater.h>
 
-#include "memory_monitor/memory_monitor.h"
-#include "ota_updater/ota_updater.h"
+#include "certs/certs.h"
 
 // Configuration
 const int SERIAL_BAUD_RATE{115200};
@@ -755,6 +755,7 @@ void initializeDLFLogger() {
   dlf::components::UploaderComponent::Options options;
   options.retentionMode = LOGGER_RETENTION_MODE;
   options.secret = deviceSecret;
+  options.caCert = vercel_root_ca_pem_start;
   options.partialRunUploadIntervalSecs =
       LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS;
   logger.syncTo(UPLOAD_ENDPOINT, deviceUid, options).begin();
