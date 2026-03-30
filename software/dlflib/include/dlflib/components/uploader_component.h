@@ -21,14 +21,16 @@ class UploaderComponent : public Component {
 
   struct Options {
     RetentionMode retentionMode = RetentionMode::MARK;
+    // Secret used to sign upload requests. nullptr or empty string disables
+    // signing.
+    const char* secret = nullptr;
     // Attempts to upload the active runs' data at a regular interval. <= 0
     // disables partial run uploads.
     int partialRunUploadIntervalSecs = 0;
   };
 
   UploaderComponent(fs::FS& fs, const char* fsDir, const char* endpointFmt,
-                    const char* deviceUid, const char* secret,
-                    const Options& options);
+                    const char* deviceUid, const Options& options);
 
   bool begin() override;
   bool uploadRun(fs::File runDir, const char* runUuid, bool isActive = false);

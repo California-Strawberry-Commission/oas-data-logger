@@ -81,15 +81,9 @@ void DLFLogger::stopRun(run_handle_t h) {
 DLFLogger& DLFLogger::syncTo(
     const char* endpoint, const char* deviceUid,
     const dlf::components::UploaderComponent::Options& options) {
-  return syncTo(endpoint, deviceUid, "", options);
-}
-
-DLFLogger& DLFLogger::syncTo(
-    const char* endpoint, const char* deviceUid, const char* secret,
-    const dlf::components::UploaderComponent::Options& options) {
   if (!hasComponent<dlf::components::UploaderComponent>()) {
     auto uploader = dlf::util::make_unique<dlf::components::UploaderComponent>(
-        fs_, fsDir_, endpoint, deviceUid, secret, options);
+        fs_, fsDir_, endpoint, deviceUid, options);
     addComponent(std::move(uploader));
   }
 

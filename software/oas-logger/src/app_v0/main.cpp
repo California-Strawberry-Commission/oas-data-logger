@@ -81,11 +81,11 @@ char deviceUid[13]{0};     // Populated at boot
 char deviceSecret[65]{0};  // Populated from NVS at boot
 
 // Backend endpoints
-const char* UPLOAD_ENDPOINT{"http://192.168.1.79:3000/api/upload/%s"};
+const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
 const char* OTA_MANIFEST_ENDPOINT{
-    "http://192.168.1.79:3000/api/ota/manifest/%s/%s"};
+    "https://oas-data-logger.vercel.app/api/ota/manifest/%s/%s"};
 const char* OTA_FIRMWARE_ENDPOINT{
-    "http://192.168.1.79:3000/api/ota/firmware/%s/%s/%d"};
+    "https://oas-data-logger.vercel.app/api/ota/firmware/%s/%s/%d"};
 
 // State Machine States
 enum class SystemState {
@@ -201,7 +201,7 @@ void setup() {
 
   // Start sleep monitor task to trigger sleep mode when USB power is
   // disconnected, or sleep button is pressed
-  xTaskCreate(sleepMonitorTask, "sleep_monitor", 2560, NULL, 5, NULL);
+  xTaskCreate(sleepMonitorTask, "sleep_monitor", 4096, NULL, 5, NULL);
 
   // If the device was turned on with USB power, enter standard mode.
   // Otherwise, enter offload mode.
@@ -624,9 +624,10 @@ void initializeDLFLogger() {
 
   dlf::components::UploaderComponent::Options options;
   options.retentionMode = LOGGER_RETENTION_MODE;
+  options.secret = deviceSecret;
   options.partialRunUploadIntervalSecs =
       LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS;
-  logger.syncTo(UPLOAD_ENDPOINT, deviceUid, deviceSecret, options).begin();
+  logger.syncTo(UPLOAD_ENDPOINT, deviceUid, options).begin();
 
   EZLOG_INFO("DLF logger initialized");
 }

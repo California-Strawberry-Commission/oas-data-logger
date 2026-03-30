@@ -8,9 +8,9 @@ namespace dlf::components {
 
 UploaderComponent::UploaderComponent(fs::FS& fs, const char* fsDir,
                                      const char* endpointFmt,
-                                     const char* deviceUid, const char* secret,
+                                     const char* deviceUid,
                                      const Options& options)
-    : fs_(fs), options_(options), signer_(deviceUid, secret) {
+    : fs_(fs), options_(options), signer_(deviceUid, options.secret) {
   snprintf(fsDir_, sizeof(fsDir_), "%s", fsDir ? fsDir : "");
   snprintf(endpointFmt_, sizeof(endpointFmt_), "%s",
            endpointFmt ? endpointFmt : "");
