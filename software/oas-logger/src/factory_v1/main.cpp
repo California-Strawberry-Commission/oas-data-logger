@@ -1,9 +1,10 @@
 #include <Arduino.h>
+#include <DeviceAuth.h>
 #include <FastLED.h>
 #include <WiFiManager.h>
+#include <ota_updater/ota_updater.h>
 
-#include "DeviceAuth.h"
-#include "ota_updater/ota_updater.h"
+#include "certs/certs.h"
 
 // Serial
 const unsigned long SERIAL_BAUD_RATE{115200};
@@ -84,6 +85,8 @@ static void runOtaUpdate() {
   snprintf(otaConfig.deviceId, sizeof(otaConfig.deviceId), "%s", deviceUid);
   snprintf(otaConfig.deviceSecret, sizeof(otaConfig.deviceSecret), "%s",
            deviceSecret);
+  otaConfig.caCert = vercel_root_ca_pem_start;
+  otaConfig.redirectCaCert = s3_root_ca_pem_start;
   ota::OtaUpdater otaUpdater(otaConfig);
   auto res{otaUpdater.updateIfAvailable(true)};
   if (res.ok) {

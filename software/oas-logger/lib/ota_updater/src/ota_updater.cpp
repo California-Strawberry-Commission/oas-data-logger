@@ -94,10 +94,14 @@ struct WiFiClientHolder {
   ~WiFiClientHolder() { delete client; }
 };
 
-WiFiClientHolder createWiFiClient(bool secure) {
+WiFiClientHolder createWiFiClient(bool secure, const char* caCert = nullptr) {
   if (secure) {
     auto* secureClient{new WiFiClientSecure()};
-    secureClient->setInsecure();  // TODO: replace with cert pinning
+    if (caCert != nullptr) {
+      secureClient->setCACert(caCert);
+    } else {
+      secureClient->setInsecure();
+    }
     return WiFiClientHolder{secureClient};
   }
 
@@ -210,7 +214,7 @@ OtaUpdater::ManifestResult OtaUpdater::fetchLatestManifest() {
 
   // Create HTTPClient
   const bool useHttps{strcmp(parts.scheme, "https") == 0};
-  auto wifiClientHolder{createWiFiClient(useHttps)};
+  auto wifiClientHolder{createWiFiClient(useHttps, config_.caCert)};
   if (!wifiClientHolder.client) {
     return manifestError("Failed to create WiFi client");
   }
@@ -219,7 +223,6 @@ OtaUpdater::ManifestResult OtaUpdater::fetchLatestManifest() {
   // Use an RAII guard to automatically end the HTTPClient when it goes out of
   // scope
   HTTPClientGuard httpClientGuard{httpClient};
-  httpClient.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
   httpClient.setTimeout(config_.manifestTimeoutMs);
 
   // Set up HTTP request for manifest
@@ -351,7 +354,6 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
   // Use an RAII guard to automatically end the HTTPClient when it goes out of
   // scope
   HTTPClientGuard httpClientGuard{httpClient};
-  httpClient.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
   httpClient.setTimeout(config_.firmwareTimeoutMs);
   // Ensure that we are able to follow redirect URLs in the Location header
   const char* headerKeys[]{"Location"};
@@ -362,7 +364,7 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
   // We need to keep wifiClientHolder alive for the entire time while httpClient
   // is in scope, so initialize it here.
   WiFiClientHolder wifiClientHolder{nullptr};
-  for (int redirectCount = 0; redirectCount < 5; ++redirectCount) {
+  for (int redirectCount = 0; redirectCount < 3; ++redirectCount) {
     // End any previous session before calling begin() again on same HTTPClient
     httpClient.end();
 
@@ -373,7 +375,9 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
       return updateError("Invalid firmware URL");
     }
     const bool useHttps{strcmp(parts.scheme, "https") == 0};
-    wifiClientHolder = createWiFiClient(useHttps);
+    const char* caCert{redirectCount == 0 ? config_.caCert
+                                          : config_.redirectCaCert};
+    wifiClientHolder = createWiFiClient(useHttps, caCert);
     if (!wifiClientHolder.client) {
       return updateError("Failed to create WiFi client");
     }
@@ -444,63 +448,34 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
       config_.firmwareTimeoutMs);  // controls how long readBytes() blocks
   // Allocate the firmware download buffer on the heap to avoid hitting
   // stack limit
-  const size_t BUF_SZ{2048};
-  std::unique_ptr<uint8_t[]> buf{new (std::nothrow) uint8_t[BUF_SZ]};
+  std::unique_ptr<uint8_t[]> buf{new (std::nothrow)
+                                     uint8_t[config_.firmwareBufferSize]};
   if (!buf) {
     Update.abort();
     return updateError("Failed to allocate firmware buffer");
   }
+
   size_t writtenTotal{0};
-
-  uint32_t lastProgressMs{millis()};
-  // Add some buffer to the socket/read timeout to tolerate network pauses when
-  // downloading firmware
-  const uint32_t STALL_TIMEOUT_MS{config_.firmwareTimeoutMs +
-                                  config_.firmwareStallGraceMs};
-
-  while (httpClient.connected() && stream.connected()) {
-    int availableBytes{stream.available()};
-    if (availableBytes <= 0) {
-      if (millis() - lastProgressMs > STALL_TIMEOUT_MS) {
-        Update.abort();
-        return updateError("Firmware download stalled (no data)");
-      }
-      delay(1);
-      continue;
-    }
-
-    size_t readBytes{stream.readBytes(
-        buf.get(), static_cast<size_t>(min(availableBytes, (int)BUF_SZ)))};
+  while (writtenTotal < contentLen) {
+    size_t toRead{min(config_.firmwareBufferSize, contentLen - writtenTotal)};
+    size_t readBytes{stream.readBytes(buf.get(), toRead)};
     if (readBytes == 0) {
-      // Stream timeout
-      if (millis() - lastProgressMs > STALL_TIMEOUT_MS) {
-        Update.abort();
-        return updateError("Firmware read timed out");
-      }
-      continue;
+      Update.abort();
+      return updateError("Firmware read timed out");
     }
 
-    lastProgressMs = millis();
-
-    // Update SHA
-    if (!sha.update(buf.get(), static_cast<size_t>(readBytes))) {
+    if (!sha.update(buf.get(), readBytes)) {
       Update.abort();
       return updateError("SHA256 update failed");
     }
 
-    // Write to OTA partition
-    size_t writtenBytes{
-        Update.write(buf.get(), static_cast<size_t>(readBytes))};
-    if (writtenBytes != static_cast<size_t>(readBytes)) {
+    size_t written{Update.write(buf.get(), readBytes)};
+    if (written != readBytes) {
       Update.abort();
       return updateError("Update.write failed: %s", Update.errorString());
     }
-    writtenTotal += writtenBytes;
 
-    // If we know the content length, stop once we reach it
-    if (contentLen > 0 && writtenTotal >= static_cast<size_t>(contentLen)) {
-      break;
-    }
+    writtenTotal += written;
   }
 
   // Verify written bytes against content length
