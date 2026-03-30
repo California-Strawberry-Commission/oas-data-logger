@@ -13,6 +13,7 @@
  */
 
 #include <Arduino.h>
+#include <DeviceAuth.h>
 #include <ESP32Time.h>
 #include <EzLog.h>
 #include <FS.h>
@@ -23,10 +24,10 @@
 #include <WiFiManager.h>
 #include <Wire.h>
 #include <dlflib/dlf_logger.h>
+#include <memory_monitor/memory_monitor.h>
+#include <ota_updater/ota_updater.h>
 
-#include "DeviceAuth.h"
-#include "memory_monitor/memory_monitor.h"
-#include "ota_updater/ota_updater.h"
+#include "certs/certs.h"
 
 // Configuration
 const unsigned long SERIAL_BAUD_RATE{115200};
@@ -625,6 +626,7 @@ void initializeDLFLogger() {
   dlf::components::UploaderComponent::Options options;
   options.retentionMode = LOGGER_RETENTION_MODE;
   options.secret = deviceSecret;
+  options.caCert = vercel_root_ca_pem_start;
   options.partialRunUploadIntervalSecs =
       LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS;
   logger.syncTo(UPLOAD_ENDPOINT, deviceUid, options).begin();

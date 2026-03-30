@@ -472,7 +472,11 @@ WiFiClient* UploaderComponent::getWiFiClient(bool secure) {
   if (secure) {
     if (!wifiClientSecure_) {
       wifiClientSecure_ = dlf::util::make_unique<WiFiClientSecure>();
-      wifiClientSecure_->setInsecure();
+      if (options_.caCert != nullptr) {
+        wifiClientSecure_->setCACert(options_.caCert);
+      } else {
+        wifiClientSecure_->setInsecure();
+      }
     }
     return wifiClientSecure_.get();
   } else {
