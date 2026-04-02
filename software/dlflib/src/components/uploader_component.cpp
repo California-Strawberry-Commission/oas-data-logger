@@ -4,6 +4,24 @@
 #include "dlflib/dlf_logger.h"
 #include "dlflib/log.h"
 
+namespace {
+
+// We must be sure to end the HTTPClient to avoid memory and socket leaks.
+// Instead of manually calling HTTPClient::end everywhere, use this RAII guard.
+struct HTTPClientGuard {
+  HTTPClient& client;
+  explicit HTTPClientGuard(HTTPClient& h) : client(h) {}
+
+  HTTPClientGuard(const HTTPClientGuard&) = delete;
+  HTTPClientGuard& operator=(const HTTPClientGuard&) = delete;
+  HTTPClientGuard(HTTPClientGuard&&) = delete;
+  HTTPClientGuard& operator=(HTTPClientGuard&&) = delete;
+
+  ~HTTPClientGuard() { client.end(); }
+};
+
+}  // namespace
+
 namespace dlf::components {
 
 UploaderComponent::UploaderComponent(fs::FS& fs, const char* fsDir,
@@ -62,12 +80,17 @@ void UploaderComponent::onWifiConnected(arduino_event_id_t event,
 bool UploaderComponent::uploadRun(fs::File runDir, const char* runUuid,
                                   bool isActive) {
   if (!runDir) {
-    DLFLIB_LOG_INFO("[UploaderComponent] No file to upload");
+    DLFLIB_LOG_ERROR("[UploaderComponent][uploadRun] No file to upload");
+    return false;
+  }
+
+  if (!runUuid) {
+    DLFLIB_LOG_ERROR("[UploaderComponent][uploadRun] Invalid run UUID");
     return false;
   }
 
   // List files to be uploaded
-  DLFLIB_LOG_INFO("[UploaderComponent] Files to upload:");
+  DLFLIB_LOG_INFO("[UploaderComponent][uploadRun] Files to upload:");
   runDir.rewindDirectory();
   while (fs::File file = runDir.openNextFile()) {
     DLFLIB_LOG_INFO("  - %s (%d bytes)", file.name(), file.size());
@@ -76,13 +99,14 @@ bool UploaderComponent::uploadRun(fs::File runDir, const char* runUuid,
 
   char uploadUrl[256];
   snprintf(uploadUrl, sizeof(uploadUrl), endpointFmt_, runUuid ? runUuid : "");
-  DLFLIB_LOG_INFO("[UploaderComponent] Preparing to uploading to: %s",
-                  uploadUrl);
+  DLFLIB_LOG_INFO(
+      "[UploaderComponent][uploadRun] Preparing to uploading to: %s",
+      uploadUrl);
 
   auto client = connectToEndpoint(uploadUrl);
   if (!client) {
     DLFLIB_LOG_ERROR(
-        "[UploaderComponent] Failed to connect to upload endpoint");
+        "[UploaderComponent][uploadRun] Failed to connect to upload endpoint");
     return false;
   }
 
@@ -131,11 +155,11 @@ bool UploaderComponent::uploadRun(fs::File runDir, const char* runUuid,
   //////////////////////
   // Send request header
   //////////////////////
-  DLFLIB_LOG_INFO("[UploaderComponent] Sending upload request...");
+  DLFLIB_LOG_INFO("[UploaderComponent][uploadRun] Sending upload request...");
 
   dlf::util::UrlParts parts = dlf::util::parseUrl(uploadUrl);
   if (!parts.ok) {
-    DLFLIB_LOG_ERROR("[UploaderComponent] Invalid upload URL");
+    DLFLIB_LOG_ERROR("[UploaderComponent][uploadRun] Invalid upload URL");
     client->stop();
     return false;
   }
@@ -200,7 +224,8 @@ bool UploaderComponent::uploadRun(fs::File runDir, const char* runUuid,
     }
   }
 
-  DLFLIB_LOG_ERROR("[UploaderComponent] No response received within 5 seconds");
+  DLFLIB_LOG_ERROR(
+      "[UploaderComponent][uploadRun] No response received within 5 seconds");
   client->stop();
   return false;
 }
@@ -326,7 +351,10 @@ void UploaderComponent::syncTask(void* arg) {
 
       runDir.rewindDirectory();
 
-      bool uploadSuccess = uploaderComponent->uploadRun(runDir, runDir.name());
+      bool uploadSuccess =
+          uploaderComponent->options_.enableUploadV2
+              ? uploaderComponent->uploadRunV2(runDir, runDir.name())
+              : uploaderComponent->uploadRun(runDir, runDir.name());
       if (!uploadSuccess) {
         DLFLIB_LOG_ERROR("[UploaderComponent][syncTask] Upload failed");
         runDir.close();
@@ -548,6 +576,273 @@ bool UploaderComponent::deleteRunDir(fs::File runDir, const char* runDirPath) {
   const bool ok = fs_.rmdir(runDirPath);
   runDir.close();
   return ok;
+}
+
+bool UploaderComponent::uploadRunV2(fs::File runDir, const char* runUuid,
+                                    bool isActive) {
+  if (!runDir) {
+    DLFLIB_LOG_ERROR("[UploaderComponent][uploadRunV2] No file to upload");
+    return false;
+  }
+
+  if (!runUuid) {
+    DLFLIB_LOG_ERROR("[UploaderComponent][uploadRunV2] Invalid run UUID");
+    return false;
+  }
+
+  char baseUrl[256];
+  snprintf(baseUrl, sizeof(baseUrl), endpointFmt_, runUuid);
+  char chunkUrl[256];
+  snprintf(chunkUrl, sizeof(chunkUrl), "%s/chunk", baseUrl);
+  char finalizeUrl[256];
+  snprintf(finalizeUrl, sizeof(finalizeUrl), "%s/finalize", baseUrl);
+
+  char runDirPath[128];
+  dlf::util::joinPath(runDirPath, sizeof(runDirPath), fsDir_, runUuid);
+  char progressFilePath[128];
+  dlf::util::joinPath(progressFilePath, sizeof(progressFilePath), runDirPath,
+                      UPLOAD_V2_PROGRESS_FILE);
+
+  // Load persisted progress
+  uint32_t metaChunk = 0;
+  uint32_t polledChunk = 0;
+  uint32_t eventChunk = 0;
+  loadUploadProgress(progressFilePath, metaChunk, polledChunk, eventChunk);
+  DLFLIB_LOG_INFO(
+      "[UploaderComponent][uploadRunV2] Starting upload for %s "
+      "(last uploaded chunks: meta=%u polled=%u event=%u)",
+      runUuid, metaChunk, polledChunk, eventChunk);
+
+  WiFiClient* wifiClient = getWiFiClient(strncmp(chunkUrl, "https", 5) == 0);
+  HTTPClient httpClient;
+  // Use an RAII guard to automatically end the HTTPClient when it goes out of
+  // scope
+  HTTPClientGuard httpClientGuard{httpClient};
+  httpClient.setReuse(true);  // keep the TLS session alive between requests
+  if (!httpClient.begin(*wifiClient, chunkUrl)) {
+    DLFLIB_LOG_ERROR(
+        "[UploaderComponent][uploadRunV2] HTTPClient::begin failed");
+    return false;
+  }
+
+  // Upload remaining chunks for each file
+  struct FileEntry {
+    const char* name;
+    uint32_t& lastChunk;
+  };
+  FileEntry entries[] = {
+      {"meta.dlf", metaChunk},
+      {"polled.dlf", polledChunk},
+      {"event.dlf", eventChunk},
+  };
+  constexpr size_t numEntries = sizeof(entries) / sizeof(entries[0]);
+  const char* uploadedNames[numEntries] = {};
+  size_t numUploaded = 0;
+  for (size_t entryIdx = 0; entryIdx < numEntries; ++entryIdx) {
+    const char* filename = entries[entryIdx].name;
+    uint32_t& lastChunk = entries[entryIdx].lastChunk;
+
+    // Open the file
+    char filePath[128];
+    dlf::util::joinPath(filePath, sizeof(filePath), runDirPath, filename);
+    fs::File file = fs_.open(filePath, "r");
+    if (!file) {
+      DLFLIB_LOG_INFO("[UploaderComponent][uploadRunV2] %s not found, skipping",
+                      filename);
+      continue;
+    }
+
+    const size_t fileSize = file.size();
+    if (fileSize == 0) {
+      file.close();
+      DLFLIB_LOG_INFO("[UploaderComponent][uploadRunV2] %s is empty, skipping",
+                      filename);
+      continue;
+    }
+
+    // Determine the total number of chunks and the next chunk to upload
+    const uint32_t totalChunks =
+        (uint32_t)((fileSize + UPLOAD_V2_CHUNK_SIZE - 1) /
+                   UPLOAD_V2_CHUNK_SIZE);
+    const uint32_t startChunk = lastChunk + 1;
+    if (startChunk > totalChunks) {
+      file.close();
+      DLFLIB_LOG_INFO(
+          "[UploaderComponent][uploadRunV2] %s already fully uploaded (%u "
+          "total chunks)",
+          filename, totalChunks);
+      uploadedNames[numUploaded++] = filename;
+      continue;
+    }
+
+    // Seek to the first byte of the next chunk to upload
+    if (!file.seek((size_t)(startChunk - 1) * UPLOAD_V2_CHUNK_SIZE)) {
+      file.close();
+      DLFLIB_LOG_ERROR("[UploaderComponent][uploadRunV2] Seek failed for %s",
+                       filePath);
+      return false;
+    }
+
+    DLFLIB_LOG_INFO(
+        "[UploaderComponent][uploadRunV2] Uploading %s: chunks %u to %u "
+        "(totalChunks %u, fileSize %zu)",
+        filename, startChunk, totalChunks, totalChunks, fileSize);
+
+    // Send chunks to backend
+    bool uploadSuccess = true;
+    for (uint32_t currentChunk = startChunk; currentChunk <= totalChunks;
+         ++currentChunk) {
+      const size_t offset = (size_t)(currentChunk - 1) * UPLOAD_V2_CHUNK_SIZE;
+      const size_t chunkBytes = (offset + UPLOAD_V2_CHUNK_SIZE <= fileSize)
+                                    ? UPLOAD_V2_CHUNK_SIZE
+                                    : (fileSize - offset);
+      if (!sendChunk(httpClient, runUuid, currentChunk, file, chunkBytes)) {
+        DLFLIB_LOG_ERROR(
+            "[UploaderComponent][uploadRunV2] Chunk %u/%u failed for %s",
+            currentChunk, totalChunks, filename);
+        uploadSuccess = false;
+        break;
+      }
+
+      DLFLIB_LOG_INFO("[UploaderComponent][uploadRunV2] %s chunk %u/%u OK",
+                      filename, currentChunk, totalChunks);
+
+      // Update progress after each successful chunk
+      lastChunk = currentChunk;
+      saveUploadProgress(progressFilePath, metaChunk, polledChunk, eventChunk);
+    }
+
+    file.close();
+
+    if (!uploadSuccess) {
+      DLFLIB_LOG_ERROR(
+          "[UploaderComponent][uploadRunV2] Failed uploading %s. Aborting.",
+          filename);
+      return false;
+    }
+
+    uploadedNames[numUploaded++] = filename;
+  }
+
+  if (numUploaded == 0) {
+    DLFLIB_LOG_WARNING(
+        "[UploaderComponent][uploadRunV2] No files to finalize for %s",
+        runUuid);
+    return false;
+  }
+
+  // Send finalize request
+  if (!sendFinalizeRequest(finalizeUrl, runUuid, uploadedNames, numUploaded,
+                           isActive)) {
+    DLFLIB_LOG_ERROR(
+        "[UploaderComponent][uploadRunV2] Finalize request failed for %s",
+        runUuid);
+    return false;
+  }
+
+  DLFLIB_LOG_INFO("[UploaderComponent][uploadRunV2] Upload complete for %s",
+                  runUuid);
+  return true;
+}
+
+bool UploaderComponent::sendChunk(HTTPClient& httpClient, const char* runUuid,
+                                  uint32_t chunkNumber,
+                                  fs::File& file, size_t chunkBytes) {
+  signer_.writeAuthHeaders(httpClient, runUuid);
+  httpClient.addHeader("x-filename", file.name());
+  httpClient.addHeader("x-chunk-number", String(chunkNumber));
+  httpClient.addHeader("Content-Type", "application/octet-stream");
+
+  int code = httpClient.sendRequest("POST", &file, chunkBytes);
+  if (code < 200 || code >= 300) {
+    DLFLIB_LOG_ERROR("[UploaderComponent][sendChunk] Server returned %d", code);
+    return false;
+  }
+
+  return true;
+}
+
+bool UploaderComponent::sendFinalizeRequest(const char* finalizeUrl,
+                                            const char* runUuid,
+                                            const char* const* filenames,
+                                            size_t numFiles, bool isActive) {
+  // Build JSON body
+  // Example: {"isActive":false,"files":["meta.dlf","polled.dlf"]}
+  char body[256];
+  int pos = snprintf(body, sizeof(body), "{\"isActive\":%s,\"files\":[",
+                     isActive ? "true" : "false");
+  bool firstFile = true;
+  for (size_t fileIdx = 0; fileIdx < numFiles; ++fileIdx) {
+    if (filenames[fileIdx] == nullptr) {
+      continue;
+    }
+    pos += snprintf(body + pos, sizeof(body) - pos, "%s\"%s\"",
+                    firstFile ? "" : ",", filenames[fileIdx]);
+    firstFile = false;
+  }
+  snprintf(body + pos, sizeof(body) - pos, "]}");
+
+  WiFiClient* wifiClient = getWiFiClient(strncmp(finalizeUrl, "https", 5) == 0);
+  HTTPClient httpClient;
+  HTTPClientGuard httpClientGuard{httpClient};
+  if (!httpClient.begin(*wifiClient, finalizeUrl)) {
+    DLFLIB_LOG_ERROR(
+        "[UploaderComponent][sendFinalizeRequest] HTTPClient::begin failed");
+    return false;
+  }
+
+  signer_.writeAuthHeaders(httpClient, runUuid);
+  httpClient.addHeader("Content-Type", "application/json");
+
+  int code = httpClient.POST(body);
+  if (code < 200 || code >= 300) {
+    DLFLIB_LOG_ERROR(
+        "[UploaderComponent][sendFinalizeRequest] Server returned %d", code);
+    return false;
+  }
+
+  DLFLIB_LOG_INFO(
+      "[UploaderComponent][sendFinalizeRequest] Finalize accepted (%d)", code);
+  return true;
+}
+
+bool UploaderComponent::loadUploadProgress(const char* progressFilePath,
+                                           uint32_t& metaChunk,
+                                           uint32_t& polledChunk,
+                                           uint32_t& eventChunk) {
+  fs::File progressFile = fs_.open(progressFilePath, "r");
+  if (!progressFile) {
+    return false;
+  }
+
+  uint32_t buf[3] = {0, 0, 0};
+  if (progressFile.size() == sizeof(buf)) {
+    progressFile.read(reinterpret_cast<uint8_t*>(buf), sizeof(buf));
+  }
+  progressFile.close();
+
+  metaChunk = buf[0];
+  polledChunk = buf[1];
+  eventChunk = buf[2];
+  return true;
+}
+
+bool UploaderComponent::saveUploadProgress(const char* progressFilePath,
+                                           uint32_t metaChunk,
+                                           uint32_t polledChunk,
+                                           uint32_t eventChunk) {
+  fs::File progressFile = fs_.open(progressFilePath, "w", true);
+  if (!progressFile) {
+    DLFLIB_LOG_WARNING(
+        "[UploaderComponent][saveUploadProgress] Cannot write %s",
+        progressFilePath);
+    return false;
+  }
+
+  uint32_t buf[3] = {metaChunk, polledChunk, eventChunk};
+  progressFile.write(reinterpret_cast<const uint8_t*>(buf), sizeof(buf));
+  progressFile.close();
+  return true;
 }
 
 }  // namespace dlf::components

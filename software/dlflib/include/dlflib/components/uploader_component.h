@@ -11,6 +11,14 @@
 
 namespace dlf::components {
 
+// Chunk size used by uploadRunV2. Files are split into chunks of this size and
+// uploaded individually, allowing uploads to be resumed after connection drops.
+constexpr size_t UPLOAD_V2_CHUNK_SIZE = 256 * 1024;
+
+// Progress file written to the run directory by uploadRunV2 to track which
+// chunks have been successfully uploaded. Allows resuming after interruption.
+constexpr const char* UPLOAD_V2_PROGRESS_FILE = ".uploadprog";
+
 class UploaderComponent : public Component {
  public:
   enum class RetentionMode : uint8_t {
@@ -30,13 +38,54 @@ class UploaderComponent : public Component {
     // Attempts to upload the active runs' data at a regular interval. <= 0
     // disables partial run uploads.
     int partialRunUploadIntervalSecs = 0;
+    // Enable the new chunked upload path.
+    bool enableUploadV2 = false;
   };
 
+  /**
+   * @param fs         Filesystem containing run directories (e.g. SD card).
+   * @param fsDir      Root path under which run directories are stored.
+   * @param endpointFmt printf-style format string for the upload endpoint URL,
+   *                   with a single %s placeholder for the run UUID.
+   *                   Example: "https://host/api/upload/%s"
+   * @param deviceUid  Unique device identifier sent in auth headers.
+   * @param options    Configuration options.
+   */
   UploaderComponent(fs::FS& fs, const char* fsDir, const char* endpointFmt,
                     const char* deviceUid, const Options& options);
 
   bool begin() override;
+
+  /**
+   * Uploads all DLF files in a run directory as a single multipart/form-data
+   * POST request.
+   *
+   * @param runDir   Open directory handle for the run to upload.
+   * @param runUuid  UUID string identifying the run (used in the URL and auth).
+   * @param isActive Whether the run is still actively being recorded.
+   * @return true on success.
+   */
   bool uploadRun(fs::File runDir, const char* runUuid, bool isActive = false);
+
+  /**
+   * Uploads all DLF files in a run directory using the resumable chunked
+   * upload protocol. Files are split into chunks, each uploaded as a separate
+   * POST.
+   *
+   * After all chunks are uploaded, a finalize request is sent to trigger
+   * server-side reassembly and database record creation.
+   *
+   * @param runDir   Open directory handle for the run to upload.
+   * @param runUuid  UUID string identifying the run (used in the URL and auth).
+   * @param isActive Whether the run is still actively being recorded.
+   * @return true if all chunks and the finalize request succeeded.
+   */
+  bool uploadRunV2(fs::File runDir, const char* runUuid, bool isActive = false);
+
+  /**
+   * Blocks until the background sync task has finished uploading all pending
+   * completed runs.
+   */
   void waitForSyncCompletion();
 
  private:
@@ -57,6 +106,17 @@ class UploaderComponent : public Component {
   WiFiClient* connectToEndpoint(const char* url, int maxRetries = 3,
                                 uint32_t retryDelayMs = 500);
   bool deleteRunDir(fs::File runDir, const char* runDirPath);
+
+  // v2 chunked upload helpers
+  bool sendChunk(HTTPClient& http, const char* runUuid, uint32_t chunkNumber,
+                 fs::File& file, size_t chunkBytes);
+  bool sendFinalizeRequest(const char* finalizeUrl, const char* runUuid,
+                           const char* const* filenames, size_t numFiles,
+                           bool isActive);
+  bool loadUploadProgress(const char* progressPath, uint32_t& metaChunk,
+                          uint32_t& polledChunk, uint32_t& eventChunk);
+  bool saveUploadProgress(const char* progressPath, uint32_t metaChunk,
+                          uint32_t polledChunk, uint32_t eventChunk);
 
   std::unique_ptr<WiFiClient> wifiClient_;
   std::unique_ptr<WiFiClientSecure> wifiClientSecure_;
