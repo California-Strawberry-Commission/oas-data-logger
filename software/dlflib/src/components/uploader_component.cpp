@@ -352,8 +352,8 @@ void UploaderComponent::syncTask(void* arg) {
       runDir.rewindDirectory();
 
       bool uploadSuccess =
-          uploaderComponent->options_.enableUploadV2
-              ? uploaderComponent->uploadRunV2(runDir, runDir.name())
+          uploaderComponent->options_.enableChunkedUpload
+              ? uploaderComponent->uploadRunChunked(runDir, runDir.name())
               : uploaderComponent->uploadRun(runDir, runDir.name());
       if (!uploadSuccess) {
         DLFLIB_LOG_ERROR("[UploaderComponent][syncTask] Upload failed");
@@ -479,7 +479,11 @@ void UploaderComponent::partialRunUploadTask(void* arg) {
       }
 
       bool uploadSuccess =
-          uploaderComponent->uploadRun(runDir, runDir.name(), true);
+          uploaderComponent->options_.enableChunkedUpload
+              ? uploaderComponent->uploadRunChunked(runDir, runDir.name(),
+                                                    /*isActive=*/true)
+              : uploaderComponent->uploadRun(runDir, runDir.name(),
+                                             /*isActive=*/true);
       if (uploadSuccess) {
         DLFLIB_LOG_INFO(
             "[UploaderComponent][partialRunUploadTask] Upload successful");
@@ -578,15 +582,16 @@ bool UploaderComponent::deleteRunDir(fs::File runDir, const char* runDirPath) {
   return ok;
 }
 
-bool UploaderComponent::uploadRunV2(fs::File runDir, const char* runUuid,
-                                    bool isActive) {
+bool UploaderComponent::uploadRunChunked(fs::File runDir, const char* runUuid,
+                                         bool isActive, bool finalize,
+                                         size_t maxChunkSize) {
   if (!runDir) {
-    DLFLIB_LOG_ERROR("[UploaderComponent][uploadRunV2] No file to upload");
+    DLFLIB_LOG_ERROR("[UploaderComponent][uploadRunChunked] No file to upload");
     return false;
   }
 
   if (!runUuid) {
-    DLFLIB_LOG_ERROR("[UploaderComponent][uploadRunV2] Invalid run UUID");
+    DLFLIB_LOG_ERROR("[UploaderComponent][uploadRunChunked] Invalid run UUID");
     return false;
   }
 
@@ -601,17 +606,19 @@ bool UploaderComponent::uploadRunV2(fs::File runDir, const char* runUuid,
   dlf::util::joinPath(runDirPath, sizeof(runDirPath), fsDir_, runUuid);
   char progressFilePath[128];
   dlf::util::joinPath(progressFilePath, sizeof(progressFilePath), runDirPath,
-                      UPLOAD_V2_PROGRESS_FILE);
+                      UPLOAD_PROGRESS_FILE);
 
-  // Load persisted progress
-  uint32_t metaChunk = 0;
-  uint32_t polledChunk = 0;
-  uint32_t eventChunk = 0;
-  loadUploadProgress(progressFilePath, metaChunk, polledChunk, eventChunk);
+  // Load persisted upload progress
+  uint32_t metaNextChunkNum = 1, metaNextByteOffset = 0;
+  uint32_t polledNextChunkNum = 1, polledNextByteOffset = 0;
+  uint32_t eventNextChunkNum = 1, eventNextByteOffset = 0;
+  loadUploadProgress(progressFilePath, metaNextChunkNum, metaNextByteOffset,
+                     polledNextChunkNum, polledNextByteOffset,
+                     eventNextChunkNum, eventNextByteOffset);
   DLFLIB_LOG_INFO(
-      "[UploaderComponent][uploadRunV2] Starting upload for %s "
-      "(last uploaded chunks: meta=%u polled=%u event=%u)",
-      runUuid, metaChunk, polledChunk, eventChunk);
+      "[UploaderComponent][uploadRunChunked] Starting upload for %s "
+      "(next byte offsets: meta=%u polled=%u event=%u)",
+      runUuid, metaNextByteOffset, polledNextByteOffset, eventNextByteOffset);
 
   WiFiClient* wifiClient = getWiFiClient(strncmp(chunkUrl, "https", 5) == 0);
   HTTPClient httpClient;
@@ -621,133 +628,132 @@ bool UploaderComponent::uploadRunV2(fs::File runDir, const char* runUuid,
   httpClient.setReuse(true);  // keep the TLS session alive between requests
   if (!httpClient.begin(*wifiClient, chunkUrl)) {
     DLFLIB_LOG_ERROR(
-        "[UploaderComponent][uploadRunV2] HTTPClient::begin failed");
+        "[UploaderComponent][uploadRunChunked] HTTPClient::begin failed");
     return false;
   }
 
-  // Upload remaining chunks for each file
+  // Upload remaining data for each file
   struct FileEntry {
     const char* name;
-    uint32_t& lastChunk;
+    uint32_t& nextChunkNum;
+    uint32_t& nextByteOffset;
   };
   FileEntry entries[] = {
-      {"meta.dlf", metaChunk},
-      {"polled.dlf", polledChunk},
-      {"event.dlf", eventChunk},
+      {"meta.dlf", metaNextChunkNum, metaNextByteOffset},
+      {"polled.dlf", polledNextChunkNum, polledNextByteOffset},
+      {"event.dlf", eventNextChunkNum, eventNextByteOffset},
   };
   constexpr size_t numEntries = sizeof(entries) / sizeof(entries[0]);
-  const char* uploadedNames[numEntries] = {};
-  size_t numUploaded = 0;
+  const char* uploadedFilenames[numEntries] = {};
+  size_t numFilesUploaded = 0;
   for (size_t entryIdx = 0; entryIdx < numEntries; ++entryIdx) {
     const char* filename = entries[entryIdx].name;
-    uint32_t& lastChunk = entries[entryIdx].lastChunk;
+    uint32_t& nextChunkNum = entries[entryIdx].nextChunkNum;
+    uint32_t& nextByteOffset = entries[entryIdx].nextByteOffset;
 
     // Open the file
     char filePath[128];
     dlf::util::joinPath(filePath, sizeof(filePath), runDirPath, filename);
     fs::File file = fs_.open(filePath, "r");
     if (!file) {
-      DLFLIB_LOG_INFO("[UploaderComponent][uploadRunV2] %s not found, skipping",
-                      filename);
+      DLFLIB_LOG_INFO(
+          "[UploaderComponent][uploadRunChunked] %s not found, skipping",
+          filename);
       continue;
     }
 
     const size_t fileSize = file.size();
     if (fileSize == 0) {
       file.close();
-      DLFLIB_LOG_INFO("[UploaderComponent][uploadRunV2] %s is empty, skipping",
-                      filename);
+      DLFLIB_LOG_INFO(
+          "[UploaderComponent][uploadRunChunked] %s is empty, skipping",
+          filename);
       continue;
     }
 
-    // Determine the total number of chunks and the next chunk to upload
-    const uint32_t totalChunks =
-        (uint32_t)((fileSize + UPLOAD_V2_CHUNK_SIZE - 1) /
-                   UPLOAD_V2_CHUNK_SIZE);
-    const uint32_t startChunk = lastChunk + 1;
-    if (startChunk > totalChunks) {
+    if (nextByteOffset >= fileSize) {
       file.close();
       DLFLIB_LOG_INFO(
-          "[UploaderComponent][uploadRunV2] %s already fully uploaded (%u "
-          "total chunks)",
-          filename, totalChunks);
-      uploadedNames[numUploaded++] = filename;
+          "[UploaderComponent][uploadRunChunked] %s already fully uploaded "
+          "(%u bytes)",
+          filename, nextByteOffset);
+      uploadedFilenames[numFilesUploaded++] = filename;
       continue;
     }
 
-    // Seek to the first byte of the next chunk to upload
-    if (!file.seek((size_t)(startChunk - 1) * UPLOAD_V2_CHUNK_SIZE)) {
+    // Seek to the next byte to upload
+    if (!file.seek(nextByteOffset)) {
       file.close();
-      DLFLIB_LOG_ERROR("[UploaderComponent][uploadRunV2] Seek failed for %s",
-                       filePath);
+      DLFLIB_LOG_ERROR(
+          "[UploaderComponent][uploadRunChunked] Seek failed for %s", filePath);
       return false;
     }
 
     DLFLIB_LOG_INFO(
-        "[UploaderComponent][uploadRunV2] Uploading %s: chunks %u to %u "
-        "(totalChunks %u, fileSize %zu)",
-        filename, startChunk, totalChunks, totalChunks, fileSize);
+        "[UploaderComponent][uploadRunChunked] Uploading %s starting at byte "
+        "%u/%zu",
+        filename, nextByteOffset, fileSize);
 
     // Send chunks to backend
-    bool uploadSuccess = true;
-    for (uint32_t currentChunk = startChunk; currentChunk <= totalChunks;
-         ++currentChunk) {
-      const size_t offset = (size_t)(currentChunk - 1) * UPLOAD_V2_CHUNK_SIZE;
-      const size_t chunkBytes = (offset + UPLOAD_V2_CHUNK_SIZE <= fileSize)
-                                    ? UPLOAD_V2_CHUNK_SIZE
-                                    : (fileSize - offset);
-      if (!sendChunk(httpClient, runUuid, currentChunk, file, chunkBytes)) {
+    while (nextByteOffset < fileSize) {
+      const size_t remaining = fileSize - nextByteOffset;
+      const size_t chunkBytes =
+          (remaining < maxChunkSize) ? remaining : maxChunkSize;
+      if (!sendChunk(httpClient, runUuid, nextChunkNum, file, chunkBytes)) {
+        file.close();
         DLFLIB_LOG_ERROR(
-            "[UploaderComponent][uploadRunV2] Chunk %u/%u failed for %s",
-            currentChunk, totalChunks, filename);
-        uploadSuccess = false;
-        break;
+            "[UploaderComponent][uploadRunChunked] Chunk %u (byte %u) failed "
+            "for "
+            "%s. Aborting upload.",
+            nextChunkNum, nextByteOffset, filename);
+        return false;
       }
 
-      DLFLIB_LOG_INFO("[UploaderComponent][uploadRunV2] %s chunk %u/%u OK",
-                      filename, currentChunk, totalChunks);
+      nextChunkNum++;
+      nextByteOffset += chunkBytes;
+      DLFLIB_LOG_INFO(
+          "[UploaderComponent][uploadRunChunked] %s chunk OK, %u/%zu bytes "
+          "uploaded",
+          filename, nextByteOffset, fileSize);
 
       // Update progress after each successful chunk
-      lastChunk = currentChunk;
-      saveUploadProgress(progressFilePath, metaChunk, polledChunk, eventChunk);
+      saveUploadProgress(progressFilePath, metaNextChunkNum, metaNextByteOffset,
+                         polledNextChunkNum, polledNextByteOffset,
+                         eventNextChunkNum, eventNextByteOffset);
     }
 
     file.close();
-
-    if (!uploadSuccess) {
-      DLFLIB_LOG_ERROR(
-          "[UploaderComponent][uploadRunV2] Failed uploading %s. Aborting.",
-          filename);
-      return false;
-    }
-
-    uploadedNames[numUploaded++] = filename;
+    uploadedFilenames[numFilesUploaded++] = filename;
   }
 
-  if (numUploaded == 0) {
+  if (!finalize) {
+    return true;
+  }
+
+  if (numFilesUploaded == 0) {
     DLFLIB_LOG_WARNING(
-        "[UploaderComponent][uploadRunV2] No files to finalize for %s",
+        "[UploaderComponent][uploadRunChunked] No files to finalize for %s",
         runUuid);
-    return false;
+    return true;
   }
 
   // Send finalize request
-  if (!sendFinalizeRequest(finalizeUrl, runUuid, uploadedNames, numUploaded,
-                           isActive)) {
+  if (!sendFinalizeRequest(finalizeUrl, runUuid, uploadedFilenames,
+                           numFilesUploaded, isActive)) {
     DLFLIB_LOG_ERROR(
-        "[UploaderComponent][uploadRunV2] Finalize request failed for %s",
+        "[UploaderComponent][uploadRunChunked] Finalize request failed for %s",
         runUuid);
     return false;
   }
 
-  DLFLIB_LOG_INFO("[UploaderComponent][uploadRunV2] Upload complete for %s",
-                  runUuid);
+  DLFLIB_LOG_INFO(
+      "[UploaderComponent][uploadRunChunked] Upload complete for %s", runUuid);
   return true;
 }
 
 bool UploaderComponent::sendChunk(HTTPClient& httpClient, const char* runUuid,
-                                  uint32_t chunkNumber,
-                                  fs::File& file, size_t chunkBytes) {
+                                  uint32_t chunkNumber, fs::File& file,
+                                  size_t chunkBytes) {
   signer_.writeAuthHeaders(httpClient, runUuid);
   httpClient.addHeader("x-filename", file.name());
   httpClient.addHeader("x-chunk-number", String(chunkNumber));
@@ -807,30 +813,39 @@ bool UploaderComponent::sendFinalizeRequest(const char* finalizeUrl,
 }
 
 bool UploaderComponent::loadUploadProgress(const char* progressFilePath,
-                                           uint32_t& metaChunk,
-                                           uint32_t& polledChunk,
-                                           uint32_t& eventChunk) {
+                                           uint32_t& metaNextChunkNum,
+                                           uint32_t& metaNextByteOffset,
+                                           uint32_t& polledNextChunkNum,
+                                           uint32_t& polledNextByteOffset,
+                                           uint32_t& eventNextChunkNum,
+                                           uint32_t& eventNextByteOffset) {
   fs::File progressFile = fs_.open(progressFilePath, "r");
   if (!progressFile) {
     return false;
   }
 
-  uint32_t buf[3] = {0, 0, 0};
+  uint32_t buf[6] = {1, 0, 1, 0, 1, 0};
   if (progressFile.size() == sizeof(buf)) {
     progressFile.read(reinterpret_cast<uint8_t*>(buf), sizeof(buf));
   }
   progressFile.close();
 
-  metaChunk = buf[0];
-  polledChunk = buf[1];
-  eventChunk = buf[2];
+  metaNextChunkNum = buf[0];
+  metaNextByteOffset = buf[1];
+  polledNextChunkNum = buf[2];
+  polledNextByteOffset = buf[3];
+  eventNextChunkNum = buf[4];
+  eventNextByteOffset = buf[5];
   return true;
 }
 
 bool UploaderComponent::saveUploadProgress(const char* progressFilePath,
-                                           uint32_t metaChunk,
-                                           uint32_t polledChunk,
-                                           uint32_t eventChunk) {
+                                           uint32_t metaNextChunkNum,
+                                           uint32_t metaNextByteOffset,
+                                           uint32_t polledNextChunkNum,
+                                           uint32_t polledNextByteOffset,
+                                           uint32_t eventNextChunkNum,
+                                           uint32_t eventNextByteOffset) {
   fs::File progressFile = fs_.open(progressFilePath, "w", true);
   if (!progressFile) {
     DLFLIB_LOG_WARNING(
@@ -839,7 +854,9 @@ bool UploaderComponent::saveUploadProgress(const char* progressFilePath,
     return false;
   }
 
-  uint32_t buf[3] = {metaChunk, polledChunk, eventChunk};
+  uint32_t buf[6] = {metaNextChunkNum,   metaNextByteOffset,
+                     polledNextChunkNum, polledNextByteOffset,
+                     eventNextChunkNum,  eventNextByteOffset};
   progressFile.write(reinterpret_cast<const uint8_t*>(buf), sizeof(buf));
   progressFile.close();
   return true;

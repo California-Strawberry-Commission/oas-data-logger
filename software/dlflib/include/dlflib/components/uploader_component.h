@@ -11,13 +11,9 @@
 
 namespace dlf::components {
 
-// Chunk size used by uploadRunV2. Files are split into chunks of this size and
-// uploaded individually, allowing uploads to be resumed after connection drops.
-constexpr size_t UPLOAD_V2_CHUNK_SIZE = 256 * 1024;
-
-// Progress file written to the run directory by uploadRunV2 to track which
+// Progress file written to the run directory by uploadRunChunked to track which
 // chunks have been successfully uploaded. Allows resuming after interruption.
-constexpr const char* UPLOAD_V2_PROGRESS_FILE = ".uploadprog";
+constexpr const char* UPLOAD_PROGRESS_FILE = ".uploadprog";
 
 class UploaderComponent : public Component {
  public:
@@ -39,17 +35,17 @@ class UploaderComponent : public Component {
     // disables partial run uploads.
     int partialRunUploadIntervalSecs = 0;
     // Enable the new chunked upload path.
-    bool enableUploadV2 = false;
+    bool enableChunkedUpload = false;
   };
 
   /**
-   * @param fs         Filesystem containing run directories (e.g. SD card).
-   * @param fsDir      Root path under which run directories are stored.
+   * @param fs Filesystem containing run directories (e.g. SD card).
+   * @param fsDir Root path under which run directories are stored.
    * @param endpointFmt printf-style format string for the upload endpoint URL,
-   *                   with a single %s placeholder for the run UUID.
-   *                   Example: "https://host/api/upload/%s"
-   * @param deviceUid  Unique device identifier sent in auth headers.
-   * @param options    Configuration options.
+   * with a single %s placeholder for the run UUID. Example:
+   * "https://host/api/upload/%s"
+   * @param deviceUid Unique device identifier sent in auth headers.
+   * @param options Configuration options.
    */
   UploaderComponent(fs::FS& fs, const char* fsDir, const char* endpointFmt,
                     const char* deviceUid, const Options& options);
@@ -60,27 +56,35 @@ class UploaderComponent : public Component {
    * Uploads all DLF files in a run directory as a single multipart/form-data
    * POST request.
    *
-   * @param runDir   Open directory handle for the run to upload.
-   * @param runUuid  UUID string identifying the run (used in the URL and auth).
+   * @param runDir Open directory handle for the run to upload.
+   * @param runUuid UUID string identifying the run (used in the URL and auth).
    * @param isActive Whether the run is still actively being recorded.
    * @return true on success.
    */
   bool uploadRun(fs::File runDir, const char* runUuid, bool isActive = false);
 
   /**
-   * Uploads all DLF files in a run directory using the resumable chunked
-   * upload protocol. Files are split into chunks, each uploaded as a separate
-   * POST.
+   * Uploads all available DLF data in a run directory using the resumable
+   * chunked upload protocol. Files are split into variable-size chunks and
+   * uploaded sequentially. Progress is persisted after each chunk so uploads
+   * can resume after interruption.
    *
-   * After all chunks are uploaded, a finalize request is sent to trigger
-   * server-side reassembly and database record creation.
+   * When finalize=true, a finalize request is sent after all chunks, triggering
+   * server-side reassembly and database record creation. When finalize=false,
+   * chunks are uploaded without finalizing, useful for incremental uploads
+   * during an active run.
    *
-   * @param runDir   Open directory handle for the run to upload.
-   * @param runUuid  UUID string identifying the run (used in the URL and auth).
+   * @param runDir Open directory handle for the run to upload.
+   * @param runUuid UUID string identifying the run (used in the URL and auth).
    * @param isActive Whether the run is still actively being recorded.
-   * @return true if all chunks and the finalize request succeeded.
+   * @param finalize Whether to send the finalize request after uploading
+   * chunks.
+   * @param maxChunkSize Maximum bytes per chunk.
+   * @return true on success (or if there was nothing new to upload).
    */
-  bool uploadRunV2(fs::File runDir, const char* runUuid, bool isActive = false);
+  bool uploadRunChunked(fs::File runDir, const char* runUuid,
+                        bool isActive = false, bool finalize = true,
+                        size_t maxChunkSize = 256 * 1024);
 
   /**
    * Blocks until the background sync task has finished uploading all pending
@@ -107,16 +111,26 @@ class UploaderComponent : public Component {
                                 uint32_t retryDelayMs = 500);
   bool deleteRunDir(fs::File runDir, const char* runDirPath);
 
-  // v2 chunked upload helpers
+  // Chunked upload helpers
   bool sendChunk(HTTPClient& http, const char* runUuid, uint32_t chunkNumber,
                  fs::File& file, size_t chunkBytes);
   bool sendFinalizeRequest(const char* finalizeUrl, const char* runUuid,
                            const char* const* filenames, size_t numFiles,
                            bool isActive);
-  bool loadUploadProgress(const char* progressPath, uint32_t& metaChunk,
-                          uint32_t& polledChunk, uint32_t& eventChunk);
-  bool saveUploadProgress(const char* progressPath, uint32_t metaChunk,
-                          uint32_t polledChunk, uint32_t eventChunk);
+  bool loadUploadProgress(const char* progressFilePath,
+                          uint32_t& metaNextChunkNum,
+                          uint32_t& metaNextByteOffset,
+                          uint32_t& polledNextChunkNum,
+                          uint32_t& polledNextByteOffset,
+                          uint32_t& eventNextChunkNum,
+                          uint32_t& eventNextByteOffset);
+  bool saveUploadProgress(const char* progressFilePath,
+                          uint32_t metaNextChunkNum,
+                          uint32_t metaNextByteOffset,
+                          uint32_t polledNextChunkNum,
+                          uint32_t polledNextByteOffset,
+                          uint32_t eventNextChunkNum,
+                          uint32_t eventNextByteOffset);
 
   std::unique_ptr<WiFiClient> wifiClient_;
   std::unique_ptr<WiFiClientSecure> wifiClientSecure_;

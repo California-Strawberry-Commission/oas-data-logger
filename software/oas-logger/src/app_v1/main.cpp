@@ -23,6 +23,7 @@ const dlf::components::UploaderComponent::RetentionMode LOGGER_RETENTION_MODE{
 const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{0};  // <= 0 means disabled
 const int WIFI_RECONFIG_BUTTON_HOLD_TIME_MS{2000};
 const bool ENABLE_OTA_UPDATE{true};
+const bool ENABLE_CHUNKED_UPLOAD{true};
 
 // Testing overrides
 const bool WAIT_FOR_VALID_TIME{true};
@@ -758,6 +759,7 @@ void initializeDLFLogger() {
   options.retentionMode = LOGGER_RETENTION_MODE;
   options.secret = deviceSecret;
   options.caCert = vercel_root_ca_pem_start;
+  options.enableChunkedUpload = ENABLE_CHUNKED_UPLOAD;
   options.partialRunUploadIntervalSecs =
       LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS;
   logger.syncTo(UPLOAD_ENDPOINT, deviceUid, options).begin();

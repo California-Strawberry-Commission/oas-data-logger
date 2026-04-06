@@ -75,7 +75,7 @@ async function assembleChunks(
 }
 
 /**
- * POST /api/upload/v2/[uuid]/finalize
+ * POST /api/upload/[uuid]/finalize
  *
  * Triggers assembly of previously uploaded chunks and DB record creation.
  *
@@ -108,9 +108,7 @@ export async function POST(
     uuid,
   );
   if (!authResult.success) {
-    console.error(
-      `[api/upload/v2/finalize] Auth failed: ${authResult.message}`,
-    );
+    console.error(`[api/upload/finalize] Auth failed: ${authResult.message}`);
     return NextResponse.json(
       { error: "Unauthorized", details: "Invalid request signature" },
       { status: 401 },
@@ -179,7 +177,7 @@ export async function POST(
   }
 
   console.log(
-    `[api/upload/v2/finalize] Accepted finalize for run: ${uuid}, deviceId: ${deviceId}, isActive: ${isActive}, files: [${files.join(", ")}]`,
+    `[api/upload/finalize] Accepted finalize for run: ${uuid}, deviceId: ${deviceId}, isActive: ${isActive}, files: [${files.join(", ")}]`,
   );
 
   after(async () => {
@@ -193,14 +191,14 @@ export async function POST(
         const chunkKeys = await listChunkKeys(uuid, filename);
         if (chunkKeys.length === 0) {
           console.warn(
-            `[api/upload/v2/finalize] No chunks found for ${uuid}/${filename}, skipping`,
+            `[api/upload/finalize] No chunks found for ${uuid}/${filename}, skipping`,
           );
           continue;
         }
 
         const destPath = resolve(uploadDir, filename);
         console.log(
-          `[api/upload/v2/finalize] Assembling ${chunkKeys.length} chunks for ${uuid}/${filename}`,
+          `[api/upload/finalize] Assembling ${chunkKeys.length} chunks for ${uuid}/${filename}`,
         );
         await assembleChunks(chunkKeys, destPath);
         assembledFiles.push(filename);
@@ -208,7 +206,7 @@ export async function POST(
 
       if (assembledFiles.length === 0) {
         console.error(
-          `[api/upload/v2/finalize] No files assembled for run ${uuid}`,
+          `[api/upload/finalize] No files assembled for run ${uuid}`,
         );
         return;
       }
@@ -245,7 +243,7 @@ export async function POST(
           },
         });
         console.log(
-          `[api/upload/v2/finalize] Created new run ${uuid}, isActive: ${isActive}, durationS: ${durationS}s`,
+          `[api/upload/finalize] Created new run ${uuid}, isActive: ${isActive}, durationS: ${durationS}s`,
         );
       } else {
         const updateData: Parameters<typeof prisma.run.update>[0]["data"] = {
@@ -270,7 +268,7 @@ export async function POST(
           data: updateData,
         });
         console.log(
-          `[api/upload/v2/finalize] Updated run ${uuid}, isActive: ${isActive}, durationS: ${updateData.durationS}s`,
+          `[api/upload/finalize] Updated run ${uuid}, isActive: ${isActive}, durationS: ${updateData.durationS}s`,
         );
       }
 
@@ -281,7 +279,7 @@ export async function POST(
           const key = dlfS3Key(uuid, filename);
           const filePath = resolve(uploadDir, filename);
           console.log(
-            `[api/upload/v2/finalize] Uploading assembled file to S3: ${key}`,
+            `[api/upload/finalize] Uploading assembled file to S3: ${key}`,
           );
           return withRetry(() =>
             s3Client.send(
@@ -296,26 +294,31 @@ export async function POST(
         }),
       );
 
-      // Delete chunk objects from S3 (batch up to 1000 per request)
-      for (const filename of assembledFiles) {
-        const chunkKeys = await listChunkKeys(uuid, filename);
-        for (let i = 0; i < chunkKeys.length; i += 1000) {
-          const batch = chunkKeys.slice(i, i + 1000);
-          await s3Client.send(
-            new DeleteObjectsCommand({
-              Bucket: bucket,
-              Delete: { Objects: batch.map((Key) => ({ Key })) },
-            }),
-          );
+      // In order to support visualization of active runs (and thus partial run uploads), only
+      // delete chunk objects from S3 when finalized with isActive=false.
+      // Intermediate finalizes leave chunks in place so that future partial uploads can continue
+      // accumulating and re-assembling.
+      if (!isActive) {
+        for (const filename of assembledFiles) {
+          const chunkKeys = await listChunkKeys(uuid, filename);
+          for (let i = 0; i < chunkKeys.length; i += 1000) {
+            const batch = chunkKeys.slice(i, i + 1000);
+            await s3Client.send(
+              new DeleteObjectsCommand({
+                Bucket: bucket,
+                Delete: { Objects: batch.map((Key) => ({ Key })) },
+              }),
+            );
+          }
         }
       }
 
       console.log(
-        `[api/upload/v2/finalize] Background processing complete for run ${uuid}`,
+        `[api/upload/finalize] Background processing complete for run ${uuid}`,
       );
     } catch (err) {
       console.error(
-        `[api/upload/v2/finalize] Background processing failed for run ${uuid}:`,
+        `[api/upload/finalize] Background processing failed for run ${uuid}:`,
         err,
       );
     } finally {

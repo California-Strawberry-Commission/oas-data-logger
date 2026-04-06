@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 const ACCEPTED_FILES = new Set<string>(["meta.dlf", "event.dlf", "polled.dlf"]);
 
 /**
- * POST /api/upload/v2/[uuid]/chunk
+ * POST /api/upload/[uuid]/chunk
  *
  * Receives a single binary chunk for a DLF file.
  *
@@ -40,7 +40,7 @@ export async function POST(
     uuid,
   );
   if (!authResult.success) {
-    console.error(`[api/upload/v2/chunk] Auth failed: ${authResult.message}`);
+    console.error(`[api/upload/chunk] Auth failed: ${authResult.message}`);
     return NextResponse.json(
       { error: "Unauthorized", details: "Invalid request signature" },
       { status: 401 },
@@ -89,7 +89,7 @@ export async function POST(
   );
 
   console.log(
-    `[api/upload/v2/chunk] Stored chunk ${chunkNumber} for ${uuid}/${filename} (${body.byteLength} bytes)`,
+    `[api/upload/chunk] Stored chunk ${chunkNumber} for ${uuid}/${filename} (${body.byteLength} bytes)`,
   );
 
   return NextResponse.json({ message: "Chunk received" }, { status: 202 });
