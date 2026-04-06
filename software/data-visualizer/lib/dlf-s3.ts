@@ -1,5 +1,5 @@
 import { s3Client } from "@/lib/s3";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { Adapter } from "dlflib-js";
 
 /**
@@ -41,6 +41,44 @@ async function fetchS3Object(key: string): Promise<Buffer | null> {
 
 export function dlfS3Key(runUuid: string, filename: string): string {
   return `runs/${runUuid}/${filename}`;
+}
+
+export function dlfChunkS3Key(
+  runUuid: string,
+  filename: string,
+  chunkNumber: number,
+): string {
+  return `chunks/${runUuid}/${filename}/${chunkNumber.toString().padStart(10, "0")}`;
+}
+
+/**
+ * List all stored chunk S3 keys for a given run + filename, sorted by chunk index.
+ */
+export async function listChunkKeys(
+  runUuid: string,
+  filename: string,
+): Promise<string[]> {
+  const prefix = `chunks/${runUuid}/${filename}/`;
+  const keys: string[] = [];
+  let continuationToken: string | undefined;
+  do {
+    const res = await s3Client.send(
+      new ListObjectsV2Command({
+        Bucket: process.env.S3_BUCKET_NAME!,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      }),
+    );
+    for (const obj of res.Contents ?? []) {
+      if (obj.Key) {
+        keys.push(obj.Key);
+      }
+    }
+    continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined;
+  } while (continuationToken);
+
+  keys.sort();
+  return keys;
 }
 
 /**
