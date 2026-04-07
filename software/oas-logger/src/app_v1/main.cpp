@@ -21,7 +21,7 @@ const int LOGGER_RUN_INTERVAL_S{0};  // <= 0 means disabled
 const dlf::components::UploaderComponent::RetentionMode LOGGER_RETENTION_MODE{
     dlf::components::UploaderComponent::RetentionMode::MARK};
 const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{0};  // <= 0 means disabled
-const int WIFI_RECONFIG_BUTTON_HOLD_TIME_MS{2000};
+const int WIFI_RECONFIG_BUTTON_HOLD_TIME_MS{3000};
 const bool ENABLE_OTA_UPDATE{true};
 const bool ENABLE_CHUNKED_UPLOAD{true};
 
@@ -787,60 +787,61 @@ void sleepCleanup() {
 }
 
 void sleepMonitorTask(void* args) {
+  // Avoid going to sleep too soon after device has booted
   vTaskDelay(pdMS_TO_TICKS(5000));
 
-  bool usbSleepTriggered = false;
+  unsigned long externalPowerLostMs{0};
 
+  // TODO: Anything other than calling transitionToState should be done on the
+  // main task via a state change. Also, transitionToState should be made
+  // thread-safe.
   while (true) {
-    // Only check sleep conditions if we're in RUNNING state
-    if (currentState == SystemState::RUNNING) {
-      // Check sleep button
-      bool sleepButtonPressed = !digitalRead(PIN_SLEEP_BUTTON);
+    if (!digitalRead(PIN_SLEEP_BUTTON)) {  // sleep button pressed
+      unsigned long pressStart{millis()};
+      while (!digitalRead(PIN_SLEEP_BUTTON)) {
+        if (millis() - pressStart >= WIFI_RECONFIG_BUTTON_HOLD_TIME_MS) {
+          EZLOG_INFO("Sleep button long pressed");
 
-      if (sleepButtonPressed) {
-        unsigned long start = millis();
-
-        while (!digitalRead(PIN_SLEEP_BUTTON)) {
-          if (millis() - start >= WIFI_RECONFIG_BUTTON_HOLD_TIME_MS) {
-            // Sleep button has been long pressed
-            EZLOG_INFO(
-                "[WiFi Reconfiguration] WiFi reconfiguration mode entered...");
-
-            sleepCleanup();
-            vTaskDelay(pdMS_TO_TICKS(100));
-            logger.waitForSyncCompletion();
-            EZLOG_INFO("[WiFi Reconfiguration] Resetting WiFiManager...");
-            wifiManager.resetSettings();  // uses vTaskDelay internally
-            EZLOG_INFO(
-                "[WiFi Reconfiguration] Rebooting device into AP mode...");
-            ESP.restart();
-            break;
-          }
-          yield();
+          sleepCleanup();
+          vTaskDelay(pdMS_TO_TICKS(100));
+          logger.waitForSyncCompletion();
+          EZLOG_INFO("Resetting WiFiManager...");
+          wifiManager.resetSettings();  // uses vTaskDelay internally
+          EZLOG_INFO("Rebooting device...");
+          ESP.restart();
+          break;
         }
+        vTaskDelay(pdMS_TO_TICKS(10));
+      }
 
-        if (millis() - start < WIFI_RECONFIG_BUTTON_HOLD_TIME_MS) {
-          // Sleep button has been short pressed
+      if (millis() - pressStart < WIFI_RECONFIG_BUTTON_HOLD_TIME_MS) {
+        EZLOG_INFO("Sleep button short pressed");
+        sleepCleanup();
+        transitionToState(SystemState::OFFLOAD);
+        break;
+      }
+    }
+
+    // If device was not booted in offload mode, check for external power
+    if (!offloadMode) {
+      unsigned long nowMs{millis()};
+      if (!hasUsbPower()) {
+        // External power disconnected. If still no external power after 2s, go
+        // to OFFLOAD
+        if (externalPowerLostMs == 0) {
+          externalPowerLostMs = nowMs;
+        } else if (nowMs - externalPowerLostMs >= 2000) {
           sleepCleanup();
           transitionToState(SystemState::OFFLOAD);
           break;
         }
+      } else {
+        // External power restored
+        externalPowerLostMs = 0;
       }
     }
 
-    // Check USB power for sleep trigger
-    bool usbSleep = !offloadMode && !hasUsbPower();
-    if (usbSleep && usbSleepTriggered) {
-      sleepCleanup();
-      transitionToState(SystemState::OFFLOAD);
-      break;
-    } else if (usbSleep) {
-      usbSleepTriggered = true;
-    } else {
-      usbSleepTriggered = false;
-    }
-
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(20));
   }
 
   // Task will be deleted when system enters sleep
