@@ -130,6 +130,7 @@ bool ledToggleState{false};
 // State machine
 SystemState currentState{SystemState::INIT};
 ErrorType currentError{ErrorType::NONE};
+SemaphoreHandle_t stateMutex;
 
 // GPS Data Structure with Mutex Protection
 struct GpsData {
@@ -193,6 +194,14 @@ void setup() {
     return;
   }
 
+  // Create mutex for state machine protection
+  stateMutex = xSemaphoreCreateMutex();
+  if (stateMutex == nullptr) {
+    currentError = ErrorType::LOGGER_INIT_FAILED;
+    transitionToState(SystemState::ERROR);
+    return;
+  }
+
   // Configure pins
   // Read to indicate whether USB power is present
   pinMode(PIN_USB_POWER, INPUT_PULLDOWN);
@@ -228,7 +237,15 @@ void loop() {
   updateLedPattern();
 
   // State machine logic
-  switch (currentState) {
+  SystemState state;
+  if (xSemaphoreTake(stateMutex, portMAX_DELAY) == pdTRUE) {
+    state = currentState;
+    xSemaphoreGive(stateMutex);
+  } else {
+    return;
+  }
+
+  switch (state) {
     case SystemState::INIT:
       handleInitState();
       break;
@@ -273,7 +290,15 @@ void initializeLed() {
 void updateLedPattern() {
   unsigned long currentMillis = millis();
 
-  switch (currentState) {
+  SystemState state;
+  if (xSemaphoreTake(stateMutex, portMAX_DELAY) == pdTRUE) {
+    state = currentState;
+    xSemaphoreGive(stateMutex);
+  } else {
+    return;
+  }
+
+  switch (state) {
     case SystemState::INIT:
       FastLED.showColor(CRGB::White);
       break;
@@ -346,8 +371,11 @@ void provisionDevice() {
 }
 
 void transitionToState(SystemState newState) {
-  EZLOG_DEBUG("State transition: %d -> %d", (int)currentState, (int)newState);
-  currentState = newState;
+  if (xSemaphoreTake(stateMutex, portMAX_DELAY) == pdTRUE) {
+    EZLOG_DEBUG("State transition: %d -> %d", (int)currentState, (int)newState);
+    currentState = newState;
+    xSemaphoreGive(stateMutex);
+  }
 
   // Reset LED toggle state on transition
   ledToggleState = false;
@@ -768,9 +796,9 @@ void sleepMonitorTask(void* args) {
 
   unsigned long externalPowerLostMs{0};
 
-  // TODO: Anything other than calling transitionToState should be done on the
-  // main task via a state change. Also, transitionToState should be made
-  // thread-safe.
+  // TODO: This task should only call transitionToState; the main loop should
+  // handle any additional logic (like sleepCleanup). This will prevent any
+  // potential concurrency issues.
   while (true) {
     if (!digitalRead(PIN_SLEEP_BUTTON)) {  // sleep button pressed
       unsigned long pressStart{millis()};
