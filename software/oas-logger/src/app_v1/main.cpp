@@ -111,6 +111,7 @@ TaskHandle_t xGPS_Handle{nullptr};
 
 // State Machine Variables
 SystemState currentState = SystemState::INIT;
+SemaphoreHandle_t stateMutex;
 ErrorType currentError = ErrorType::NONE;
 bool offloadMode = false;
 bool gpsEnabled = false;
@@ -189,6 +190,14 @@ void setup() {
     return;
   }
 
+  // Create mutex for state machine protection
+  stateMutex = xSemaphoreCreateMutex();
+  if (stateMutex == nullptr) {
+    currentError = ErrorType::LOGGER_INIT_FAILED;
+    transitionToState(SystemState::ERROR);
+    return;
+  }
+
   // Configure pins
   pinMode(PIN_USB_POWER, INPUT_PULLDOWN);
   pinMode(PIN_SLEEP_BUTTON, INPUT_PULLUP);
@@ -225,7 +234,15 @@ void loop() {
   updateLedPattern();
 
   // State machine logic
-  switch (currentState) {
+  SystemState state;
+  if (xSemaphoreTake(stateMutex, portMAX_DELAY) == pdTRUE) {
+    state = currentState;
+    xSemaphoreGive(stateMutex);
+  } else {
+    return;
+  }
+
+  switch (state) {
     case SystemState::INIT:
       handleInitState();
       break;
@@ -295,7 +312,15 @@ void provisionDevice() {
 void updateLedPattern() {
   unsigned long currentMillis = millis();
 
-  switch (currentState) {
+  SystemState state;
+  if (xSemaphoreTake(stateMutex, portMAX_DELAY) == pdTRUE) {
+    state = currentState;
+    xSemaphoreGive(stateMutex);
+  } else {
+    return;
+  }
+
+  switch (state) {
     case SystemState::INIT:
       FastLED.showColor(CRGB::White);
       break;
@@ -356,8 +381,11 @@ void updateLedPattern() {
 }
 
 void transitionToState(SystemState newState) {
-  EZLOG_DEBUG("State transition: %d -> %d", (int)currentState, (int)newState);
-  currentState = newState;
+  if (xSemaphoreTake(stateMutex, portMAX_DELAY) == pdTRUE) {
+    EZLOG_DEBUG("State transition: %d -> %d", (int)currentState, (int)newState);
+    currentState = newState;
+    xSemaphoreGive(stateMutex);
+  }
 
   // Reset LED toggle state on transition
   ledToggleState = false;
@@ -505,18 +533,27 @@ void handleWaitGpsState() {
 }
 
 void handleWaitTimeState() {
-  // Check if we have valid time AND a GPS fix
-  if (gpsTimeValid && gpsEpoch >= 1735689600) {  // 2025-01-01 UTC
+  // Read shared GPS time state (which are written to by gpsTask) under the
+  // mutex into locals
+  bool timeValid = false;
+  time_t epoch = 0;
+  if (xSemaphoreTake(gpsDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    timeValid = gpsTimeValid;
+    epoch = gpsEpoch;
+    xSemaphoreGive(gpsDataMutex);
+  }
+
+  if (timeValid && epoch >= 1735689600) {  // 2025-01-01 UTC
     // Set system time for TLS operations
     struct timeval tv;
-    tv.tv_sec = gpsEpoch;
+    tv.tv_sec = epoch;
     tv.tv_usec = 0;
     settimeofday(&tv, nullptr);
 
     // Also set the RTC
-    rtc.setTime(gpsEpoch);
+    rtc.setTime(epoch);
 
-    EZLOG_INFO("Valid GPS time received: %ld", gpsEpoch);
+    EZLOG_INFO("Valid GPS time received: %ld", epoch);
 
     // Initialize logger and start run
     initializeDLFLogger();
@@ -669,12 +706,9 @@ void gpsTask(void* args) {
   while (true) {
     // Request PVT data - returns true when new data is available
     if (myGNSS.getPVT()) {
-      // Get fix type and satellite count (not protected by mutex)
-      gpsFixType = myGNSS.getFixType();
-
-      // Update GPS data with mutex protection
+      // Update all shared GPS globals under the mutex
       if (xSemaphoreTake(gpsDataMutex, portMAX_DELAY) == pdTRUE) {
-        // Get satellite count
+        gpsFixType = myGNSS.getFixType();
         gpsData.satellites = myGNSS.getSIV();
 
         // Only update position if we have a valid fix
@@ -690,8 +724,8 @@ void gpsTask(void* args) {
         xSemaphoreGive(gpsDataMutex);
       }
 
-      // Check time validity more strictly (outside mutex protection)
-      // Only consider time valid if we have a fix AND valid date/time
+      // Compute epoch outside the mutex as mktime() can be slow.
+      // Only consider time valid if we have a fix AND valid date/time.
       if (gpsFixType >= 2 && myGNSS.getDateValid() && myGNSS.getTimeValid() &&
           myGNSS.getYear() >= 2025 && myGNSS.getMonth() >= 1 &&
           myGNSS.getMonth() <= 12 && myGNSS.getDay() >= 1 &&
@@ -706,10 +740,14 @@ void gpsTask(void* args) {
 
         time_t newEpoch = mktime(&t);
 
-        // Additional sanity check
-        if (newEpoch >= 1735689600) {  // 2025-01-01 UTC
-          gpsEpoch = newEpoch;
-          gpsTimeValid = true;
+        if (newEpoch >= 1735689600) {  // Additional sanity check that epoch is
+                                       // after 2025-01-01 UTC
+          // Update shared GPS time state under the mutex
+          if (xSemaphoreTake(gpsDataMutex, portMAX_DELAY) == pdTRUE) {
+            gpsEpoch = newEpoch;
+            gpsTimeValid = true;
+            xSemaphoreGive(gpsDataMutex);
+          }
         }
       }
     }
@@ -792,9 +830,9 @@ void sleepMonitorTask(void* args) {
 
   unsigned long externalPowerLostMs{0};
 
-  // TODO: Anything other than calling transitionToState should be done on the
-  // main task via a state change. Also, transitionToState should be made
-  // thread-safe.
+  // TODO: This task should only call transitionToState; the main loop should
+  // handle any additional logic (like sleepCleanup). This will prevent any
+  // potential concurrency issues.
   while (true) {
     if (!digitalRead(PIN_SLEEP_BUTTON)) {  // sleep button pressed
       unsigned long pressStart{millis()};
