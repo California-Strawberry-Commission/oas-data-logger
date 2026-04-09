@@ -37,7 +37,15 @@ UploaderComponent::UploaderComponent(fs::FS& fs, const char* fsDir,
 bool UploaderComponent::begin() {
   DLFLIB_LOG_INFO("[UploaderComponent] begin");
   wifiEvent_ = xEventGroupCreate();
+  if (wifiEvent_ == nullptr) {
+    DLFLIB_LOG_ERROR("[UploaderComponent] Failed to create wifiEvent_");
+    return false;
+  }
   syncEvent_ = xEventGroupCreate();
+  if (syncEvent_ == nullptr) {
+    DLFLIB_LOG_ERROR("[UploaderComponent] Failed to create syncEvent_");
+    return false;
+  }
 
   // Initial states
   if (WiFi.status() == WL_CONNECTED) {
@@ -55,11 +63,18 @@ bool UploaderComponent::begin() {
                          std::placeholders::_1, std::placeholders::_2),
                ARDUINO_EVENT_WIFI_STA_GOT_IP);
 
-  xTaskCreate(syncTask, "sync", 8192, this, 5, NULL);
+  if (xTaskCreate(syncTask, "sync", 8192, this, 5, NULL) != pdPASS) {
+    DLFLIB_LOG_ERROR("[UploaderComponent] Failed to create sync task");
+    return false;
+  }
 
   if (options_.partialRunUploadIntervalSecs > 0) {
-    xTaskCreate(partialRunUploadTask, "partial_run_upload", 8192, this, 5,
-                NULL);
+    if (xTaskCreate(partialRunUploadTask, "partial_run_upload", 8192, this, 5,
+                    NULL) != pdPASS) {
+      DLFLIB_LOG_ERROR(
+          "[UploaderComponent] Failed to create partial_run_upload task");
+      return false;
+    }
   }
 
   return true;

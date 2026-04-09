@@ -21,6 +21,11 @@ Run::Run(fs::FS& fs, const char* fsDir,
   dlf::util::joinPath(lockfilePath_, sizeof(lockfilePath_), runDir_,
                       LOCKFILE_NAME);
   syncSemaphore_ = xSemaphoreCreateCounting(1, 0);
+  if (syncSemaphore_ == nullptr) {
+    DLFLIB_LOG_ERROR("[Run] Failed to create syncSemaphore_");
+    status_ = SYNC_CREATE_ERROR;
+    return;
+  }
 
   DLFLIB_LOG_INFO("[Run] Starting run %s", uuid_);
 
@@ -40,14 +45,24 @@ Run::Run(fs::FS& fs, const char* fsDir,
 
   DLFLIB_LOG_INFO("[Run] Logfiles inited");
 
-  status_ = LOGGING;
-
   // Setup ticks
-  xTaskCreate(taskSampler, "Sampler", 2560, this, 5, NULL);
+  if (xTaskCreate(taskSampler, "Sampler", 2560, this, 5, NULL) != pdPASS) {
+    DLFLIB_LOG_ERROR("[Run] Failed to create Sampler task");
+    status_ = FLUSHER_CREATE_ERROR;
+    return;
+  }
+
+  status_ = LOGGING;
 }
 
 void Run::close() {
   DLFLIB_LOG_INFO("[Run] Closing run...");
+
+  if (status_ < 0) {
+    DLFLIB_LOG_ERROR("[Run] Cannot close run in error state: %d", (int)status_);
+    return;
+  }
+
   status_ = FLUSHING;
 
   // Wait for sampling task to cleanly exit.

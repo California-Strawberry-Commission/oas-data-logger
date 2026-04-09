@@ -9,6 +9,9 @@ namespace dlf {
 DLFLogger::DLFLogger(fs::FS& fs, const char* fsDir) : fs_(fs) {
   snprintf(fsDir_, sizeof(fsDir_), "%s", fsDir ? fsDir : "");
   loggerEventGroup_ = xEventGroupCreate();
+  if (loggerEventGroup_ == nullptr) {
+    DLFLIB_LOG_ERROR("[DLFLogger] Failed to create loggerEventGroup_");
+  }
   // Wire the registry into `this` so getComponent works from DLFLogger
   this->setRegistry(this);
 }
@@ -75,7 +78,9 @@ void DLFLogger::stopRun(run_handle_t h) {
 
   runs_[idx]->close();
   runs_[idx].reset();
-  xEventGroupSetBits(loggerEventGroup_, RUN_COMPLETE);
+  if (loggerEventGroup_) {
+    xEventGroupSetBits(loggerEventGroup_, RUN_COMPLETE);
+  }
 }
 
 DLFLogger& DLFLogger::syncTo(

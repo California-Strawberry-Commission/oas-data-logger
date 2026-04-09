@@ -56,7 +56,7 @@ class Run {
   fs::FS& fs_;
   char runDir_[128];
   char lockfilePath_[128];
-  volatile dlf_file_state_e status_;
+  volatile dlf_file_state_e status_{UNINITIALIZED};
   SemaphoreHandle_t syncSemaphore_;
   std::chrono::microseconds tickInterval_;
   const std::vector<std::unique_ptr<dlf::datastream::AbstractStream>>& streams_;
