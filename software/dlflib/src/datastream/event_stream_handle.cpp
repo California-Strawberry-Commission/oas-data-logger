@@ -35,9 +35,6 @@ size_t EventStreamHandle::encodeHeaderInto(StreamBufferHandle_t buf) {
   return AbstractStreamHandle::encodeHeaderInto(buf);
 }
 
-// FIXME: High possibility of overrunning streambuffer on initial tick (where
-// all events are written) with lots of event data streams. Figure out how to
-// mitigate!
 size_t EventStreamHandle::encodeInto(StreamBufferHandle_t buf,
                                      dlf_tick_t tick) {
 #ifdef DEBUG
@@ -47,7 +44,20 @@ size_t EventStreamHandle::encodeInto(StreamBufferHandle_t buf,
       stream->id());
 #endif
 
-  size_t written = 0;
+  // Ensure the full record (header + data) fits before writing anything. This
+  // is important for the event stream because the stream buffer may overflow
+  // when there are many event data samples to log on the initial tick. If there
+  // is not enough space in the stream buffer, skip this tick. On the next tick,
+  // the write will be attempted again as the current hash will not have
+  // changed.
+  const size_t required =
+      sizeof(dlf_event_stream_sample_t) + stream->dataSize();
+  if (xStreamBufferSpacesAvailable(buf) < required) {
+    DLFLIB_LOG_WARNING(
+        "[EventStreamHandle] Buffer full, deferring write for stream %s",
+        stream->id());
+    return 0;
+  }
 
   if (stream->mutex()) {
     if (xSemaphoreTake(stream->mutex(), (TickType_t)10) != pdTRUE) {
@@ -55,6 +65,8 @@ size_t EventStreamHandle::encodeInto(StreamBufferHandle_t buf,
     }
   }
 
+  // Update the hash so that available() will return false until the data
+  // changes again
   hash_ = currentHash();
 
   dlf_event_stream_sample_t h;
@@ -62,7 +74,8 @@ size_t EventStreamHandle::encodeInto(StreamBufferHandle_t buf,
   h.sample_tick = tick;
   xStreamBufferSend(buf, &h, sizeof(h), 0);
 
-  written = xStreamBufferSend(buf, stream->dataSource(), stream->dataSize(), 0);
+  size_t written =
+      xStreamBufferSend(buf, stream->dataSource(), stream->dataSize(), 0);
 
   if (stream->mutex()) {
     xSemaphoreGive(stream->mutex());

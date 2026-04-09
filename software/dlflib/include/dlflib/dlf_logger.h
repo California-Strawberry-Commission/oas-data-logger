@@ -97,6 +97,9 @@ class DLFLogger : public dlf::components::Component,
   void waitForSyncCompletion();
 
   EventBits_t waitForRunComplete(TickType_t ticksToWait = portMAX_DELAY) {
+    if (!loggerEventGroup_) {
+      return 0;
+    }
     return xEventGroupWaitBits(loggerEventGroup_, RUN_COMPLETE, pdTRUE, pdTRUE,
                                ticksToWait);
   }
