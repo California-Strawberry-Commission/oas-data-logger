@@ -17,3 +17,10 @@ const RUN_COLORS = [
 export function colorForIndex(i: number): string {
   return RUN_COLORS[i % RUN_COLORS.length];
 }
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isValidUuid(value: string): boolean {
+  return UUID_RE.test(value);
+}

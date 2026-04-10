@@ -1,5 +1,6 @@
 import { getCurrentUser } from "@/lib/auth";
 import prisma, { getRunForUser, runWhereForUser } from "@/lib/prisma";
+import { isValidUuid } from "@/lib/utils";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -11,7 +12,11 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ uuid: string }> },
 ) {
+  // Parse and validate UUID
   const { uuid } = await params;
+  if (!isValidUuid(uuid)) {
+    return NextResponse.json({ error: "Invalid run UUID" }, { status: 400 });
+  }
 
   try {
     const user = await getCurrentUser(request.headers);
@@ -63,6 +68,10 @@ export async function DELETE(
   { params }: { params: Promise<{ uuid: string }> },
 ) {
   const { uuid } = await params;
+
+  if (!isValidUuid(uuid)) {
+    return NextResponse.json({ error: "Invalid run UUID" }, { status: 400 });
+  }
 
   try {
     const user = await getCurrentUser(request.headers);
