@@ -1,6 +1,7 @@
 import { getCurrentUser } from "@/lib/auth";
 import { getRunDlfAdapter } from "@/lib/dlf-s3";
-import prisma, { getRunForUser } from "@/lib/prisma";
+import { getRunForUser } from "@/lib/prisma";
+import { isValidUuid } from "@/lib/utils";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -15,18 +16,26 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ uuid: string }> },
 ) {
+  // Parse and validate UUID
   const { uuid } = await params;
-  const { searchParams } = new URL(request.url);
-  const stream_ids = searchParams.get("stream_ids");
+  if (!isValidUuid(uuid)) {
+    return NextResponse.json({ error: "Invalid run UUID" }, { status: 400 });
+  }
 
-  if (!stream_ids) {
+  // Parse and validate stream ID list
+  const { searchParams } = new URL(request.url);
+  const streamIds =
+    searchParams.get("stream_ids")?.split(",").filter(Boolean) ?? [];
+  if (streamIds.length === 0) {
     return NextResponse.json(
-      { error: "stream_ids query parameter is required" },
+      { error: "No stream IDs provided" },
       { status: 400 },
     );
   }
-
-  const streamIdsArray = stream_ids.split(",");
+  // Limit the number of stream IDs to prevent abuse
+  if (streamIds.length > 20) {
+    return NextResponse.json({ error: "Too many stream IDs" }, { status: 400 });
+  }
 
   try {
     const user = await getCurrentUser(request.headers);
@@ -52,7 +61,7 @@ export async function GET(
     ]);
 
     const result: { streamId: string; tick: number; data: unknown }[] = [];
-    const streamIdSet = new Set(streamIdsArray);
+    const streamIdSet = new Set(streamIds);
 
     // Process polled data
     for (const sample of polledSamples) {

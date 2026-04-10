@@ -1,6 +1,7 @@
 import { getCurrentUser } from "@/lib/auth";
 import { getRunDlfAdapter } from "@/lib/dlf-s3";
-import prisma, { getRunForUser } from "@/lib/prisma";
+import { getRunForUser } from "@/lib/prisma";
+import { isValidUuid } from "@/lib/utils";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -13,6 +14,9 @@ export async function GET(
   { params }: { params: Promise<{ uuid: string; streamId: string }> },
 ) {
   const { uuid, streamId } = await params;
+  if (!isValidUuid(uuid)) {
+    return NextResponse.json({ error: "Invalid run UUID" }, { status: 400 });
+  }
 
   try {
     const user = await getCurrentUser(request.headers);
