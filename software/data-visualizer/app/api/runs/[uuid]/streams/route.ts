@@ -1,4 +1,4 @@
-import { getCurrentUser } from "@/lib/auth";
+import { User, withAuth } from "@/lib/auth";
 import { getRunDlfAdapter } from "@/lib/dlf-s3";
 import { getRunForUser } from "@/lib/prisma";
 import { isValidUuid } from "@/lib/utils";
@@ -12,12 +12,9 @@ import { NextRequest, NextResponse } from "next/server";
  * Query Parameters:
  * - stream_ids (required): Comma-separated list of stream IDs to retrieve.
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ uuid: string }> },
-) {
-  // Parse and validate UUID
-  const { uuid } = await params;
+export const GET = withAuth(async (request: NextRequest, user: User, context) => {
+  const { uuid } = await context.params as { uuid: string };
+
   if (!isValidUuid(uuid)) {
     return NextResponse.json({ error: "Invalid run UUID" }, { status: 400 });
   }
@@ -38,11 +35,6 @@ export async function GET(
   }
 
   try {
-    const user = await getCurrentUser(request.headers);
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const run = await getRunForUser(user, uuid, { select: { id: true } });
     if (!run) {
       // Either run doesn't exist, or user does not have access to it
@@ -96,4 +88,4 @@ export async function GET(
       { status: 500 },
     );
   }
-}
+});

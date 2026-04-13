@@ -1,4 +1,4 @@
-import { getCurrentUser } from "@/lib/auth";
+import { User, withAuth } from "@/lib/auth";
 import prisma, { devicesWhereForUser } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -7,13 +7,8 @@ import { NextRequest, NextResponse } from "next/server";
  *
  * Returns the list of devices that belong to the authenticated user.
  */
-export async function GET(request: NextRequest) {
+export const GET = withAuth(async (_request: NextRequest, user: User) => {
   try {
-    const user = await getCurrentUser(request.headers);
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const where = devicesWhereForUser(user);
     const devices = await prisma.device.findMany({
       where,
@@ -32,4 +27,4 @@ export async function GET(request: NextRequest) {
       { status: 500 },
     );
   }
-}
+});
