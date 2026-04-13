@@ -1,6 +1,6 @@
 import { DeviceType, OtaChannel } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
-import { verifyDeviceSignature } from "@/lib/verifydevice";
+import { verifyDeviceSignature } from "@/lib/verify-device";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
