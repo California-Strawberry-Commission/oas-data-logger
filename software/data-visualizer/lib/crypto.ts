@@ -7,7 +7,7 @@ const ALGORITHM = "aes-256-gcm";
 function getSecretKey(): Buffer {
   const secretKey = Buffer.from(
     process.env.DEVICE_SECRET_ENCRYPTION_KEY || "",
-    "hex"
+    "hex",
   );
   return secretKey;
 }
@@ -52,13 +52,13 @@ export function decryptSecret(packedSecret: string) {
   const [ivHex, authTagHex, encryptedHex] = packedSecret.split(":");
 
   if (!ivHex || !authTagHex || !encryptedHex) {
-    throw new Error("Invalid secret format: Expected iv:authTag:encrypted");
+    throw new Error("Invalid secret format");
   }
 
   const decipher = createDecipheriv(
     ALGORITHM,
     secretKey,
-    Buffer.from(ivHex, "hex")
+    Buffer.from(ivHex, "hex"),
   );
 
   decipher.setAuthTag(Buffer.from(authTagHex, "hex"));
