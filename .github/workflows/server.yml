@@ -1,4 +1,5 @@
-name: Test
+name: Server
+
 on: # Run on push to main branch, as well as all PRs
   push:
     branches: [main]
