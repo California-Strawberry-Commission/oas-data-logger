@@ -13,60 +13,7 @@ import {
   U8s,
   Endian,
 } from "construct-js";
-//import { write as floatWrite } from 'ieee754';
-
-//TODO: clean this up to somewhere else ...
-/*
-export class FloatField {
-  public width: number;
-  public min: number;
-  public max: number;
-  public toBytesFn: (vals: number[], isLE: boolean) => Uint8Array;
-  public value: number;
-  public endian: Endian;
-
-  constructor(width: number, min: number, max: number, toBytesFn: (vals: number[], isLE: boolean) => Uint8Array, value: number, endian: Endian) {
-      this.width = width;
-      this.min = min;
-      this.max = max;
-      this.toBytesFn = toBytesFn;
-      this.value = value;
-      this.endian = endian;
-  }
-  computeBufferSize() { return this.width; }
-  toUint8Array() {
-      return this.toBytesFn([this.value], this.endian === Endian.Little);
-  }
-  set(value: number) {
-      this.value = value;
-  }
-  get() { return this.value; }
-}
-
-// 32-bit Float
-const IEEE754_FLOAT32_MAX = (2 - (2 ** -23)) * (2 ** 127);
-const IEEE754_FLOAT32_MIN = IEEE754_FLOAT32_MAX * -1;
-const f32Tou8s = (vals: number[], isLittleEndian: boolean) => {
-  const stride = 4;
-  const buff = new Uint8Array(vals.length * stride);
-  for (let [i, val] of vals.entries()) {
-    floatWrite(buff, val, i * stride, isLittleEndian, 23, 4);
-  }
-  return buff;
-}
-export const F32 = (value: number, endian: Endian = Endian.Little) => new FloatField(4, IEEE754_FLOAT32_MIN, IEEE754_FLOAT32_MAX, f32Tou8s, value, endian);
-
-// 64-bit Double
-const f64Tou8s = (vals: number[], isLittleEndian: boolean) => {
-  const stride = 8;
-  const buff = new Uint8Array(vals.length * stride);
-  for (let [i, val] of vals.entries()) {
-    floatWrite(buff, val, i * stride, isLittleEndian, 52, 8);
-  }
-  return buff;
-}
-export const F64 = (value: number, endian: Endian = Endian.Little) => new FloatField(8, -Number.MAX_VALUE, Number.MAX_VALUE, f64Tou8s, value, endian);
-*/
+import { F32, F64 } from "./construct_float.js";
 
 /**
  * Creates an adapter to a remote, hosted, DLF Logfile
@@ -89,7 +36,7 @@ const BINARY_PARSERS_PRIMITIVES = {
   double: "doublele",
 } as const;
 
-// construct-js doesn't support floats/doubles TODO: accomodate.
+// see construct_float.js for implementation of F32 && F64
 const ENCODER_PRIMITIVES = {
   uint8_t: U8,
   bool: U8,
@@ -100,8 +47,8 @@ const ENCODER_PRIMITIVES = {
   int16_t: I16,
   int32_t: I32,
   int64_t: I64,
-  //float: F32,
-  //double: F64,
+  float: F32,
+  double: F64,
 } as const;
 
 const meta_header_t = new Parser()
@@ -165,7 +112,7 @@ const logfile_header_t = new Parser()
 
 type Stream = Tlogfile_header_t["streams"][0];
 
-//TODO: may need to add export for unit testing, may need to use getter and setter as well for injecting JSON data
+// export for unit testing
 
 export type TMetaObj = {
     magic: number;
@@ -301,7 +248,7 @@ export abstract class Adapter {
     return parser;
   }
 
-  //TODO once tested, swapout with construct-js API calls (for now will return zeroed out data)
+  //Factory function for encode functions, returns primitive or struct to be populated
 
   create_encoder(
     structure: string,
@@ -564,13 +511,13 @@ export abstract class Adapter {
     );
   }
 
-  //encoder functions
   /*
+  Encoder Function Block:
     All 3 functions follow similar format.
     Checking for "function" since U8 etc. implement IField and IValue.
     Polled and Events cascade similar format to inner streams.
     For polled and events, encode each stream, concatenate and turn into array at end.
-    TODO: Can we use less loops?
+    TODO: Refactor to make better?
   */
 
   async encode_meta(metaObj: TMetaObj): Promise<Uint8Array> {
@@ -617,16 +564,7 @@ async encode_polled(polledObj: TPolledLogObj): Promise<Uint8Array> {
       payloadLength += streamBytes.length;
     }
 
-    
-    // Sort samples chronologically to guarantee correct interleaving. by tick, then idx.
-    const interleavedSamples = [...polledObj.samples].sort((a, b) => {
-      if (a.sample_tick < b.sample_tick) return -1;
-      if (a.sample_tick > b.sample_tick) return 1;
-
-      return a.stream_idx - b.stream_idx;
-    });
-
-    for (const sample of interleavedSamples) {
+    for (const sample of polledObj.samples){
       const streamDef = polledObj.streams[sample.stream_idx];
       const encoder = this.create_encoder(streamDef.type_structure);
       let dataBytes: any = new Uint8Array(0);
