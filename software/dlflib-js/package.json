@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "test": "vitest --ui",
+    "test": "vitest run",
     "build": "tsc",
     "postinstall": "npm run build"
   },
