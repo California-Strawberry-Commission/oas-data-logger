@@ -1,4 +1,72 @@
 import { Parser } from "binary-parser";
+import {
+  Struct,
+  U8,
+  U16,
+  U32,
+  U64,
+  I8,
+  I16,
+  I32,
+  I64,
+  NullTerminatedString,
+  U8s,
+  Endian,
+} from "construct-js";
+//import { write as floatWrite } from 'ieee754';
+
+//TODO: clean this up to somewhere else ...
+/*
+export class FloatField {
+  public width: number;
+  public min: number;
+  public max: number;
+  public toBytesFn: (vals: number[], isLE: boolean) => Uint8Array;
+  public value: number;
+  public endian: Endian;
+
+  constructor(width: number, min: number, max: number, toBytesFn: (vals: number[], isLE: boolean) => Uint8Array, value: number, endian: Endian) {
+      this.width = width;
+      this.min = min;
+      this.max = max;
+      this.toBytesFn = toBytesFn;
+      this.value = value;
+      this.endian = endian;
+  }
+  computeBufferSize() { return this.width; }
+  toUint8Array() {
+      return this.toBytesFn([this.value], this.endian === Endian.Little);
+  }
+  set(value: number) {
+      this.value = value;
+  }
+  get() { return this.value; }
+}
+
+// 32-bit Float
+const IEEE754_FLOAT32_MAX = (2 - (2 ** -23)) * (2 ** 127);
+const IEEE754_FLOAT32_MIN = IEEE754_FLOAT32_MAX * -1;
+const f32Tou8s = (vals: number[], isLittleEndian: boolean) => {
+  const stride = 4;
+  const buff = new Uint8Array(vals.length * stride);
+  for (let [i, val] of vals.entries()) {
+    floatWrite(buff, val, i * stride, isLittleEndian, 23, 4);
+  }
+  return buff;
+}
+export const F32 = (value: number, endian: Endian = Endian.Little) => new FloatField(4, IEEE754_FLOAT32_MIN, IEEE754_FLOAT32_MAX, f32Tou8s, value, endian);
+
+// 64-bit Double
+const f64Tou8s = (vals: number[], isLittleEndian: boolean) => {
+  const stride = 8;
+  const buff = new Uint8Array(vals.length * stride);
+  for (let [i, val] of vals.entries()) {
+    floatWrite(buff, val, i * stride, isLittleEndian, 52, 8);
+  }
+  return buff;
+}
+export const F64 = (value: number, endian: Endian = Endian.Little) => new FloatField(8, -Number.MAX_VALUE, Number.MAX_VALUE, f64Tou8s, value, endian);
+*/
 
 /**
  * Creates an adapter to a remote, hosted, DLF Logfile
@@ -19,6 +87,21 @@ const BINARY_PARSERS_PRIMITIVES = {
   int64_t: "int64le",
   float: "floatle",
   double: "doublele",
+} as const;
+
+// construct-js doesn't support floats/doubles TODO: accomodate.
+const ENCODER_PRIMITIVES = {
+  uint8_t: U8,
+  bool: U8,
+  uint16_t: U16,
+  uint32_t: U32,
+  uint64_t: U64,
+  int8_t: I8,
+  int16_t: I16,
+  int32_t: I32,
+  int64_t: I64,
+  //float: F32,
+  //double: F64,
 } as const;
 
 const meta_header_t = new Parser()
@@ -82,6 +165,85 @@ const logfile_header_t = new Parser()
 
 type Stream = Tlogfile_header_t["streams"][0];
 
+//TODO: may need to add export for unit testing, may need to use getter and setter as well for injecting JSON data
+
+export type TMetaObj = {
+    magic: number;
+    epoch_time_s: number;
+    tick_base_us: number;
+    meta_structure: string;
+    meta: any;
+};
+
+export type TEventLogObj = {
+  magic: number;
+  stream_type: number;
+  tick_span: bigint;
+  streams: Array<{
+    type_structure: string;
+    id: string;
+    notes: string;
+    type_size: number;
+  }>;
+  samples: Array<{
+    stream_idx: number;
+    sample_tick: bigint;
+    buffer: any;
+  }>;
+};
+
+export type TPolledLogObj = {
+  magic: number;
+  stream_type: number;
+  tick_span: bigint;
+  streams: Array<{
+    type_structure: string;
+    id: string;
+    notes: string;
+    type_size: number;
+    tick_interval: bigint;
+    tick_phase: bigint;
+  }>;
+  samples: Array<{
+    stream_idx: number;
+    sample_tick: bigint; // Used for sorting to ensure chronological order
+    buffer: any;
+  }>;
+};
+
+const meta_header_encoder_t = Struct("meta_header_t")
+  .field("magic", U16(0))
+  .field("epoch_time_s", U32(0))
+  .field("tick_base_us", U32(0))
+  .field("meta_structure", NullTerminatedString(""))
+  .field("meta_size", U32(0))
+  .field("meta", U8s([]));
+
+const logfile_header_encoder_t = Struct("logfile_header_t")
+  .field("magic", U16(0))
+  .field("stream_type", U8(0))
+  .field("tick_span", U64(0n))
+  .field("num_streams", U16(0))
+  .field("streams_payload", U8s([]));
+
+const event_stream_header_encoder_t = Struct("stream_header_t")
+  .field("type_structure", NullTerminatedString(""))
+  .field("id", NullTerminatedString(""))
+  .field("notes", NullTerminatedString(""))
+  .field("type_size", U32(0));
+
+const sample_header_encoder_t = Struct("sample_header_t")
+  .field("stream_idx", U16(0))
+  .field("sample_tick", U64(0n));
+
+const polled_stream_header_encoder_t = Struct("polled_stream_header_t")
+  .field("type_structure", NullTerminatedString(""))
+  .field("id", NullTerminatedString(""))
+  .field("notes", NullTerminatedString(""))
+  .field("type_size", U32(0))
+  .field("tick_interval", U64(0n))
+  .field("tick_phase", U64(0n));
+
 export abstract class Adapter {
   abstract get polled_dlf(): Promise<Uint8Array>;
   abstract get events_dlf(): Promise<Uint8Array>;
@@ -137,6 +299,55 @@ export abstract class Adapter {
     }
 
     return parser;
+  }
+
+  //TODO once tested, swapout with construct-js API calls (for now will return zeroed out data)
+
+  create_encoder(
+    structure: string,
+    structure_size?: number
+  ): ReturnType<typeof Struct> | Function | null {
+
+    if (structure.startsWith("!")){
+      return null;
+    }
+
+    if (structure in ENCODER_PRIMITIVES){
+      return ENCODER_PRIMITIVES[structure];
+    }
+
+    const [name, ...members] = structure.split(";");
+    const encoder = Struct(name);
+    let currentOffset = 0;
+
+    for (const m of members){
+      const [memberName, typeName, offsetStr] = m.split(":");
+      const relOff = parseInt(offsetStr);
+      const EncoderType = ENCODER_PRIMITIVES[typeName];
+      const paddingNeeded = relOff - currentOffset;
+
+      if(paddingNeeded > 0){
+        encoder.field('__padding_${memberName}', U8s(new Array(paddingNeeded).fill(0)));
+        currentOffset += paddingNeeded;
+      }
+
+      let defaultValue: number | bigint = 0;
+
+      if(typeName === "uint64_t" || typeName === "int64_t"){
+        defaultValue = 0n;
+      }
+
+      const fieldInstance = EncoderType(defaultValue);
+      encoder.field(memberName, fieldInstance);
+      currentOffset += fieldInstance.computeBufferSize();
+    }
+
+    if (structure_size != null && structure_size > currentOffset){
+      const tailPadding = structure_size - currentOffset;
+      encoder.field("__padding_eof", U8s(new Array(tailPadding).fill(0)));
+    }
+
+    return encoder;
   }
 
   /** From metafile **/
@@ -352,4 +563,165 @@ export abstract class Adapter {
       await this.events_data()
     );
   }
+
+  //encoder functions
+  /*
+    All 3 functions follow similar format.
+    Checking for "function" since U8 etc. implement IField and IValue.
+    Polled and Events cascade similar format to inner streams.
+    For polled and events, encode each stream, concatenate and turn into array at end.
+    TODO: Can we use less loops?
+  */
+
+  async encode_meta(metaObj: TMetaObj): Promise<Uint8Array> {
+    const encoder = this.create_encoder(metaObj.meta_structure);
+    let buffer: any = new Uint8Array(0);
+
+    if (typeof encoder === "function") {
+      const primitiveField = encoder(metaObj.meta);
+      buffer = primitiveField.toUint8Array();
+    } else if (encoder) {
+      for (const key of Object.keys(metaObj.meta)) {
+        const field = encoder.get(key) as any;
+        if (field && typeof field.set === "function") {
+          field.set(metaObj.meta[key]);
+        }
+      }
+      buffer = encoder.toUint8Array();
+    }
+
+    (meta_header_encoder_t.get("magic") as any).set(metaObj.magic);
+    (meta_header_encoder_t.get("epoch_time_s") as any).set(metaObj.epoch_time_s);
+    (meta_header_encoder_t.get("tick_base_us") as any).set(metaObj.tick_base_us);
+    (meta_header_encoder_t.get("meta_structure") as any).set(metaObj.meta_structure);
+    (meta_header_encoder_t.get("meta_size") as any).set(buffer.length); 
+    (meta_header_encoder_t.get("meta") as any).set(Array.from(buffer));
+
+    return meta_header_encoder_t.toUint8Array();
+  }
+
+async encode_polled(polledObj: TPolledLogObj): Promise<Uint8Array> {
+    const payloadChunks: Uint8Array[] = [];
+    let payloadLength = 0;
+
+    for (const stream of polledObj.streams) {
+      (polled_stream_header_encoder_t.get("type_structure") as any).set(stream.type_structure);
+      (polled_stream_header_encoder_t.get("id") as any).set(stream.id);
+      (polled_stream_header_encoder_t.get("notes") as any).set(stream.notes);
+      (polled_stream_header_encoder_t.get("type_size") as any).set(stream.type_size);
+      (polled_stream_header_encoder_t.get("tick_interval") as any).set(stream.tick_interval);
+      (polled_stream_header_encoder_t.get("tick_phase") as any).set(stream.tick_phase);
+
+      const streamBytes = polled_stream_header_encoder_t.toUint8Array();
+      payloadChunks.push(streamBytes);
+      payloadLength += streamBytes.length;
+    }
+
+    
+    // Sort samples chronologically to guarantee correct interleaving. by tick, then idx.
+    const interleavedSamples = [...polledObj.samples].sort((a, b) => {
+      if (a.sample_tick < b.sample_tick) return -1;
+      if (a.sample_tick > b.sample_tick) return 1;
+
+      return a.stream_idx - b.stream_idx;
+    });
+
+    for (const sample of interleavedSamples) {
+      const streamDef = polledObj.streams[sample.stream_idx];
+      const encoder = this.create_encoder(streamDef.type_structure);
+      let dataBytes: any = new Uint8Array(0);
+
+      if (typeof encoder === "function") {
+        const primitiveField = encoder(sample.buffer);
+        dataBytes = primitiveField.toUint8Array();
+      } else if (encoder) {
+        for (const key of Object.keys(sample.buffer)) {
+          const field = encoder.get(key) as any;
+          if (field && typeof field.set === "function") {
+            field.set(sample.buffer[key]);
+          }
+        }
+        dataBytes = encoder.toUint8Array();
+      }
+
+      payloadChunks.push(dataBytes);
+      payloadLength += dataBytes.length;
+    }
+
+    const mergedPayload = new Uint8Array(payloadLength);
+    let offset = 0;
+    for (const chunk of payloadChunks) {
+      mergedPayload.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    (logfile_header_encoder_t.get("magic") as any).set(polledObj.magic);
+    (logfile_header_encoder_t.get("stream_type") as any).set(polledObj.stream_type);
+    (logfile_header_encoder_t.get("tick_span") as any).set(polledObj.tick_span);
+    (logfile_header_encoder_t.get("num_streams") as any).set(polledObj.streams.length);
+    (logfile_header_encoder_t.get("streams_payload") as any).set(Array.from(mergedPayload));
+
+    return logfile_header_encoder_t.toUint8Array();
+  }
+
+async encode_events(logObj: TEventLogObj): Promise<Uint8Array> {
+    const payloadChunks: Uint8Array[] = [];
+    let payloadLength = 0;
+
+    for (const stream of logObj.streams) {
+      (event_stream_header_encoder_t.get("type_structure") as any).set(stream.type_structure);
+      (event_stream_header_encoder_t.get("id") as any).set(stream.id);
+      (event_stream_header_encoder_t.get("notes") as any).set(stream.notes);
+      (event_stream_header_encoder_t.get("type_size") as any).set(stream.type_size);
+
+      const streamBytes = event_stream_header_encoder_t.toUint8Array();
+      payloadChunks.push(streamBytes);
+      payloadLength += streamBytes.length;
+    }
+
+    for (const sample of logObj.samples) {
+      (sample_header_encoder_t.get("stream_idx") as any).set(sample.stream_idx);
+      (sample_header_encoder_t.get("sample_tick") as any).set(sample.sample_tick);
+
+      const headerBytes = sample_header_encoder_t.toUint8Array();
+      payloadChunks.push(headerBytes);
+      payloadLength += headerBytes.length;
+
+      const streamDef = logObj.streams[sample.stream_idx];
+      const encoder = this.create_encoder(streamDef.type_structure);
+      let dataBytes: any = new Uint8Array(0);
+
+      if (typeof encoder === "function") {
+        const primitiveField = encoder(sample.buffer);
+        dataBytes = primitiveField.toUint8Array();
+      } else if (encoder) {
+        for (const key of Object.keys(sample.buffer)) {
+          const field = encoder.get(key) as any;
+          if (field && typeof field.set === "function") {
+            field.set(sample.buffer[key]);
+          }
+        }
+        dataBytes = encoder.toUint8Array();
+      }
+
+      payloadChunks.push(dataBytes);
+      payloadLength += dataBytes.length;
+    }
+
+    const mergedPayload = new Uint8Array(payloadLength);
+    let offset = 0;
+    for (const chunk of payloadChunks) {
+      mergedPayload.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+  (logfile_header_encoder_t.get("magic") as any).set(logObj.magic);
+  (logfile_header_encoder_t.get("stream_type") as any).set(logObj.stream_type);
+  (logfile_header_encoder_t.get("tick_span") as any).set(logObj.tick_span);
+  (logfile_header_encoder_t.get("num_streams") as any).set(logObj.streams.length);
+  (logfile_header_encoder_t.get("streams_payload") as any).set(Array.from(mergedPayload));
+
+    return logfile_header_encoder_t.toUint8Array();
+  }
+
 }
