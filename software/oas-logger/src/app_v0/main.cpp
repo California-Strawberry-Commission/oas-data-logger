@@ -13,9 +13,7 @@
  */
 
 #include <Arduino.h>
-#include <DeviceAuth.h>
 #include <ESP32Time.h>
-#include <EzLog.h>
 #include <FS.h>
 #include <FastLED.h>
 #include <SD.h>
@@ -24,10 +22,12 @@
 #include <WiFiManager.h>
 #include <Wire.h>
 #include <dlflib/dlf_logger.h>
-#include <memory_monitor/memory_monitor.h>
-#include <ota_updater/ota_updater.h>
 
+#include "DeviceAuth.h"
+#include "EzLog.h"
 #include "certs/certs.h"
+#include "memory_monitor/memory_monitor.h"
+#include "ota_updater/ota_updater.h"
 
 // Configuration
 const unsigned long SERIAL_BAUD_RATE{115200};

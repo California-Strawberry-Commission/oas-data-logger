@@ -1,7 +1,5 @@
 #include <Arduino.h>
-#include <DeviceAuth.h>
 #include <ESP32Time.h>
-#include <EzLog.h>
 #include <FastLED.h>
 #include <SD_MMC.h>
 #include <SparkFun_u-blox_GNSS_v3.h>
@@ -10,10 +8,12 @@
 #include <dlflib/dlf_logger.h>
 #include <driver/sdmmc_host.h>
 #include <esp_log.h>
-#include <memory_monitor/memory_monitor.h>
-#include <ota_updater/ota_updater.h>
 
+#include "DeviceAuth.h"
+#include "EzLog.h"
 #include "certs/certs.h"
+#include "memory_monitor/memory_monitor.h"
+#include "ota_updater/ota_updater.h"
 
 // Configuration
 const int SERIAL_BAUD_RATE{115200};
