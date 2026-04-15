@@ -7,69 +7,9 @@
 #include <dlflib/util/util.h>
 #include <mbedtls/sha256.h>
 
+#include "ota_updater/util.h"
+
 namespace {
-
-bool bytesToHexLower(const uint8_t* bytes, size_t len, char* out,
-                     size_t outSize) {
-  static constexpr char HEX_MAP[]{"0123456789abcdef"};
-
-  if (!bytes || !out || outSize < (len * 2 + 1)) {
-    return false;
-  }
-
-  for (size_t i = 0; i < len; ++i) {
-    out[i * 2] = HEX_MAP[(bytes[i] >> 4) & 0x0F];
-    out[i * 2 + 1] = HEX_MAP[bytes[i] & 0x0F];
-  }
-  out[len * 2] = '\0';
-  return true;
-}
-
-bool copyStr(char* dst, size_t dstSize, const char* src) {
-  if (!dst || dstSize == 0) {
-    return false;
-  }
-
-  if (!src) {
-    dst[0] = '\0';
-    return true;
-  }
-
-  const size_t srcLen{strlen(src)};
-  if (srcLen >= dstSize) {
-    dst[0] = '\0';
-    return false;
-  }
-
-  memcpy(dst, src, srcLen + 1);
-  return true;
-}
-
-bool hexEqualsIgnoreCase(const char* a, const char* b) {
-  if (!a || !b) {
-    return false;
-  }
-
-  while (*a && *b) {
-    char ca{*a};
-    char cb{*b};
-
-    if (ca >= 'A' && ca <= 'Z') {
-      ca = static_cast<char>(ca - 'A' + 'a');
-    }
-    if (cb >= 'A' && cb <= 'Z') {
-      cb = static_cast<char>(cb - 'A' + 'a');
-    }
-
-    if (ca != cb) {
-      return false;
-    }
-    ++a;
-    ++b;
-  }
-
-  return *a == '\0' && *b == '\0';
-}
 
 struct WiFiClientHolder {
   WiFiClient* client;
@@ -267,20 +207,21 @@ OtaUpdater::ManifestResult OtaUpdater::fetchLatestManifest() {
   }
 
   ManifestResult res;
-  copyStr(res.manifest.deviceType, sizeof(res.manifest.deviceType),
-          jsonDoc["deviceType"] | "");
-  copyStr(res.manifest.channel, sizeof(res.manifest.channel),
-          jsonDoc["channel"] | "");
+  util::copyStr(res.manifest.deviceType, sizeof(res.manifest.deviceType),
+                jsonDoc["deviceType"] | "");
+  util::copyStr(res.manifest.channel, sizeof(res.manifest.channel),
+                jsonDoc["channel"] | "");
 
   JsonObject latest{jsonDoc["latest"]};
-  copyStr(res.manifest.version, sizeof(res.manifest.version),
-          latest["version"] | "");
+  util::copyStr(res.manifest.version, sizeof(res.manifest.version),
+                latest["version"] | "");
   res.manifest.buildNumber = latest["buildNumber"] | -1;
-  copyStr(res.manifest.sha256, sizeof(res.manifest.sha256),
-          latest["sha256"] | "");
+  util::copyStr(res.manifest.sha256, sizeof(res.manifest.sha256),
+                latest["sha256"] | "");
   res.manifest.size = static_cast<size_t>(latest["size"] | 0);
 
-  copyStr(res.message, sizeof(res.message), "Manifest fetched successfully");
+  util::copyStr(res.message, sizeof(res.message),
+                "Manifest fetched successfully");
   res.ok = true;
   return res;
 }
@@ -304,8 +245,8 @@ OtaUpdater::UpdateResult OtaUpdater::updateIfAvailable(bool rebootOnSuccess) {
     updateResult.ok = true;
     updateResult.updateApplied = false;
     updateResult.newBuildNumber = manifestResult.manifest.buildNumber;
-    copyStr(updateResult.message, sizeof(updateResult.message),
-            "Already up to date");
+    util::copyStr(updateResult.message, sizeof(updateResult.message),
+                  "Already up to date");
     return updateResult;
   }
 
@@ -491,11 +432,11 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
     return updateError("SHA256 finish failed");
   }
   char gotSha[65]{0};
-  if (!bytesToHexLower(digest, sizeof(digest), gotSha, sizeof(gotSha))) {
+  if (!util::bytesToHexLower(digest, sizeof(digest), gotSha, sizeof(gotSha))) {
     Update.abort();
     return updateError("Failed to encode SHA256");
   }
-  if (!hexEqualsIgnoreCase(gotSha, manifest.sha256)) {
+  if (!util::hexEqualsIgnoreCase(gotSha, manifest.sha256)) {
     Update.abort();
     return updateError("Firmware SHA256 mismatch");
   }
@@ -514,7 +455,7 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
   res.ok = true;
   res.updateApplied = true;
   res.newBuildNumber = manifest.buildNumber;
-  copyStr(res.message, sizeof(res.message), "Update applied");
+  util::copyStr(res.message, sizeof(res.message), "Update applied");
 
   if (rebootOnSuccess) {
     delay(200);

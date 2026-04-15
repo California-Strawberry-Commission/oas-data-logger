@@ -1,4 +1,4 @@
-name: Firmware Build
+name: Firmware
 
 on: # Run on push to main branch, as well as all PRs
   push:
@@ -6,6 +6,28 @@ on: # Run on push to main branch, as well as all PRs
   pull_request:
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio/.cache
+          key: ${{ runner.os }}-pio
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install PlatformIO Core
+        run: pip install --upgrade platformio
+      - name: Test dlflib
+        run: pio test -e native-test
+        working-directory: software/dlflib
+      - name: Test oas-logger
+        run: pio test -e native-test
+        working-directory: software/oas-logger
+
   build:
     runs-on: ubuntu-latest
     strategy:
