@@ -7,7 +7,7 @@
 #include <dlflib/util/util.h>
 #include <mbedtls/sha256.h>
 
-#include "ota_updater/ota_util.h"
+#include "ota_updater/util.h"
 
 namespace {
 
