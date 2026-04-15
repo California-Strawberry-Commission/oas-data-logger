@@ -1,0 +1,20 @@
+name: Test
+on: # Run on push to main branch, as well as all PRs
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: npm install
+        working-directory: software
+        env:
+          DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy" # required by Prisma during postinstall
+      - run: npm test
+        working-directory: software
