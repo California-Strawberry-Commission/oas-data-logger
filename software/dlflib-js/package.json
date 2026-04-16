@@ -16,13 +16,11 @@
   ],
   "type": "module",
   "dependencies": {
-    "@types/node": "^20",
     "binary-parser": "^2.3.0"
   },
   "devDependencies": {
-    "@vitest/ui": "^4.0.0",
-    "c-type-util": "^3.0.1",
+    "@types/node": "^20",
     "typescript": "^5",
-    "vitest": "^4.0.0"
+    "vitest": "^4.1.4"
   }
 }
