@@ -153,7 +153,7 @@ export type TPolledLogObj = {
   }>;
   samples: Array<{
     stream_idx: number;
-    sample_tick: bigint; // Used for sorting to ensure chronological order
+    sample_tick: bigint;
     buffer: any;
   }>;
 };
