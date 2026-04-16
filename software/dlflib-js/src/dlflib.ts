@@ -517,7 +517,7 @@ export abstract class Adapter {
     Checking for "function" since U8 etc. implement IField and IValue.
     Polled and Events cascade similar format to inner streams.
     For polled and events, encode each stream, concatenate and turn into array at end.
-    TODO: Refactor to make better?
+    TODO: Look into better way than building up sub buffers into final buffer
   */
 
   async encode_meta(metaObj: TMetaObj): Promise<Uint8Array> {
