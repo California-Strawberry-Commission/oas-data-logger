@@ -128,16 +128,19 @@ unsigned long lastLedToggleMillis{0};
 unsigned long lastGpsPrintMillis{0};
 bool ledToggleState = false;
 
-// GPS Data Structure with Mutex Protection
+// GPS data structure with mutex protection
 struct GpsData {
   double lat;
   double lng;
   double alt;
   uint32_t satellites;
 };
-
 GpsData gpsData{0.0, 0.0, 0.0, 0};
 SemaphoreHandle_t gpsDataMutex;
+
+// Wifi RSSI data
+volatile int wifiRssi{0};  // no mutex needed since on ESP32, 32-bit aligned
+                           // reads/writes are atomic at the hardware level
 
 // Function Prototypes
 void initializeLed();
@@ -220,14 +223,22 @@ void setup() {
 }
 
 void loop() {
+  const unsigned long now{millis()};
+
   // Print heap usage if needed
   if (PRINT_HEAP_USAGE_INTERVAL_SECS > 0) {
     static unsigned long lastHeapLoggedMillis{0};
-    const unsigned long now{millis()};
     if (now - lastHeapLoggedMillis >= PRINT_HEAP_USAGE_INTERVAL_SECS * 1000) {
       lastHeapLoggedMillis = now;
       memory_monitor::logHeap("mem");
     }
+  }
+
+  // Update WiFi RSSI data
+  static unsigned long lastWifiRssiMillis{0};
+  if (now - lastWifiRssiMillis >= 5000) {
+    lastWifiRssiMillis = now;
+    wifiRssi = WiFi.RSSI();
   }
 
   // Update LED pattern based on current state
@@ -792,6 +803,11 @@ void initializeDLFLogger() {
   POLL(logger, gpsData.lat, gpsDataLogInterval, gpsDataMutex);
   POLL(logger, gpsData.lng, gpsDataLogInterval, gpsDataMutex);
   POLL(logger, gpsData.alt, gpsDataLogInterval, gpsDataMutex);
+
+  auto wifiRssiLogInterval{std::chrono::seconds(5)};
+  // Note: we don't use the POLL macro here since we want make sure the stream
+  // id is "wifiRssi" and not "const_cast<int&>(wifiRssi)"
+  logger.poll(const_cast<int&>(wifiRssi), "wifiRssi", wifiRssiLogInterval);
 
   dlf::components::UploaderComponent::Options options;
   options.retentionMode = LOGGER_RETENTION_MODE;
