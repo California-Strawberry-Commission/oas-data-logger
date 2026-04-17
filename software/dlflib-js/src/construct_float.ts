@@ -1,6 +1,13 @@
 import { write as floatWrite } from 'ieee754';
 import { Endian } from "construct-js";
 
+/*
+  This file was created with code from https://github.com/francisrstokes/construct-js/issues/37
+
+  Construct-js does not support floats/doubles as primitives natively. Therefore, we use this class
+  to accomplish the goal of supporting floats/doubles.
+*/
+
 export class FloatField {
   public width: number;
   public min: number;
