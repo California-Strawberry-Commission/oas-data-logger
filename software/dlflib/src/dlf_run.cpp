@@ -45,14 +45,15 @@ Run::Run(fs::FS& fs, const char* fsDir,
 
   DLFLIB_LOG_INFO("[Run] Logfiles inited");
 
-  // Setup ticks
+  // Sampler task will terminate once status is no longer LOGGING, so make sure
+  // to set it before starting the sampler task
+  status_ = LOGGING;
+
   if (xTaskCreate(taskSampler, "Sampler", 2560, this, 5, NULL) != pdPASS) {
     DLFLIB_LOG_ERROR("[Run] Failed to create Sampler task");
     status_ = FLUSHER_CREATE_ERROR;
     return;
   }
-
-  status_ = LOGGING;
 }
 
 void Run::close() {
