@@ -83,12 +83,12 @@ $ npm run db:deploy
 
 ### Example API requests
 
-Headers x-device-id and x-dev-key are required for endpoints that require device auth.
+Headers x-device-id and x-dev-key are required for endpoints that require device auth. Also, note that the run UUID must be formatted properly in the standard UUID format.
 
 For example, to upload run data:
 
 ```
-curl -X POST http://localhost:3000/api/upload/example_run_20251107 -H "x-device-id: <your device ID> -H "x-dev-key: <your dev key>" -F "files=@/path/to/meta.dlf" -F "files=@/path/to/polled.dlf" -F "files=@/path/to/event.dlf" -F "isActive=false"
+curl -X POST http://localhost:3000/api/upload/00000000-0000-0000-0000-000000000000 -H "x-device-id: <your device ID> -H "x-dev-key: <your dev key>" -F "files=@/path/to/meta.dlf" -F "files=@/path/to/polled.dlf" -F "files=@/path/to/event.dlf" -F "isActive=false"
 ```
 
 Headers x-dev-user-email and x-dev-key are required for endpoints that require user auth.

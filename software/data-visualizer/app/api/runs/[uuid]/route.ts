@@ -1,5 +1,6 @@
-import { getCurrentUser } from "@/lib/auth";
+import { User, withAuth } from "@/lib/auth";
 import prisma, { getRunForUser, runWhereForUser } from "@/lib/prisma";
+import { isValidUuid } from "@/lib/utils";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -7,18 +8,14 @@ import { NextRequest, NextResponse } from "next/server";
  *
  * Returns the run's metadata. Does not include any stream information.
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ uuid: string }> },
-) {
-  const { uuid } = await params;
+export const GET = withAuth(async (_request: NextRequest, user: User, context) => {
+  const { uuid } = await context.params as { uuid: string };
+
+  if (!isValidUuid(uuid)) {
+    return NextResponse.json({ error: "Invalid run UUID" }, { status: 400 });
+  }
 
   try {
-    const user = await getCurrentUser(request.headers);
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const where = runWhereForUser(user, uuid);
     const run = await prisma.run.findFirst({
       where,
@@ -51,25 +48,21 @@ export async function GET(
     console.error("GET /api/runs/[uuid] error:", err);
     return NextResponse.json({ error: "Failed to fetch run" }, { status: 500 });
   }
-}
+});
 
 /**
  * DELETE /api/runs/[uuid]
  *
  * Deletes the run.
  */
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ uuid: string }> },
-) {
-  const { uuid } = await params;
+export const DELETE = withAuth(async (_request: NextRequest, user: User, context) => {
+  const { uuid } = await context.params as { uuid: string };
+
+  if (!isValidUuid(uuid)) {
+    return NextResponse.json({ error: "Invalid run UUID" }, { status: 400 });
+  }
 
   try {
-    const user = await getCurrentUser(request.headers);
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const run = await getRunForUser(user, uuid, {
       select: { id: true, uuid: true },
     });
@@ -88,4 +81,4 @@ export async function DELETE(
   }
 
   return new NextResponse(null, { status: 204 });
-}
+});

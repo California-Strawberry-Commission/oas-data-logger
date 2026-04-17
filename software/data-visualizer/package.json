@@ -16,13 +16,15 @@
     "db:seed:local": "dotenv -e .env.local -- npx cross-env NODE_ENV=development tsx prisma/seed.ts",
     "vercel-build": "prisma generate && prisma migrate deploy && next build",
     "provision-device": "tsx scripts/provision-device.ts",
-    "publish-firmware": "tsx scripts/publish-firmware.ts"
+    "publish-firmware": "tsx scripts/publish-firmware.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.995.0",
     "@aws-sdk/s3-request-presigner": "^3.995.0",
-    "@prisma/adapter-pg": "^7.4.1",
-    "@prisma/client": "^7.4.1",
+    "@prisma/adapter-pg": "^7.7.0",
+    "@prisma/client": "^7.7.0",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-label": "^2.1.8",
     "@radix-ui/react-popover": "^1.1.15",
@@ -38,7 +40,7 @@
     "leaflet.heat": "^0.2.0",
     "lucide-react": "^0.503.0",
     "next": "^16.1.6",
-    "posthog-js": "^1.361.1",
+    "posthog-js": "^1.369.0",
     "radix-ui": "^1.4.3",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
@@ -49,20 +51,25 @@
   "devDependencies": {
     "@serialport/parser-readline": "^13.0.0",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@types/leaflet": "^1.9.17",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.0.1",
     "cross-env": "^10.1.0",
     "dotenv": "^17.2.3",
     "dotenv-cli": "^11.0.0",
     "eslint": "^10",
     "eslint-config-next": "^16.1.6",
-    "prisma": "^7.4.1",
+    "jsdom": "^29.0.2",
+    "prisma": "^7.7.0",
     "serialport": "^13.0.0",
     "tailwindcss": "^4",
     "tsx": "^4.20.6",
     "tw-animate-css": "^1.2.8",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.4"
   }
 }

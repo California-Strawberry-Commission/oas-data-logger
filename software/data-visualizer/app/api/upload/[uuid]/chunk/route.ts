@@ -1,6 +1,7 @@
 import { dlfChunkS3Key } from "@/lib/dlf-s3";
 import { s3Client } from "@/lib/s3";
-import { verifyDeviceSignature } from "@/lib/verifydevice";
+import { isValidUuid } from "@/lib/utils";
+import { verifyDeviceSignature } from "@/lib/verify-device";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -23,8 +24,13 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ uuid: string }> },
 ) {
+  // Parse and validate UUID
   const { uuid } = await params;
+  if (!isValidUuid(uuid)) {
+    return NextResponse.json({ error: "Invalid run UUID" }, { status: 400 });
+  }
 
+  // Ensure device ID header is present
   const deviceId = request.headers.get("x-device-id");
   if (!deviceId) {
     return NextResponse.json(

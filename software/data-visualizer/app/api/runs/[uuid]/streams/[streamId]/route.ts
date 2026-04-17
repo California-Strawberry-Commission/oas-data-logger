@@ -1,6 +1,7 @@
-import { getCurrentUser } from "@/lib/auth";
+import { User, withAuth } from "@/lib/auth";
 import { getRunDlfAdapter } from "@/lib/dlf-s3";
-import prisma, { getRunForUser } from "@/lib/prisma";
+import { getRunForUser } from "@/lib/prisma";
+import { isValidUuid } from "@/lib/utils";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -8,18 +9,14 @@ import { NextRequest, NextResponse } from "next/server";
  *
  * Returns data points for the specific stream for the run.
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ uuid: string; streamId: string }> },
-) {
-  const { uuid, streamId } = await params;
+export const GET = withAuth(async (_request: NextRequest, user: User, context) => {
+  const { uuid, streamId } = await context.params as { uuid: string; streamId: string };
+
+  if (!isValidUuid(uuid)) {
+    return NextResponse.json({ error: "Invalid run UUID" }, { status: 400 });
+  }
 
   try {
-    const user = await getCurrentUser(request.headers);
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const run = await getRunForUser(user, uuid, { select: { id: true } });
     if (!run) {
       // Either run doesn't exist, or user does not have access to it
@@ -72,4 +69,4 @@ export async function GET(
       { status: 500 },
     );
   }
-}
+});

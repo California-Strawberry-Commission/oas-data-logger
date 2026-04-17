@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "test": "vitest --ui",
+    "test": "vitest run",
     "build": "tsc",
     "postinstall": "npm run build"
   },
@@ -22,9 +22,8 @@
     "ieee754": "^1.2.1"
   },
   "devDependencies": {
-    "@vitest/ui": "^4.0.0",
-    "c-type-util": "^3.0.1",
+    "@types/node": "^20",
     "typescript": "^5",
-    "vitest": "^4.0.0"
+    "vitest": "^4.1.4"
   }
 }

@@ -1,10 +1,10 @@
 #include <Arduino.h>
-#include <DeviceAuth.h>
 #include <FastLED.h>
 #include <WiFiManager.h>
-#include <ota_updater/ota_updater.h>
 
+#include "DeviceAuth.h"
 #include "certs/certs.h"
+#include "ota_updater/ota_updater.h"
 
 // Serial
 const unsigned long SERIAL_BAUD_RATE{115200};

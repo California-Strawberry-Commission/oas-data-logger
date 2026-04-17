@@ -3,8 +3,8 @@ import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import { ResponseCookies } from "next/dist/compiled/@edge-runtime/cookies";
 import { cookies } from "next/headers";
+import { NextRequest, NextResponse } from "next/server";
 
-const alg = "HS256";
 const secret = new TextEncoder().encode(process.env.AUTH_SECRET);
 
 export type User = {
@@ -27,7 +27,7 @@ export async function setSession(cookies: ResponseCookies, userId: string) {
   // route handler. So, to be safe, we pass ResponseCookies in as a param that we
   // then modify.
   const token = await new SignJWT({ sub: userId })
-    .setProtectedHeader({ alg })
+    .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("7d")
     .sign(secret);
@@ -93,6 +93,27 @@ export async function getCurrentUser(
     id: user.id,
     role: user.role as "USER" | "ADMIN",
     email: user.email,
+  };
+}
+
+type RouteContext = { params: Promise<Record<string, string>> };
+type AuthedHandler = (
+  request: NextRequest,
+  user: User,
+  context: RouteContext,
+) => Promise<NextResponse>;
+
+/**
+ * Wraps a route handler with authentication. Calls the handler with the
+ * authenticated user, or returns 401 if the user is not authenticated.
+ */
+export function withAuth(handler: AuthedHandler) {
+  return async (request: NextRequest, context: RouteContext) => {
+    const user = await getCurrentUser(request.headers);
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    return handler(request, user, context);
   };
 }
 

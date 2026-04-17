@@ -1,6 +1,7 @@
-import { getCurrentUser } from "@/lib/auth";
+import { User, withAuth } from "@/lib/auth";
 import { getRunDlfAdapter } from "@/lib/dlf-s3";
-import prisma, { getRunForUser } from "@/lib/prisma";
+import { getRunForUser } from "@/lib/prisma";
+import { isValidUuid } from "@/lib/utils";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -11,29 +12,29 @@ import { NextRequest, NextResponse } from "next/server";
  * Query Parameters:
  * - stream_ids (required): Comma-separated list of stream IDs to retrieve.
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ uuid: string }> },
-) {
-  const { uuid } = await params;
-  const { searchParams } = new URL(request.url);
-  const stream_ids = searchParams.get("stream_ids");
+export const GET = withAuth(async (request: NextRequest, user: User, context) => {
+  const { uuid } = await context.params as { uuid: string };
 
-  if (!stream_ids) {
+  if (!isValidUuid(uuid)) {
+    return NextResponse.json({ error: "Invalid run UUID" }, { status: 400 });
+  }
+
+  // Parse and validate stream ID list
+  const { searchParams } = new URL(request.url);
+  const streamIds =
+    searchParams.get("stream_ids")?.split(",").filter(Boolean) ?? [];
+  if (streamIds.length === 0) {
     return NextResponse.json(
-      { error: "stream_ids query parameter is required" },
+      { error: "No stream IDs provided" },
       { status: 400 },
     );
   }
-
-  const streamIdsArray = stream_ids.split(",");
+  // Limit the number of stream IDs to prevent abuse
+  if (streamIds.length > 20) {
+    return NextResponse.json({ error: "Too many stream IDs" }, { status: 400 });
+  }
 
   try {
-    const user = await getCurrentUser(request.headers);
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const run = await getRunForUser(user, uuid, { select: { id: true } });
     if (!run) {
       // Either run doesn't exist, or user does not have access to it
@@ -52,7 +53,7 @@ export async function GET(
     ]);
 
     const result: { streamId: string; tick: number; data: unknown }[] = [];
-    const streamIdSet = new Set(streamIdsArray);
+    const streamIdSet = new Set(streamIds);
 
     // Process polled data
     for (const sample of polledSamples) {
@@ -87,4 +88,4 @@ export async function GET(
       { status: 500 },
     );
   }
-}
+});
