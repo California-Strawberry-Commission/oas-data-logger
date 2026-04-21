@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { distanceMeters } from "@/components/visualizations/gps/gps-visualization";
+import { colorForRssi } from "@/lib/utils";
 import { LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Pause, Play } from "lucide-react";
@@ -21,6 +22,7 @@ export type MapPoint = {
   elapsedS: number;
   position: LatLngExpression;
   numSatellites: number;
+  wifiRssi?: number; // dBm
 };
 
 export type Track = {
@@ -147,6 +149,7 @@ export default function Map({
   selectedElapsedS?: number;
   onSelectedElapsedChange?: (elapsedS: number) => void;
 }) {
+  const [showRssiOverlay, setShowRssiOverlay] = useState(false);
   // Decimate points (per-track) to improve performance
   const renderedTracks: Track[] = useMemo(() => {
     return tracks
@@ -283,6 +286,22 @@ export default function Map({
     }));
   }, [renderedTracks]);
 
+  const rssiCircles = useMemo(() => {
+    if (!showRssiOverlay) {
+      return [];
+    }
+    return renderedTracks.flatMap((track) =>
+      track.points
+        .filter((p) => p.wifiRssi !== undefined)
+        .map((p) => ({
+          key: `${track.id}-${p.elapsedS}`,
+          position: p.position,
+          rssi: p.wifiRssi as number,
+          color: colorForRssi(p.wifiRssi as number),
+        })),
+    );
+  }, [renderedTracks, showRssiOverlay]);
+
   // Per-track current point markers
   const currentPoints = useMemo(() => {
     return renderedTracks
@@ -349,6 +368,23 @@ export default function Map({
             ))}
           </Pane>
 
+          {/* WiFi RSSI overlay */}
+          {showRssiOverlay && (
+            <Pane name="rssi-overlay" style={{ zIndex: 500 }}>
+              {rssiCircles.map(({ key, position, rssi, color }) => (
+                <CircleMarker
+                  key={key}
+                  center={position}
+                  radius={5}
+                  color={color}
+                  fillColor={color}
+                  fillOpacity={0.8}
+                  weight={0}
+                ></CircleMarker>
+              ))}
+            </Pane>
+          )}
+
           {/* One marker per run at the current elapsed position */}
           <Pane name="markers" style={{ zIndex: 600 }}>
             {currentPoints.map(({ id, point, timestampS, color }) => (
@@ -373,6 +409,39 @@ export default function Map({
             ))}
           </Pane>
         </MapContainer>
+
+        {/* WiFi RSSI toggle + legend */}
+        <div className="absolute right-2 top-2 z-1000 rounded bg-white/90 px-3 py-2 text-xs shadow">
+          <label className="flex cursor-pointer items-center gap-1.5 font-semibold">
+            <input
+              type="checkbox"
+              checked={showRssiOverlay}
+              onChange={(e) => {
+                posthog.capture("visualization:wifi_rssi_overlay_toggled", {
+                  action: e.target.checked ? "show" : "hide",
+                });
+                setShowRssiOverlay(e.target.checked);
+              }}
+              className="h-3.5 w-3.5"
+            />
+            WiFi signal strength
+          </label>
+          {showRssiOverlay && (
+            <div className="mt-2">
+              <div
+                className="h-3 w-full rounded"
+                style={{
+                  background:
+                    "linear-gradient(to right, hsl(0,100%,45%), hsl(60,100%,45%), hsl(120,100%,45%))",
+                }}
+              />
+              <div className="mt-0.5 flex justify-between">
+                <span>Weak</span>
+                <span>Strong</span>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Controls */}

@@ -14,8 +14,14 @@ const RUN_COLORS = [
   "#0891b2", // cyan
 ];
 
-export function colorForIndex(i: number): string {
+export function colorForRunIndex(i: number): string {
   return RUN_COLORS[i % RUN_COLORS.length];
+}
+
+export function colorForRssi(rssiDbm: number): string {
+  const t = Math.max(0, Math.min(1, (rssiDbm - -100) / (-30 - -100)));
+  const hue = Math.round(t * 120);
+  return `hsl(${hue}, 100%, 45%)`;
 }
 
 const UUID_RE =

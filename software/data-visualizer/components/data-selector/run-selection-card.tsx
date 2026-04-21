@@ -2,7 +2,7 @@ import DeviceSelector from "@/components/data-selector/device-selector";
 import RunSelector from "@/components/data-selector/run-selector";
 import { Button } from "@/components/ui/button";
 import { type Device, type Run } from "@/lib/api";
-import { colorForIndex } from "@/lib/utils";
+import { colorForRunIndex } from "@/lib/utils";
 
 export default function RunSelectionCard({
   title,
@@ -20,7 +20,7 @@ export default function RunSelectionCard({
   onRemove?: () => void;
 }) {
   const { device, run } = row;
-  const color = colorForIndex(index);
+  const color = colorForRunIndex(index);
 
   return (
     <div className="rounded-lg border p-4 space-y-4">

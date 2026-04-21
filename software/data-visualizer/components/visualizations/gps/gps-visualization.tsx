@@ -22,16 +22,11 @@ export type RunWithColor = {
   color?: string;
 };
 
-export const STREAM_ID_SATELLITES = "gpsData.satellites";
-export const STREAM_ID_LATITUDE = "gpsData.lat";
-export const STREAM_ID_LONGITUDE = "gpsData.lng";
-export const STREAM_ID_ALTITUDE = "gpsData.alt";
-const GPS_STREAM_IDS = [
-  STREAM_ID_SATELLITES,
-  STREAM_ID_LATITUDE,
-  STREAM_ID_LONGITUDE,
-  STREAM_ID_ALTITUDE,
-];
+const STREAM_ID_SATELLITES = "gpsData.satellites";
+const STREAM_ID_LATITUDE = "gpsData.lat";
+const STREAM_ID_LONGITUDE = "gpsData.lng";
+const STREAM_ID_ALTITUDE = "gpsData.alt";
+const STREAM_ID_WIFI_RSSI = "wifiRssi";
 const MIN_NUM_SATELLITES = 1; // filter out GPS points that were logged with less than X satellites
 const MAX_JUMP_METERS = 100; // filter out GPS points that jump more than X meters from the previous point
 const MPS_TO_MPH = 2.2369362920544; // meters per second to miles per hour
@@ -104,6 +99,7 @@ function toMapPoints(
   const latMap = new Map<number, number>();
   const lngMap = new Map<number, number>();
   const altMap = new Map<number, number>();
+  const wifiRssiMap = new Map<number, number>();
   for (const dp of dataPoints) {
     switch (dp.streamId) {
       case STREAM_ID_SATELLITES:
@@ -118,6 +114,9 @@ function toMapPoints(
       case STREAM_ID_ALTITUDE:
         altMap.set(dp.tick, Number(dp.data));
         break;
+      case STREAM_ID_WIFI_RSSI:
+        wifiRssiMap.set(dp.tick, Number(dp.data));
+        break;
     }
   }
 
@@ -127,9 +126,11 @@ function toMapPoints(
   // satellites tick that is less than or equal to the lat/lng tick.
   const latTicks = Array.from(latMap.keys()).sort((a, b) => a - b);
   const satTicks = Array.from(satellitesMap.keys()).sort((a, b) => a - b);
+  const rssiTicks = Array.from(wifiRssiMap.keys()).sort((a, b) => a - b);
 
   const mapPoints: MapPoint[] = [];
   let satIdx = -1;
+  let rssiIdx = -1;
 
   for (const tick of latTicks) {
     const lat = latMap.get(tick);
@@ -151,11 +152,18 @@ function toMapPoints(
       continue;
     }
 
+    // Get the WiFi RSSI data for this tick
+    while (rssiIdx + 1 < rssiTicks.length && rssiTicks[rssiIdx + 1] <= tick) {
+      rssiIdx++;
+    }
+    const wifiRssi =
+      rssiIdx >= 0 ? wifiRssiMap.get(rssiTicks[rssiIdx]) : undefined;
+
     const elapsedS = tickBaseUs * 1e-6 * tick;
     const position: LatLngExpression =
       alt !== undefined ? [lat, lng, alt] : [lat, lng];
 
-    mapPoints.push({ position, elapsedS, numSatellites });
+    mapPoints.push({ position, elapsedS, numSatellites, wifiRssi });
   }
 
   return mapPoints;
@@ -313,10 +321,13 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
   );
 
   // Fetch each run's GPS streams
-  const { anyLoading, firstError, dataByUuid } = useRunStreamsMany(
-    runUuids,
-    GPS_STREAM_IDS,
-  );
+  const { anyLoading, firstError, dataByUuid } = useRunStreamsMany(runUuids, [
+    STREAM_ID_SATELLITES,
+    STREAM_ID_LATITUDE,
+    STREAM_ID_LONGITUDE,
+    STREAM_ID_ALTITUDE,
+    STREAM_ID_WIFI_RSSI,
+  ]);
 
   // Build rawPointsByRun from query results
   const rawPointsByRun = useMemo(() => {

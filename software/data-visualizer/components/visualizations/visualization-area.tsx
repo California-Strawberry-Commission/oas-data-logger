@@ -5,7 +5,7 @@ import GpsVisualization, {
   type RunWithColor,
 } from "@/components/visualizations/gps/gps-visualization";
 import { type Run } from "@/lib/api";
-import { colorForIndex } from "@/lib/utils";
+import { colorForRunIndex } from "@/lib/utils";
 
 export default function VisualizationArea({
   selection,
@@ -13,7 +13,9 @@ export default function VisualizationArea({
   selection: Selection;
 }) {
   const runsWithColor: RunWithColor[] = selection.runs
-    .map((r, idx) => (r.run ? { run: r.run, color: colorForIndex(idx) } : null))
+    .map((r, idx) =>
+      r.run ? { run: r.run, color: colorForRunIndex(idx) } : null,
+    )
     .filter((x): x is { run: Run; color: string } => !!x);
 
   if (runsWithColor.length === 0) {
