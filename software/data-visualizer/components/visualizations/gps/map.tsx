@@ -286,6 +286,21 @@ export default function Map({
     }));
   }, [renderedTracks]);
 
+  const hasRssiData = useMemo(
+    () =>
+      renderedTracks.some((track) =>
+        track.points.some((p) => p.wifiRssi !== undefined),
+      ),
+    [renderedTracks],
+  );
+
+  // Makes sure showRssiOverlay is reset when we switch to tracks without RSSI data
+  useEffect(() => {
+    if (!hasRssiData) {
+      setShowRssiOverlay(false);
+    }
+  }, [hasRssiData]);
+
   const rssiCircles = useMemo(() => {
     if (!showRssiOverlay) {
       return [];
@@ -411,37 +426,39 @@ export default function Map({
         </MapContainer>
 
         {/* WiFi RSSI toggle + legend */}
-        <div className="absolute right-2 top-2 z-1000 rounded bg-white/90 px-3 py-2 text-xs shadow">
-          <label className="flex cursor-pointer items-center gap-1.5 font-semibold">
-            <input
-              type="checkbox"
-              checked={showRssiOverlay}
-              onChange={(e) => {
-                posthog.capture("visualization:wifi_rssi_overlay_toggled", {
-                  action: e.target.checked ? "show" : "hide",
-                });
-                setShowRssiOverlay(e.target.checked);
-              }}
-              className="h-3.5 w-3.5"
-            />
-            WiFi signal strength
-          </label>
-          {showRssiOverlay && (
-            <div className="mt-2">
-              <div
-                className="h-3 w-full rounded"
-                style={{
-                  background:
-                    "linear-gradient(to right, hsl(0,100%,45%), hsl(60,100%,45%), hsl(120,100%,45%))",
+        {hasRssiData && (
+          <div className="absolute right-2 top-2 z-1000 rounded bg-white/90 px-3 py-2 text-xs shadow">
+            <label className="flex cursor-pointer items-center gap-1.5 font-semibold">
+              <input
+                type="checkbox"
+                checked={showRssiOverlay}
+                onChange={(e) => {
+                  posthog.capture("visualization:wifi_rssi_overlay_toggled", {
+                    action: e.target.checked ? "show" : "hide",
+                  });
+                  setShowRssiOverlay(e.target.checked);
                 }}
+                className="h-3.5 w-3.5"
               />
-              <div className="mt-0.5 flex justify-between">
-                <span>Weak</span>
-                <span>Strong</span>
+              WiFi signal strength
+            </label>
+            {showRssiOverlay && (
+              <div className="mt-2">
+                <div
+                  className="h-3 w-full rounded"
+                  style={{
+                    background:
+                      "linear-gradient(to right, hsl(0,100%,45%), hsl(60,100%,45%), hsl(120,100%,45%))",
+                  }}
+                />
+                <div className="mt-0.5 flex justify-between">
+                  <span>Weak</span>
+                  <span>Strong</span>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Controls */}
