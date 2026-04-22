@@ -8,6 +8,7 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
+  CommandSeparator,
 } from "@/components/ui/command";
 import {
   Popover,
@@ -16,11 +17,16 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { Check, ChevronsUpDown } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 export type Item = {
   value: string;
   label: string;
+};
+
+export type Group = {
+  heading: string;
+  items: Item[];
 };
 
 /**
@@ -49,9 +55,12 @@ export type Item = {
  * Important notes:
  * - If `value` is provided, internal state is ignored.
  * - `defaultSelected` only applies in uncontrolled mode.
+ * - If `items` and `groups` are both defined, items render first
+ *   in an ungrouped CommandGroup, followed by the groups.
  */
 export default function Combobox({
   items,
+  groups,
   placeholder = "",
   searchPlaceholder = "",
   value, // controlled if defined
@@ -59,7 +68,8 @@ export default function Combobox({
   defaultSelected,
   disabled,
 }: {
-  items: Item[];
+  items?: Item[];
+  groups?: Group[];
   placeholder?: string;
   searchPlaceholder?: string;
   value?: string;
@@ -85,9 +95,14 @@ export default function Combobox({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isControlled, defaultSelected]);
 
+  const allItems = useMemo(
+    () => [...(items ?? []), ...(groups ? groups.flatMap((g) => g.items) : [])],
+    [groups, items],
+  );
+
   const selectedItem = useMemo(
-    () => items.find((i) => i.value === selectedValue),
-    [items, selectedValue],
+    () => allItems.find((i) => i.value === selectedValue),
+    [allItems, selectedValue],
   );
 
   function setSelected(newValue: string) {
@@ -97,6 +112,29 @@ export default function Combobox({
       setInternalValue(newValue);
       onValueChange?.(newValue);
     }
+  }
+
+  function renderItem(item: Item) {
+    return (
+      <CommandItem
+        key={item.value}
+        value={item.value}
+        onSelect={(currentValue) => {
+          // If we re-select the currently selected value, we want to effectively deselect it
+          const newValue = currentValue === selectedValue ? "" : currentValue;
+          setSelected(newValue);
+          setOpen(false);
+        }}
+      >
+        <Check
+          className={cn(
+            "mr-2 h-4 w-4",
+            selectedValue === item.value ? "opacity-100" : "opacity-0",
+          )}
+        />
+        {item.label}
+      </CommandItem>
+    );
   }
 
   return (
@@ -120,29 +158,20 @@ export default function Combobox({
           <CommandInput placeholder={searchPlaceholder} />
           <CommandList>
             <CommandEmpty>No results found.</CommandEmpty>
-            <CommandGroup>
-              {items.map((item) => (
-                <CommandItem
-                  key={item.value}
-                  value={item.value}
-                  onSelect={(currentValue) => {
-                    // If we re-select the currently selected value, we want to effectively deselect it
-                    const newValue =
-                      currentValue === selectedValue ? "" : currentValue;
-                    setSelected(newValue);
-                    setOpen(false);
-                  }}
-                >
-                  <Check
-                    className={cn(
-                      "mr-2 h-4 w-4",
-                      value === item.value ? "opacity-100" : "opacity-0",
-                    )}
-                  />
-                  {item.label}
-                </CommandItem>
+            {items && items.length > 0 && (
+              <CommandGroup>{items.map(renderItem)}</CommandGroup>
+            )}
+            {groups &&
+              groups.map((group, idx) => (
+                <React.Fragment key={group.heading}>
+                  {(idx > 0 || (items && items.length > 0)) && (
+                    <CommandSeparator />
+                  )}
+                  <CommandGroup heading={group.heading}>
+                    {group.items.map(renderItem)}
+                  </CommandGroup>
+                </React.Fragment>
               ))}
-            </CommandGroup>
           </CommandList>
         </Command>
       </PopoverContent>

@@ -1,21 +1,9 @@
 "use client";
 
-import Combobox from "@/components/ui/combobox";
+import Combobox, { type Group } from "@/components/ui/combobox";
 import { useDeviceRuns, type Run } from "@/lib/api";
 import posthog from "posthog-js";
 import { useEffect, useMemo } from "react";
-
-function formatDate(date: Date): string {
-  return date.toLocaleString("en-US", {
-    month: "numeric",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-    timeZoneName: "short",
-  });
-}
 
 function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -47,15 +35,27 @@ function formatTimeDiff(seconds: number): string {
 function getRunLabel(run: Run): string {
   const startTime = new Date(run.epochTimeS * 1000);
   const lastDataTime = new Date((run.epochTimeS + run.durationS) * 1000);
+  const timeStr = startTime.toLocaleString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZoneName: "short",
+  });
 
   if (run.isActive) {
-    const now = new Date();
-    const secsSinceLastData = (now.getTime() - lastDataTime.getTime()) / 1000;
-    const timeAgoStr = formatTimeDiff(secsSinceLastData);
-    return `🟢 ${formatDate(startTime)} (Active - ${timeAgoStr}) <${run.uuid}>`;
-  } else {
-    return `${formatDate(startTime)} (${formatDuration(run.durationS)}) <${run.uuid}>`;
+    const secsSinceLastData = (Date.now() - lastDataTime.getTime()) / 1000;
+    return `🟢 ${timeStr} (Active - ${formatTimeDiff(secsSinceLastData)}) <${run.uuid}>`;
   }
+  return `${timeStr} (${formatDuration(run.durationS)}) <${run.uuid}>`;
+}
+
+// Converts Unix timestamp into YYYY-MM-DD in local time
+function getDayKey(epochTimeS: number): string {
+  const date = new Date(epochTimeS * 1000);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0"); // months are 0-indexed
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export default function RunSelector({
@@ -87,7 +87,54 @@ export default function RunSelector({
     }
   }, [deviceId, value, sortedRuns, isLoading, onValueChange]);
 
-  const items = useMemo(() => {
+  const groups: Group[] | undefined = useMemo(() => {
+    if (!deviceId || isLoading || error) {
+      return undefined;
+    }
+
+    const now = new Date();
+    const todayKey = getDayKey(Math.floor(now.getTime() / 1000));
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayKey = getDayKey(Math.floor(yesterday.getTime() / 1000));
+
+    const groupMap = new Map<string, Run[]>();
+    for (const run of sortedRuns) {
+      const key = getDayKey(run.epochTimeS);
+      if (!groupMap.has(key)) {
+        groupMap.set(key, []);
+      }
+      groupMap.get(key)!.push(run);
+    }
+
+    return Array.from(groupMap.entries()).map(([key, groupRuns]) => {
+      let groupHeading = "";
+      if (key === todayKey) {
+        groupHeading = "Today";
+      } else if (key === yesterdayKey) {
+        groupHeading = "Yesterday";
+      } else {
+        const [year, month, day] = key.split("-").map(Number); // day key is YYYY-MM-DD
+        groupHeading = new Date(year, month - 1, day).toLocaleDateString(
+          "en-US",
+          {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          },
+        );
+      }
+      return {
+        heading: groupHeading,
+        items: groupRuns.map((run) => ({
+          value: run.uuid,
+          label: getRunLabel(run),
+        })),
+      };
+    });
+  }, [deviceId, isLoading, error, sortedRuns]);
+
+  const placeholderItems = useMemo(() => {
     if (!deviceId) {
       return [{ value: "__no_device__", label: "Select a device first" }];
     }
@@ -97,17 +144,13 @@ export default function RunSelector({
     if (error) {
       return [{ value: "__error__", label: "Failed to load runs" }];
     }
-    return sortedRuns.map((run) => ({
-      value: run.uuid,
-      label: getRunLabel(run),
-    }));
-  }, [deviceId, isLoading, error, sortedRuns]);
-
-  const hasPlaceholder = items.length > 0 && items[0].value.startsWith("__");
+    return [];
+  }, [deviceId, isLoading, error]);
 
   return (
     <Combobox
-      items={items}
+      items={placeholderItems}
+      groups={groups}
       value={value}
       onValueChange={(next) => {
         // Ignore placeholder items
@@ -124,7 +167,7 @@ export default function RunSelector({
       }}
       placeholder={isLoading ? "Loading runs..." : "Select run..."}
       searchPlaceholder={isLoading ? "Loading..." : "Search run..."}
-      disabled={hasPlaceholder}
+      disabled={placeholderItems.length > 0}
     />
   );
 }
