@@ -380,7 +380,7 @@ export default function Map({
                   fillColor={color}
                   fillOpacity={0.8}
                   weight={0}
-                ></CircleMarker>
+                />
               ))}
             </Pane>
           )}

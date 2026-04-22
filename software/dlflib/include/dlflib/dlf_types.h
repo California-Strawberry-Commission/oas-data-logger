@@ -57,7 +57,7 @@ struct dlf_logfile_header_t {
   // dlf_event_stream_header_t
 } __attribute__((packed));
 
-/* Stream Header Definitions (polled.dlf, events.dlf) */
+/* Stream Header Definitions (polled.dlf, event.dlf) */
 struct dlf_stream_header_t {
   const char* type_structure;  // das
   const char* id;              // Unique identifier for this specific stream
