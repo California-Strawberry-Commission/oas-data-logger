@@ -1,6 +1,8 @@
 "use client";
 
+import { Card, CardContent } from "@/components/ui/card";
 import type { MapPoint, Track } from "@/components/visualizations/gps/map";
+import RunSummaryCard from "@/components/visualizations/gps/run-summary-card";
 import TimeSeriesChart, {
   formatElapsed,
   type TimeSeries,
@@ -30,6 +32,7 @@ const STREAM_ID_WIFI_RSSI = "wifiRssi";
 const MIN_NUM_SATELLITES = 1; // filter out GPS points that were logged with less than X satellites
 const MAX_JUMP_METERS = 100; // filter out GPS points that jump more than X meters from the previous point
 const MPS_TO_MPH = 2.2369362920544; // meters per second to miles per hour
+const MILES_TO_METERS = 1609.344;
 const SPEED_OUTLIER_MPH = 100; // consider any speeds above this as outliers
 
 export function toLatLng(position: LatLngExpression): {
@@ -420,6 +423,51 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
     return { speedMphSeries, dwellMinsSeries };
   }, [filteredRuns, filteredPointsByRun]);
 
+  const runSummaries = useMemo(() => {
+    return filteredRuns
+      .map((r) => {
+        const points = filteredPointsByRun[r.run.uuid];
+        if (points == null || points.length === 0) {
+          return null;
+        }
+
+        let totalDistanceMi = 0;
+        for (let i = 1; i < points.length; i++) {
+          totalDistanceMi +=
+            distanceMeters(points[i - 1].position, points[i].position) /
+            MILES_TO_METERS;
+        }
+
+        const speedSamples =
+          speedMphSeries.find((series) => series.id === r.run.uuid)?.samples ??
+          [];
+        const speedValues = speedSamples.map((s) => s.value);
+        const maxSpeedMph =
+          speedValues.length > 0 ? Math.max(...speedValues) : 0;
+        const avgSpeedMph =
+          speedValues.length > 0
+            ? speedValues.reduce((a, b) => a + b, 0) / speedValues.length
+            : 0;
+
+        const dwellSamples =
+          dwellMinsSeries.find((d) => d.id === r.run.uuid)?.samples ?? [];
+        const maxDwellMins =
+          dwellSamples.length > 0
+            ? Math.max(...dwellSamples.map((d) => d.value))
+            : 0;
+
+        return {
+          run: r.run,
+          color: r.color,
+          totalDistanceMi,
+          maxSpeedMph,
+          avgSpeedMph,
+          maxDwellMins,
+        };
+      })
+      .filter((runSummary) => runSummary !== null);
+  }, [filteredRuns, filteredPointsByRun, speedMphSeries, dwellMinsSeries]);
+
   if (firstError) {
     return (
       <div className="w-full h-150">
@@ -463,6 +511,13 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
 
   return (
     <>
+      {runSummaries.length > 0 && (
+        <div className="flex flex-wrap gap-4">
+          {runSummaries.map((runSummary) => (
+            <RunSummaryCard key={runSummary.run.uuid} summary={runSummary} />
+          ))}
+        </div>
+      )}
       <div className="w-full h-150 border rounded-md overflow-hidden">
         <MapComponent
           tracks={tracks}
@@ -470,28 +525,32 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
           onSelectedElapsedChange={setSelectedElapsedS}
         />
       </div>
-      <div className="w-full h-60 p-4 border rounded-md overflow-hidden">
-        <TimeSeriesChart
-          data={speedMphSeries}
-          selectedElapsedS={selectedElapsedS ?? undefined}
-          onSelectedElapsedChange={setSelectedElapsedS}
-          yAxisLabel="Speed (mph)"
-          yAxisLabelOffset={25}
-          tooltipValueFormatter={(v) => `${v.toFixed(1)} mph`}
-          smooth
-          smoothingHalfLifeS={2}
-        />
-      </div>
-      <div className="w-full h-60 p-4 border rounded-md overflow-hidden">
-        <TimeSeriesChart
-          data={dwellMinsSeries}
-          selectedElapsedS={selectedElapsedS ?? undefined}
-          onSelectedElapsedChange={setSelectedElapsedS}
-          yAxisLabel="Dwell time (minutes)"
-          yAxisLabelOffset={50}
-          tooltipValueFormatter={(v) => `${formatElapsed(v * 60)}`}
-        />
-      </div>
+      <Card className="w-full h-60">
+        <CardContent className="w-full h-full">
+          <TimeSeriesChart
+            data={speedMphSeries}
+            selectedElapsedS={selectedElapsedS ?? undefined}
+            onSelectedElapsedChange={setSelectedElapsedS}
+            yAxisLabel="Speed (mph)"
+            yAxisLabelOffset={25}
+            tooltipValueFormatter={(v) => `${v.toFixed(1)} mph`}
+            smooth
+            smoothingHalfLifeS={2}
+          />
+        </CardContent>
+      </Card>
+      <Card className="w-full h-60">
+        <CardContent className="w-full h-full">
+          <TimeSeriesChart
+            data={dwellMinsSeries}
+            selectedElapsedS={selectedElapsedS ?? undefined}
+            onSelectedElapsedChange={setSelectedElapsedS}
+            yAxisLabel="Dwell time (minutes)"
+            yAxisLabelOffset={50}
+            tooltipValueFormatter={(v) => `${formatElapsed(v * 60)}`}
+          />
+        </CardContent>
+      </Card>
     </>
   );
 }

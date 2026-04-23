@@ -27,13 +27,13 @@ export default function RunSelectionCard({
     <Card>
       {(title || onRemove) && (
         <CardHeader className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle>
             <span
-              className="inline-flex h-3 w-3 rounded-full"
+              className="inline-block h-2.5 w-2.5 rounded-full"
               style={{ backgroundColor: color }}
               aria-hidden
             />
-            <span className="text-sm font-medium">{title}</span>
+            <span className="text-sm font-medium pl-2">{title}</span>
           </CardTitle>
           {onRemove && (
             <Button variant="secondary" size="sm" onClick={onRemove}>
