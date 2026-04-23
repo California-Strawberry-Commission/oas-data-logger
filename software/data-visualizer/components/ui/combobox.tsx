@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { Check, ChevronsUpDown } from "lucide-react";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 export type Item = {
   value: string;
@@ -79,6 +79,7 @@ export default function Combobox({
 }) {
   const [open, setOpen] = useState<boolean>(false);
   const [internalValue, setInternalValue] = useState(""); // selected value when uncontrolled
+  const commandListRef = useRef<HTMLDivElement>(null);
 
   const isControlled = value !== undefined;
   const selectedValue = isControlled ? value : internalValue;
@@ -94,6 +95,25 @@ export default function Combobox({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isControlled, defaultSelected]);
+
+  // Scroll the selected item into view when the dropdown opens
+  useEffect(() => {
+    if (!open || !selectedValue) {
+      return;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      const container = commandListRef.current;
+      if (!container) {
+        return;
+      }
+      const selectedEl = container.querySelector(
+        `[data-value="${CSS.escape(selectedValue)}"]`,
+      );
+      selectedEl?.scrollIntoView({ block: "nearest" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open, selectedValue]);
 
   const allItems = useMemo(
     () => [...(items ?? []), ...(groups ? groups.flatMap((g) => g.items) : [])],
@@ -156,7 +176,7 @@ export default function Combobox({
       <PopoverContent className="max-w-100 w-full p-0 z-1000">
         <Command>
           <CommandInput placeholder={searchPlaceholder} />
-          <CommandList>
+          <CommandList ref={commandListRef}>
             <CommandEmpty>No results found.</CommandEmpty>
             {items && items.length > 0 && (
               <CommandGroup>{items.map(renderItem)}</CommandGroup>
