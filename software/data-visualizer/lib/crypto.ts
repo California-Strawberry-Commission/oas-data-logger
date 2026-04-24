@@ -18,8 +18,8 @@ function getSecretKey(): Buffer {
  * This function generates a random Initialization Vector (IV) and computes
  * an Authentication Tag (AuthTag) to ensure data integrity.
  *
- * @param {string} text - The raw plaintext secret (e.g., the 32-byte key generated during provisioning).
- * @returns {string} A colon-separated string containing the IV, AuthTag, and Encrypted Data (e.g., "iv:tag:ciphertext").
+ * @param text - The raw plaintext secret (e.g., the 32-byte key generated during provisioning).
+ * @returns A colon-separated string containing the IV, AuthTag, and Encrypted Data (e.g., "iv:tag:ciphertext").
  * Store this entire string in the database.
  */
 
@@ -42,9 +42,9 @@ export function encryptSecret(text: string) {
  * This function parses the packed string, extracts the IV and AuthTag,
  * and uses the server's master key to decrypt the secret.
  *
- * @param {string} packedSecret - The colon-separated string stored in the DB ("iv:tag:ciphertext").
- * @returns {string} The original raw plaintext secret.
- * @throws {Error} If the format is invalid or if decryption fails (e.g., AuthTag mismatch).
+ * @param packedSecret - The colon-separated string stored in the DB ("iv:tag:ciphertext").
+ * @returns The original raw plaintext secret.
+ * @throws If the format is invalid or if decryption fails (e.g., AuthTag mismatch).
  */
 
 export function decryptSecret(packedSecret: string) {

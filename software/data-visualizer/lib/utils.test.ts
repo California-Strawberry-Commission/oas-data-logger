@@ -1,5 +1,30 @@
-import { isValidUuid } from "@/lib/utils";
+import { formatElapsed, isValidUuid } from "@/lib/utils";
 import { describe, expect, it } from "vitest";
+
+describe("formatElapsed", () => {
+  it("formats seconds only", () => {
+    expect(formatElapsed(0)).toBe("0s");
+    expect(formatElapsed(45)).toBe("45s");
+    expect(formatElapsed(59)).toBe("59s");
+  });
+
+  it("formats minutes and seconds", () => {
+    expect(formatElapsed(60)).toBe("1m 0s");
+    expect(formatElapsed(90)).toBe("1m 30s");
+    expect(formatElapsed(3599)).toBe("59m 59s");
+  });
+
+  it("formats hours, minutes, and seconds", () => {
+    expect(formatElapsed(3600)).toBe("1h 0m 0s");
+    expect(formatElapsed(3661)).toBe("1h 1m 1s");
+    expect(formatElapsed(7384)).toBe("2h 3m 4s");
+  });
+
+  it("truncates fractional seconds", () => {
+    expect(formatElapsed(1.9)).toBe("1s");
+    expect(formatElapsed(61.9)).toBe("1m 1s");
+  });
+});
 
 describe("isValidUuid", () => {
   it("accepts a valid lowercase UUID", () => {

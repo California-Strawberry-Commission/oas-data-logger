@@ -24,6 +24,26 @@ export function colorForRssi(rssiDbm: number): string {
   return `hsl(${hue}, 100%, 45%)`;
 }
 
+/**
+ * Formats an elapsed time in seconds as a human-readable string.
+ *
+ * @param seconds - Elapsed time in seconds.
+ * @returns A string in `Xh Ym Zs`, `Ym Zs`, or `Zs` form.
+ */
+export function formatElapsed(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+
+  if (h > 0) {
+    return `${h}h ${m}m ${s}s`;
+  }
+  if (m > 0) {
+    return `${m}m ${s}s`;
+  }
+  return `${s}s`;
+}
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

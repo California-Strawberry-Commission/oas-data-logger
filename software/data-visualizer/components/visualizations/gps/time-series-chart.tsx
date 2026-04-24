@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { ChartContainer, ChartTooltip } from "@/components/ui/chart";
+import { formatElapsed } from "@/lib/utils";
 import posthog from "posthog-js";
 import { useMemo, useState } from "react";
 import {
@@ -11,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { CategoricalChartState } from "recharts/types/chart/types";
+import type { CategoricalChartState } from "recharts/types/chart/types";
 
 export type TimeSeriesSample = {
   elapsedS: number;
@@ -30,26 +31,12 @@ type ChartPoint = {
   [k: string]: number; // dynamic keys for each series' sample data (needed by Recharts)
 };
 
-export function formatElapsed(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-
-  if (h > 0) {
-    return `${h}h ${m}m ${s}s`;
-  }
-  if (m > 0) {
-    return `${m}m ${s}s`;
-  }
-  return `${s}s`;
-}
-
 /**
  * Find the sample whose elapsedS is closest to targetElapsedS.
  * Assumes the input array is already sorted by elapsedS in ascending order.
  *
- * @param points Time-sorted GPS points.
- * @param targetElapsedS Target elapsedS in seconds.
+ * @param points - Time-sorted GPS points.
+ * @param targetElapsedS - Target elapsedS in seconds.
  * @returns Index of the closest point, or null if targetElapsedS lies outside of samples.
  */
 function findClosestSample(
@@ -92,8 +79,8 @@ function findClosestSample(
  * The half-life is the amount of time (in seconds) it takes for a sudden change
  * in value to be reflected by 50% in the smoothed output.
  *
- * @param data Samples sorted by elapsedS (ascending).
- * @param halfLifeS The half-life, in seconds.
+ * @param data - Samples sorted by elapsedS (ascending).
+ * @param halfLifeS - The half-life, in seconds.
  * @returns Smoothed data series.
  */
 function smoothEma(
@@ -132,8 +119,8 @@ function smoothEma(
  * peaks and spikes, and start/stop behavior. This works better than uniform
  * subsampling to preserve spikes and short events.
  *
- * @param data Samples sorted by elapsedS (ascending).
- * @param maxBuckets Number of time buckets (roughly half of the target point count).
+ * @param data - Samples sorted by elapsedS (ascending).
+ * @param maxBuckets - Number of time buckets (roughly half of the target point count).
  * @returns Downsampled samples.
  */
 function downsampleMinMaxByTime(

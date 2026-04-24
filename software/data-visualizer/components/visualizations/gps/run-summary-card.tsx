@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatElapsed } from "@/components/visualizations/gps/time-series-chart";
 import type { Run } from "@/lib/api";
+import { formatElapsed } from "@/lib/utils";
 
 export type RunSummary = {
   run: Run;
