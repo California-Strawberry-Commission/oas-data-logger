@@ -1,8 +1,12 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { distanceMeters } from "@/components/visualizations/gps/gps-visualization";
-import { colorForRssi } from "@/lib/utils";
+import {
+  distanceMeters,
+  findClosestIndex,
+  type MapPoint,
+} from "@/components/visualizations/gps/gps-processing";
+import { colorForRssi, formatElapsed } from "@/lib/utils";
 import { LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Pause, Play } from "lucide-react";
@@ -18,13 +22,6 @@ import {
   useMap,
 } from "react-leaflet";
 
-export type MapPoint = {
-  elapsedS: number;
-  position: LatLngExpression;
-  numSatellites: number;
-  wifiRssi?: number; // dBm
-};
-
 export type Track = {
   id: string;
   epochTimeS: number;
@@ -32,70 +29,16 @@ export type Track = {
   color?: string;
 };
 
-function formatElapsed(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-
-  if (h > 0) {
-    return `${h}h ${m}m ${s}s`;
-  }
-  if (m > 0) {
-    return `${m}m ${s}s`;
-  }
-  return `${s}s`;
-}
-
-/**
- * Find the index of the point whose elapsedS is closest to targetElapsedS.
- * Uses binary search and assumes the input array is already sorted by
- * `elapsedS` in ascending order.
- *
- * @param points Time-sorted GPS points.
- * @param targetElapsedS Target elapsedS in seconds.
- * @returns Index of the closest point, or -1 if targetElapsedS lies outside of points.
- */
-function findClosestIndex(points: MapPoint[], targetElapsedS: number): number {
-  if (
-    points.length === 0 ||
-    targetElapsedS < points[0].elapsedS ||
-    targetElapsedS > points[points.length - 1].elapsedS
-  ) {
-    return -1;
-  }
-
-  let lo = 0;
-  let hi = points.length - 1;
-
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (points[mid].elapsedS < targetElapsedS) {
-      lo = mid + 1;
-    } else {
-      hi = mid;
-    }
-  }
-
-  if (lo === 0) {
-    return 0;
-  }
-  const prev = lo - 1;
-
-  const d0 = Math.abs(points[lo].elapsedS - targetElapsedS);
-  const d1 = Math.abs(points[prev].elapsedS - targetElapsedS);
-  return d1 <= d0 ? prev : lo;
-}
-
 /**
  * Reduce the number of GPS points by keeping only points that are at least
  * `minDistMeters` apart from the previously kept point. This is intended to
  * be used to improve performance for map rendering.
  *
- * @param points GPS points in traversal order.
- * @param minDistMeters Minimum distance required to keep a point.
+ * @param points - GPS points in traversal order.
+ * @param minDistMeters - Minimum distance required to keep a point.
  * @returns Decimated GPS points.
  */
-function decimateByDistance(
+export function decimateByDistance(
   points: MapPoint[],
   minDistMeters: number = 3,
 ): MapPoint[] {

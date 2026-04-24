@@ -1,15 +1,30 @@
 "use client";
 
 import { Card, CardContent } from "@/components/ui/card";
-import type { MapPoint, Track } from "@/components/visualizations/gps/map";
-import RunSummaryCard from "@/components/visualizations/gps/run-summary-card";
+import {
+  distanceMeters,
+  MAX_JUMP_METERS,
+  MILES_TO_METERS,
+  MIN_NUM_SATELLITES,
+  STREAM_ID_ALTITUDE,
+  STREAM_ID_LATITUDE,
+  STREAM_ID_LONGITUDE,
+  STREAM_ID_SATELLITES,
+  STREAM_ID_WIFI_RSSI,
+  toDwellMinsSamples,
+  toMapPoints,
+  toSpeedMphSamples,
+  type MapPoint,
+} from "@/components/visualizations/gps/gps-processing";
+import type { Track } from "@/components/visualizations/gps/map";
+import RunSummaryCard, {
+  type RunSummary,
+} from "@/components/visualizations/gps/run-summary-card";
 import TimeSeriesChart, {
-  formatElapsed,
   type TimeSeries,
-  type TimeSeriesSample,
 } from "@/components/visualizations/gps/time-series-chart";
-import { useRunStreamsMany, type Run, type RunDataSample } from "@/lib/api";
-import { LatLngExpression } from "leaflet";
+import { useRunStreamsMany, type Run } from "@/lib/api";
+import { formatElapsed } from "@/lib/utils";
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 
@@ -23,253 +38,6 @@ export type RunWithColor = {
   run: Run;
   color?: string;
 };
-
-const STREAM_ID_SATELLITES = "gpsData.satellites";
-const STREAM_ID_LATITUDE = "gpsData.lat";
-const STREAM_ID_LONGITUDE = "gpsData.lng";
-const STREAM_ID_ALTITUDE = "gpsData.alt";
-const STREAM_ID_WIFI_RSSI = "wifiRssi";
-const MIN_NUM_SATELLITES = 1; // filter out GPS points that were logged with less than X satellites
-const MAX_JUMP_METERS = 100; // filter out GPS points that jump more than X meters from the previous point
-const MPS_TO_MPH = 2.2369362920544; // meters per second to miles per hour
-const MILES_TO_METERS = 1609.344;
-const SPEED_OUTLIER_MPH = 100; // consider any speeds above this as outliers
-
-export function toLatLng(position: LatLngExpression): {
-  lat: number;
-  lng: number;
-} {
-  if (Array.isArray(position)) {
-    const [lat, lng] = position as [number, number];
-    return { lat, lng };
-  }
-  if ("lat" in position && "lng" in position) {
-    return { lat: position.lat, lng: position.lng };
-  }
-  throw new Error("Unsupported LatLngExpression shape");
-}
-
-/**
- * Calculates the haversine distance between two points.
- *
- * @param a First point.
- * @param b Second point.
- * @returns Haversine distance between a and b.
- */
-export function distanceMeters(
-  a: LatLngExpression,
-  b: LatLngExpression,
-): number {
-  const { lat: lat1, lng: lng1 } = toLatLng(a);
-  const { lat: lat2, lng: lng2 } = toLatLng(b);
-
-  const R = 6371000; // Earth radius in meters
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-
-  const dLatRad = toRad(lat2 - lat1);
-  const dLngRad = toRad(lng2 - lng1);
-  const lat1Rad = toRad(lat1);
-  const lat2Rad = toRad(lat2);
-
-  const sinDLat = Math.sin(dLatRad / 2);
-  const sinDLon = Math.sin(dLngRad / 2);
-
-  const h =
-    sinDLat * sinDLat +
-    Math.cos(lat1Rad) * Math.cos(lat2Rad) * sinDLon * sinDLon;
-  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-
-  return R * c;
-}
-
-function median(values: number[]): number {
-  if (values.length === 0) {
-    return 0;
-  }
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0
-    ? (sorted[mid - 1] + sorted[mid]) / 2
-    : sorted[mid];
-}
-
-function toMapPoints(
-  dataPoints: RunDataSample[],
-  tickBaseUs: number,
-): MapPoint[] {
-  // Split out datapoints into lat, lng, and alt
-  const satellitesMap = new Map<number, number>();
-  const latMap = new Map<number, number>();
-  const lngMap = new Map<number, number>();
-  const altMap = new Map<number, number>();
-  const wifiRssiMap = new Map<number, number>();
-  for (const dp of dataPoints) {
-    switch (dp.streamId) {
-      case STREAM_ID_SATELLITES:
-        satellitesMap.set(dp.tick, Number(dp.data));
-        break;
-      case STREAM_ID_LATITUDE:
-        latMap.set(dp.tick, Number(dp.data));
-        break;
-      case STREAM_ID_LONGITUDE:
-        lngMap.set(dp.tick, Number(dp.data));
-        break;
-      case STREAM_ID_ALTITUDE:
-        altMap.set(dp.tick, Number(dp.data));
-        break;
-      case STREAM_ID_WIFI_RSSI:
-        wifiRssiMap.set(dp.tick, Number(dp.data));
-        break;
-    }
-  }
-
-  // Assume that lat/lng share the same ticks, and satellites data may be sampled
-  // at a different rate than for lat/lng.
-  // For each lat/lng tick, we want the satellites value from the most recent
-  // satellites tick that is less than or equal to the lat/lng tick.
-  const latTicks = Array.from(latMap.keys()).sort((a, b) => a - b);
-  const satTicks = Array.from(satellitesMap.keys()).sort((a, b) => a - b);
-  const rssiTicks = Array.from(wifiRssiMap.keys()).sort((a, b) => a - b);
-
-  const mapPoints: MapPoint[] = [];
-  let satIdx = -1;
-  let rssiIdx = -1;
-
-  for (const tick of latTicks) {
-    const lat = latMap.get(tick);
-    const lng = lngMap.get(tick);
-    const alt = altMap.get(tick);
-
-    // lat/lng are required. alt is optional
-    if (lat === undefined || lng === undefined) {
-      continue;
-    }
-
-    // Get the satellites data for this tick
-    while (satIdx + 1 < satTicks.length && satTicks[satIdx + 1] <= tick) {
-      satIdx++;
-    }
-    const numSatellites =
-      satIdx >= 0 ? satellitesMap.get(satTicks[satIdx]) : undefined;
-    if (!numSatellites) {
-      continue;
-    }
-
-    // Get the WiFi RSSI data for this tick
-    while (rssiIdx + 1 < rssiTicks.length && rssiTicks[rssiIdx + 1] <= tick) {
-      rssiIdx++;
-    }
-    const wifiRssi =
-      rssiIdx >= 0 ? wifiRssiMap.get(rssiTicks[rssiIdx]) : undefined;
-
-    const elapsedS = tickBaseUs * 1e-6 * tick;
-    const position: LatLngExpression =
-      alt !== undefined ? [lat, lng, alt] : [lat, lng];
-
-    mapPoints.push({ position, elapsedS, numSatellites, wifiRssi });
-  }
-
-  return mapPoints;
-}
-
-function toSpeedMphSamples(points: MapPoint[]): TimeSeriesSample[] {
-  if (points.length === 0) {
-    return [];
-  }
-
-  const speedsMph: number[] = new Array(points.length).fill(0);
-  for (let i = 1; i < points.length; i++) {
-    const dt = points[i].elapsedS - points[i - 1].elapsedS;
-    if (!Number.isFinite(dt)) {
-      speedsMph[i] = 0;
-      continue;
-    }
-
-    if (dt <= 0) {
-      speedsMph[i] = speedsMph[i - 1];
-      continue;
-    }
-
-    const distM = distanceMeters(points[i - 1].position, points[i].position);
-    const rawSpeed = (distM / dt) * MPS_TO_MPH;
-    // Ignore outlier speeds
-    speedsMph[i] =
-      Number.isFinite(rawSpeed) && rawSpeed <= SPEED_OUTLIER_MPH
-        ? rawSpeed
-        : speedsMph[i - 1];
-  }
-
-  // Median filter to suppress single-sample spikes
-  const filteredSpeedsMph: number[] = new Array(points.length).fill(0);
-  filteredSpeedsMph[0] = speedsMph[0];
-  for (let i = 1; i < points.length; i++) {
-    const window = [
-      speedsMph[Math.max(0, i - 1)],
-      speedsMph[i],
-      speedsMph[Math.min(points.length - 1, i + 1)],
-    ];
-    filteredSpeedsMph[i] = median(window);
-  }
-
-  const speedMphSamples: TimeSeriesSample[] = new Array(points.length);
-  for (let i = 0; i < points.length; i++) {
-    speedMphSamples[i] = {
-      elapsedS: points[i].elapsedS,
-      value: filteredSpeedsMph[i],
-    };
-  }
-
-  return speedMphSamples;
-}
-
-function toDwellMinsSamples(
-  points: MapPoint[],
-  speeds: TimeSeriesSample[],
-): TimeSeriesSample[] {
-  if (points.length <= 1) {
-    return [];
-  }
-
-  // Hysteresis thresholds for stopped/moving
-  const ENTER_STOPPED_MPH = 0.2;
-  const EXIT_STOPPED_MPH = 0.5;
-
-  const result: TimeSeriesSample[] = new Array(points.length);
-  result[0] = { elapsedS: points[0].elapsedS, value: 0 };
-  let stopped = false;
-  let dwellS = 0;
-
-  for (let i = 1; i < points.length; i++) {
-    const speed = speeds[i]?.value ?? 0;
-    const dt = Math.max(0, points[i].elapsedS - points[i - 1].elapsedS);
-
-    if (!stopped) {
-      if (speed <= ENTER_STOPPED_MPH) {
-        // Entered dwell
-        stopped = true;
-        dwellS += dt;
-      } else {
-        // Moving along
-        dwellS = 0;
-      }
-    } else {
-      if (speed >= EXIT_STOPPED_MPH) {
-        // Exiting dwell
-        stopped = false;
-        dwellS = 0;
-      } else {
-        // Still dwelling
-        dwellS += dt;
-      }
-    }
-
-    result[i] = {
-      elapsedS: points[i].elapsedS,
-      value: dwellS / 60,
-    };
-  }
-  return result;
-}
 
 function LoadingMap() {
   return (
@@ -423,7 +191,7 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
     return { speedMphSeries, dwellMinsSeries };
   }, [filteredRuns, filteredPointsByRun]);
 
-  const runSummaries = useMemo(() => {
+  const runSummaries: RunSummary[] = useMemo(() => {
     return filteredRuns
       .map((r) => {
         const points = filteredPointsByRun[r.run.uuid];
