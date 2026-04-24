@@ -13,7 +13,7 @@ import {
   findClosestIndex,
   type MapPoint,
 } from "@/components/visualizations/gps/gps-processing";
-import type { TimeSeriesSample } from "@/components/visualizations/gps/time-series-chart";
+import type { TimeSeriesSample } from "@/components/visualizations/gps/time-series-chart-utils";
 import type { RunDataSample } from "@/lib/api";
 import { describe, expect, it } from "vitest";
 

@@ -39,7 +39,7 @@ type ChartPoint = {
  * @param targetElapsedS - Target elapsedS in seconds.
  * @returns Index of the closest point, or null if targetElapsedS lies outside of samples.
  */
-function findClosestSample(
+export function findClosestSample(
   samples: TimeSeriesSample[],
   targetElapsedS: number,
 ): TimeSeriesSample | null {
@@ -83,7 +83,7 @@ function findClosestSample(
  * @param halfLifeS - The half-life, in seconds.
  * @returns Smoothed data series.
  */
-function smoothEma(
+export function smoothEma(
   data: TimeSeriesSample[],
   halfLifeS: number = 5,
 ): TimeSeriesSample[] {
@@ -123,7 +123,7 @@ function smoothEma(
  * @param maxBuckets - Number of time buckets (roughly half of the target point count).
  * @returns Downsampled samples.
  */
-function downsampleMinMaxByTime(
+export function downsampleMinMaxByTime(
   data: TimeSeriesSample[],
   maxBuckets: number,
 ): TimeSeriesSample[] {
