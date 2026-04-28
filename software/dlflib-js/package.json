@@ -16,7 +16,6 @@
   ],
   "type": "module",
   "dependencies": {
-    "@types/node": "^20",
     "binary-parser": "^2.3.0",
     "construct-js": "^1.0.1",
     "ieee754": "^1.2.1"
