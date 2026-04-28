@@ -14,7 +14,6 @@ import {
   NullTerminatedString,
   U8s,
   DataType,
-  NullTerminatedStringType,
 } from "construct-js";
 import { F32, F64 } from "./construct_float.js";
 
