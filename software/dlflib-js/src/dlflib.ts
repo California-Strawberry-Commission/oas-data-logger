@@ -145,9 +145,13 @@ function getEncoderField(
   // Handle object data
   if (encoder) {
     for (const key of Object.keys(dataObj)) {
-      const field = encoder.get(key) as any;
-      if (field && typeof field.set === "function") {
-        field.set(dataObj[key]);
+      try {
+        const field = encoder.get(key) as any;
+        if (field && typeof field.set === "function") {
+          field.set(dataObj[key]);
+        }
+      } catch (error) {
+        continue; // simply ignore non defined struct values
       }
     }
     return encoder;
@@ -482,7 +486,7 @@ export abstract class Adapter {
       parser = parser.pointer(name, {
         type: parserType,
         offset: function () {
-          return this.off + relOff;
+          return this._____off + relOff;
         },
       });
     }
@@ -604,8 +608,7 @@ export abstract class Adapter {
         return new Parser()[parser]("data");
       }
       return new Parser().nest("data", {
-        // @ts-ignore
-        type: "uint32le",
+        type: parser as Parser, // Handle complex structs
       });
     });
 
