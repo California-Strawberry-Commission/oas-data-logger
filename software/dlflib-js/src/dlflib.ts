@@ -135,8 +135,9 @@ function createPolledStreamHeaderEncoder() {
 function getEncoderField(
   typeStructure: string,
   dataObj: any,
-): ConstructDataType {
-  const encoder = create_encoder(typeStructure);
+): ConstructDataType | undefined {
+  const encoder = createEncoder(typeStructure);
+
   // Handle primitive data
   if (typeof encoder === "function") {
     return encoder(dataObj);
@@ -156,6 +157,8 @@ function getEncoderField(
     }
     return encoder;
   }
+
+  return undefined;
 }
 
 type Tlogfile_header_t = {
@@ -229,7 +232,7 @@ export type TPolledLogObj = {
 
 //Factory function for encode functions, returns primitive or struct to be populated
 
-export function create_encoder(
+export function createEncoder(
   structure: string,
   structure_size?: number,
 ): StructType | Function | null {
@@ -253,7 +256,7 @@ export function create_encoder(
 
     if (paddingNeeded > 0) {
       encoder.field(
-        "__padding_${memberName}",
+        `__padding_${memberName}`,
         U8s(new Array(paddingNeeded).fill(0)),
       );
       currentOffset += paddingNeeded;
@@ -272,7 +275,7 @@ export function create_encoder(
 
   if (structure_size != null && structure_size > currentOffset) {
     const tailPadding = structure_size - currentOffset;
-    encoder.field("__padding_eof", U8s(new Array(tailPadding).fill(0)));
+    encoder.field(`__padding_eof`, U8s(new Array(tailPadding).fill(0)));
   }
 
   return encoder;
@@ -282,11 +285,12 @@ export function create_encoder(
 Encoder Functions Block:
   All 3 functions follow similar format.
   Checking for "function" since U8 etc. implement IField and IValue.
-  Polled and Events cascade similar format to inner streams.
-  For polled and events, encode each stream, concatenate and turn into array at end.
+  For polled and events, we utilize a struct builder pattern to incrementally build
+  sub-structures, appends to root structure polledDlfEncoder before serialization.
+
 */
 
-export function encode_meta(metaObj: TMetaObj): Uint8Array {
+export function encodeMeta(metaObj: TMetaObj): Uint8Array {
   const metaHeaderEncoder = createMetaHeaderEncoder();
   let metaDataField: ConstructDataType | undefined;
   let metaSize = 0;
@@ -305,7 +309,10 @@ export function encode_meta(metaObj: TMetaObj): Uint8Array {
   const metaDlfEncoder = Struct("meta_dlf").field("header", metaHeaderEncoder);
 
   metaDataField = getEncoderField(metaObj.meta_structure, metaObj.meta);
-  metaSize = metaDataField.computeBufferSize();
+
+  if (metaDataField) {
+    metaSize = metaDataField.computeBufferSize();
+  }
 
   metaHeaderEncoder.get<DataType<typeof U32>>("meta_size").set(metaSize);
   if (metaDataField) {
@@ -315,7 +322,7 @@ export function encode_meta(metaObj: TMetaObj): Uint8Array {
   return metaDlfEncoder.toUint8Array();
 }
 
-export function encode_polled(polledObj: TPolledLogObj): Uint8Array {
+export function encodePolled(polledObj: TPolledLogObj): Uint8Array {
   const logfileHeaderEncoder = createLogfileHeaderEncoder();
   logfileHeaderEncoder.get<DataType<typeof U16>>("magic").set(polledObj.magic);
   logfileHeaderEncoder
@@ -362,7 +369,6 @@ export function encode_polled(polledObj: TPolledLogObj): Uint8Array {
 
   for (const [idx, sample] of polledObj.samples.entries()) {
     const streamDef = polledObj.streams[sample.stream_idx];
-    const encoder = create_encoder(streamDef.type_structure);
 
     const sampleDataField = getEncoderField(
       streamDef.type_structure,
@@ -377,7 +383,7 @@ export function encode_polled(polledObj: TPolledLogObj): Uint8Array {
   return polledDlfEncoder.toUint8Array();
 }
 
-export function encode_events(logObj: TEventLogObj): Uint8Array {
+export function encodeEvents(logObj: TEventLogObj): Uint8Array {
   const logfileHeaderEncoder = createLogfileHeaderEncoder();
   logfileHeaderEncoder.get<DataType<typeof U16>>("magic").set(logObj.magic);
   logfileHeaderEncoder
@@ -473,7 +479,7 @@ export abstract class Adapter {
     let parser = new Parser()
       .endianness("little")
       // @ts-ignore
-      .saveOffset("_____off");
+      .saveOffset("structureStartOffset");
 
     for (const m of members) {
       const [name, type_name, offset] = m.split(":");
@@ -486,7 +492,7 @@ export abstract class Adapter {
       parser = parser.pointer(name, {
         type: parserType,
         offset: function () {
-          return this._____off + relOff;
+          return this.structureStartOffset + relOff;
         },
       });
     }
