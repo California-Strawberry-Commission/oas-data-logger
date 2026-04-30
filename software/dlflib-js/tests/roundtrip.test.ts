@@ -4,9 +4,9 @@ import {
   TEventLogObj,
   TPolledLogObj,
   TMetaObj,
-  encode_meta,
-  encode_polled,
-  encode_events,
+  encodeMeta,
+  encodePolled,
+  encodeEvents,
 } from "../src/dlflib.js";
 
 class LocalAdapter extends Adapter {
@@ -105,7 +105,7 @@ test("Round-trip for Meta: Primitive Fields", async () => {
     meta: 3.14,
   };
 
-  const encodedBytes = encode_meta(originalObj);
+  const encodedBytes = encodeMeta(originalObj);
   const adapter = new LocalAdapter(encodedBytes);
   const roundTrippedObj = await assembleMeta(adapter);
 
@@ -124,7 +124,7 @@ test("Round-trip for Meta: Non-Primitive Fields", async () => {
     },
   };
 
-  const encodedBytes = encode_meta(originalObj);
+  const encodedBytes = encodeMeta(originalObj);
   const adapter = new LocalAdapter(encodedBytes);
   const roundTrippedObj = await assembleMeta(adapter);
 
@@ -143,7 +143,7 @@ test("Round-trip for Meta: Zero'd Out", async () => {
     },
   };
 
-  const encodedBytes = encode_meta(originalObj);
+  const encodedBytes = encodeMeta(originalObj);
   const adapter = new LocalAdapter(encodedBytes);
   const roundTrippedObj = await assembleMeta(adapter);
 
@@ -162,7 +162,7 @@ test("Round-trip for Meta: Missing and Extra Fields", async () => {
     },
   };
 
-  const encodedBytes = encode_meta(originalObj);
+  const encodedBytes = encodeMeta(originalObj);
   const adapter = new LocalAdapter(encodedBytes);
   const roundTrippedObj = await assembleMeta(adapter);
 
@@ -170,6 +170,60 @@ test("Round-trip for Meta: Missing and Extra Fields", async () => {
     id: 42,
     active: 0,
   });
+});
+
+test("Round-trip for Meta: Internal Padding", async () => {
+  const originalObj: TMetaObj = {
+    magic: 33812,
+    epoch_time_s: 1763485651,
+    tick_base_us: 100000,
+    meta_structure: "padded;a:uint8_t:0;b:uint32_t:8",
+    meta: {
+      a: 255,
+      b: 4294967295,
+    },
+  };
+
+  const encodedBytes = encodeMeta(originalObj);
+  const adapter = new LocalAdapter(encodedBytes);
+  const roundTrippedObj = await assembleMeta(adapter);
+
+  expect(roundTrippedObj).toMatchObject(originalObj);
+});
+
+test("Round-trip for Meta: Tail Padding", async () => {
+  const originalObj: TMetaObj = {
+    magic: 33812,
+    epoch_time_s: 1763485651,
+    tick_base_us: 100000,
+    meta_structure: "tailpadding;a:uint8_t:0;b:uint8_t:1",
+    meta: {
+      a: 10,
+      b: 20,
+    },
+  };
+
+  const encodedBytes = encodeMeta(originalObj);
+  const adapter = new LocalAdapter(encodedBytes);
+  const roundTrippedObj = await assembleMeta(adapter);
+
+  expect(roundTrippedObj).toMatchObject(originalObj);
+});
+
+test("Round-trip for Meta: Ignores ! prefix", async () => {
+  const originalObj: TMetaObj = {
+    magic: 33812,
+    epoch_time_s: 1763485651,
+    tick_base_us: 100000,
+    meta_structure: "!test",
+    meta: null,
+  };
+
+  const encodedBytes = encodeMeta(originalObj);
+  const adapter = new LocalAdapter(encodedBytes);
+  const roundTrippedObj = await assembleMeta(adapter);
+
+  expect(roundTrippedObj).toMatchObject(originalObj);
 });
 
 // Polled Tests
@@ -203,7 +257,7 @@ test("Round-trip for Polled: Primitive Fields", async () => {
     ],
   };
 
-  const encodedBytes = encode_polled(originalObj);
+  const encodedBytes = encodePolled(originalObj);
   const adapter = new LocalAdapter(
     new Uint8Array(),
     encodedBytes,
@@ -243,7 +297,7 @@ test("Round-trip for Polled: Non-Primitive Fields", async () => {
     ],
   };
 
-  const encodedBytes = encode_polled(originalObj);
+  const encodedBytes = encodePolled(originalObj);
   const adapter = new LocalAdapter(
     new Uint8Array(),
     encodedBytes,
@@ -296,7 +350,7 @@ test("Round-trip for Polled: Multiple Interleaved Streams", async () => {
     ],
   };
 
-  const encodedBytes = encode_polled(originalObj);
+  const encodedBytes = encodePolled(originalObj);
   const adapter = new LocalAdapter(
     new Uint8Array(),
     encodedBytes,
@@ -325,7 +379,7 @@ test("Round-trip for Polled: Zero Samples", async () => {
     samples: [],
   };
 
-  const encodedBytes = encode_polled(originalObj);
+  const encodedBytes = encodePolled(originalObj);
   const adapter = new LocalAdapter(
     new Uint8Array(),
     encodedBytes,
@@ -363,7 +417,7 @@ test("Round-trip for Polled: Missing and Extra Fields", async () => {
     ],
   };
 
-  const encodedBytes = encode_polled(originalObj);
+  const encodedBytes = encodePolled(originalObj);
   const adapter = new LocalAdapter(
     new Uint8Array(),
     encodedBytes,
@@ -401,7 +455,7 @@ test("Round-trip for Events: Primitive Fields", async () => {
     ],
   };
 
-  const encodedBytes = encode_events(originalObj);
+  const encodedBytes = encodeEvents(originalObj);
   const adapter = new LocalAdapter(
     new Uint8Array(),
     new Uint8Array(),
@@ -437,7 +491,7 @@ test("Round-trip for Events: Non Primitive Fields", async () => {
     ],
   };
 
-  const encodedBytes = encode_events(originalObj);
+  const encodedBytes = encodeEvents(originalObj);
   const adapter = new LocalAdapter(
     new Uint8Array(),
     new Uint8Array(),
@@ -464,8 +518,12 @@ test("Round-trip for Events: Zero Events", async () => {
     samples: [],
   };
 
-  const encodedBytes = encode_events(originalObj);
-  const adapter = new LocalAdapter(new Uint8Array(), new Uint8Array(), encodedBytes);
+  const encodedBytes = encodeEvents(originalObj);
+  const adapter = new LocalAdapter(
+    new Uint8Array(),
+    new Uint8Array(),
+    encodedBytes,
+  );
   const roundTrippedObj = await assembleEvent(adapter);
 
   expect(roundTrippedObj).toMatchObject(originalObj);
@@ -495,7 +553,7 @@ test("Round-trip for Events: Missing struct fields default to zero", async () =>
     ],
   };
 
-  const encodedBytes = encode_events(originalObj);
+  const encodedBytes = encodeEvents(originalObj);
   const adapter = new LocalAdapter(
     new Uint8Array(),
     new Uint8Array(),
@@ -534,7 +592,7 @@ test("Round-trip for Events: Extra fields are safely ignored", async () => {
     ],
   };
 
-  const encodedBytes = encode_events(originalObj);
+  const encodedBytes = encodeEvents(originalObj);
   const adapter = new LocalAdapter(
     new Uint8Array(),
     new Uint8Array(),
