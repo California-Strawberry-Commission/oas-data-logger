@@ -33,25 +33,29 @@ const bool USB_POWER_OVERRIDE_VALUE{true};
 const int GPS_PRINT_INTERVAL_SECS{0};         // <= 0 means disabled
 const int PRINT_HEAP_USAGE_INTERVAL_SECS{0};  // <= 0 means disabled
 
-// Pin Definitions
-const gpio_num_t PIN_USB_POWER{GPIO_NUM_13};
+// Pin Definitions — Rev 2 hardware
+// Rev 2: PG (MCP73871) on IO34. The Rev 1 PIN_USB_POWER pin (GPIO 13) is
+// LoRa RF_SW1 on Rev 2 and must not be driven from app_v1.
+const gpio_num_t PIN_USB_POWER{GPIO_NUM_34};
 const gpio_num_t PIN_SLEEP_BUTTON{GPIO_NUM_0};
-const gpio_num_t PIN_SD_CLK{GPIO_NUM_45};  // Clock
-const gpio_num_t PIN_SD_CMD{GPIO_NUM_40};  // Command
-const gpio_num_t PIN_SD_D0{GPIO_NUM_39};   // Data 0
-const gpio_num_t PIN_SD_D1{GPIO_NUM_38};   // Data 1 (for 4-bit mode)
-const gpio_num_t PIN_SD_D2{GPIO_NUM_41};   // Data 2 (for 4-bit mode)
-const gpio_num_t PIN_SD_D3{GPIO_NUM_42};   // Data 3 (for 4-bit mode)
+const gpio_num_t PIN_SD_CLK{GPIO_NUM_4};   // Clock
+const gpio_num_t PIN_SD_CMD{GPIO_NUM_5};   // Command
+const gpio_num_t PIN_SD_D0{GPIO_NUM_2};    // Data 0
+const gpio_num_t PIN_SD_D1{GPIO_NUM_1};    // Data 1 (for 4-bit mode)
+const gpio_num_t PIN_SD_D2{GPIO_NUM_7};    // Data 2 (for 4-bit mode)
+const gpio_num_t PIN_SD_D3{GPIO_NUM_6};    // Data 3 (for 4-bit mode)
 
-// GPS Power and Control Pins (TESTED AND WORKING)
-const gpio_num_t PIN_GPS_ENABLE{
-    GPIO_NUM_3};  // Power enable for GPS module (same as SD card enable)
-const gpio_num_t PIN_GPS_WAKE{
-    GPIO_NUM_5};  // Wake signal for SAM-M10Q (set HIGH)
+// GPS power gating — Rev 2 has one AP22815 load switch on IO18 that gates
+// BOTH GPS and SD power. There is no separate WAKE pin on Rev 2; PIN_GPS_WAKE
+// is aliased to the same pin so existing call sites compile. The LOW writes
+// that would brown-out the SD card have been removed in setup() and
+// enableGps() (see those sites for the matching deletions).
+const gpio_num_t PIN_GPS_ENABLE{GPIO_NUM_18};
+const gpio_num_t PIN_GPS_WAKE{GPIO_NUM_18};
 
-// GPS UART Pins (TESTED AND WORKING - RX/TX swapped from schematic)
-const gpio_num_t PIN_GPS_TX{GPIO_NUM_36};  // ESP TX -> GPS RX (swapped)
-const gpio_num_t PIN_GPS_RX{GPIO_NUM_37};  // ESP RX <- GPS TX (swapped)
+// GPS UART Pins — Rev 2 empirical (Confluence Quick Ref has these reversed).
+const gpio_num_t PIN_GPS_TX{GPIO_NUM_42};  // ESP TX -> GPS RXD
+const gpio_num_t PIN_GPS_RX{GPIO_NUM_41};  // ESP RX <- GPS TXD
 
 // LED Configuration
 #define LED_PIN PIN_NEOPIXEL
@@ -205,10 +209,11 @@ void setup() {
   pinMode(PIN_USB_POWER, INPUT_PULLDOWN);
   pinMode(PIN_SLEEP_BUTTON, INPUT_PULLUP);
   pinMode(PIN_GPS_ENABLE, OUTPUT);
-  pinMode(PIN_GPS_WAKE, OUTPUT);
+  // Rev 2: PIN_GPS_WAKE aliases PIN_GPS_ENABLE (same load switch); pinMode
+  // is redundant but harmless. The LOW write that lived here on Rev 1 is
+  // removed — on Rev 2 it would turn the load switch off and brown-out SD.
   digitalWrite(PIN_GPS_ENABLE,
                HIGH);  // Enable power for SD card (shared with GPS)
-  digitalWrite(PIN_GPS_WAKE, LOW);  // GPS wake signal LOW (GPS not active yet)
 
   vTaskDelay(pdMS_TO_TICKS(500));  // Give SD card time to power up
 
@@ -673,12 +678,11 @@ void enableGps() {
 
   EZLOG_INFO("Enabling GPS...");
 
-  // Power cycle the GPS module (TESTED AND WORKING)
-  // Note: PIN_GPS_ENABLE is already HIGH from setup() (shared with SD card)
-  // We only need to cycle the WAKE signal
-  digitalWrite(PIN_GPS_WAKE, LOW);
-  vTaskDelay(pdMS_TO_TICKS(100));
-  digitalWrite(PIN_GPS_WAKE, HIGH);  // Wake signal must be HIGH
+  // Rev 2: there is no separate GPS WAKE pin. The Rev 1 wake-pulse sequence
+  // (LOW / delay / HIGH on GPIO 5) is removed because GPIO 5 is now SD_CMD,
+  // and PIN_GPS_WAKE aliases the load switch on IO18 — pulsing it would
+  // brown-out the SD card. PIN_GPS_ENABLE is already HIGH from setup(); we
+  // just give the module time to boot before talking UART.
   vTaskDelay(pdMS_TO_TICKS(1000));   // GPS needs time to boot
 
   // Bind UART to the selected pins
@@ -781,10 +785,10 @@ void disableGps() {
     xGPS_Handle = nullptr;
   }
 
-  // Turn off GPS wake signal
-  // NOTE: We do NOT turn off PIN_GPS_ENABLE because it's shared with SD card!
-  // SD card needs to remain powered for data logging
-  digitalWrite(PIN_GPS_WAKE, LOW);
+  // Rev 2: no separate WAKE pin. We do NOT touch PIN_GPS_ENABLE / the load
+  // switch here either, because IO18 also gates SD power. The Rev 1
+  // digitalWrite(PIN_GPS_WAKE, LOW) is removed — on Rev 2 it would alias to
+  // the load switch and brown-out SD.
 
   // Close UART
   GPS_SERIAL.end();
