@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <ESP32Time.h>
-#include <FastLED.h>
 #include <SD_MMC.h>
 #include <SparkFun_u-blox_GNSS_v3.h>
 #include <WiFi.h>
@@ -57,12 +56,76 @@ const gpio_num_t PIN_GPS_WAKE{GPIO_NUM_18};
 const gpio_num_t PIN_GPS_TX{GPIO_NUM_42};  // ESP TX -> GPS RXD
 const gpio_num_t PIN_GPS_RX{GPIO_NUM_41};  // ESP RX <- GPS TXD
 
-// LED Configuration
-#define LED_PIN PIN_NEOPIXEL
-#define LED_TYPE WS2812
-#define LED_COLOR_ORDER GRB
-const int NUM_LEDS{1};
-const uint8_t LED_BRIGHTNESS{10};
+// LED Configuration — Rev 2
+// LED1 is a passive common-anode RGB part (Sunled XZCMECBDDGK53W), NOT a
+// WS2812. Common anode is tied to +3V3; GPIOs sink current on the cathodes,
+// so driving a cathode LOW lights its channel. FastLED cannot drive this —
+// it's PWM via the ESP32 LEDC peripheral. FastLED.showColor() call sites in
+// updateLedPattern() are replaced with writeRGB() below.
+const gpio_num_t PIN_LED_R{GPIO_NUM_40};   // LED1 pin 2
+const gpio_num_t PIN_LED_G{GPIO_NUM_38};   // LED1 pin 4
+const gpio_num_t PIN_LED_B{GPIO_NUM_39};   // LED1 pin 3
+
+constexpr int LEDC_CH_R{0};
+constexpr int LEDC_CH_G{1};
+constexpr int LEDC_CH_B{2};
+constexpr int LEDC_FREQ{5000};
+constexpr int LEDC_RES{8};                 // 8-bit; duty 0..256, 256 = always HIGH
+constexpr uint8_t LED_MAX_DUTY{20};        // brightness cap (~8% duty)
+
+struct RGB { uint8_t r, g, b; };
+constexpr RGB LED_OFF{0, 0, 0};
+constexpr RGB LED_WHITE{255, 255, 255};
+constexpr RGB LED_RED{255, 0, 0};
+constexpr RGB LED_GREEN{0, 255, 0};
+constexpr RGB LED_BLUE{0, 0, 255};
+constexpr RGB LED_YELLOW{255, 255, 0};
+constexpr RGB LED_ORANGE{255, 80, 0};
+
+static bool ledcAttached{false};
+
+static void ledcAttachAll() {
+  if (ledcAttached) return;
+  ledcSetup(LEDC_CH_R, LEDC_FREQ, LEDC_RES);
+  ledcSetup(LEDC_CH_G, LEDC_FREQ, LEDC_RES);
+  ledcSetup(LEDC_CH_B, LEDC_FREQ, LEDC_RES);
+  ledcAttachPin(PIN_LED_R, LEDC_CH_R);
+  ledcAttachPin(PIN_LED_G, LEDC_CH_G);
+  ledcAttachPin(PIN_LED_B, LEDC_CH_B);
+  ledcAttached = true;
+}
+
+static void ledcDetachAll() {
+  if (!ledcAttached) return;
+  ledcDetachPin(PIN_LED_R);
+  ledcDetachPin(PIN_LED_G);
+  ledcDetachPin(PIN_LED_B);
+  ledcAttached = false;
+}
+
+// True OFF needs detach + digitalWrite HIGH on each cathode (common anode).
+// LEDC duty=256 leaves a faint glow on GPIO 39 on this board, so we don't
+// rely on it for the off state.
+static void writeRGB(RGB c) {
+  if (c.r == 0 && c.g == 0 && c.b == 0) {
+    ledcDetachAll();
+    pinMode(PIN_LED_R, OUTPUT);
+    pinMode(PIN_LED_G, OUTPUT);
+    pinMode(PIN_LED_B, OUTPUT);
+    digitalWrite(PIN_LED_R, HIGH);
+    digitalWrite(PIN_LED_G, HIGH);
+    digitalWrite(PIN_LED_B, HIGH);
+    return;
+  }
+  ledcAttachAll();
+  uint16_t r = (uint16_t)c.r * LED_MAX_DUTY / 255;
+  uint16_t g = (uint16_t)c.g * LED_MAX_DUTY / 255;
+  uint16_t b = (uint16_t)c.b * LED_MAX_DUTY / 255;
+  // Invert for common anode: cathode LOW lights the channel.
+  ledcWrite(LEDC_CH_R, 256 - r);
+  ledcWrite(LEDC_CH_G, 256 - g);
+  ledcWrite(LEDC_CH_B, 256 - b);
+}
 
 // GPS Configuration
 const uint32_t GPS_UPDATE_RATE_MS{100};  // 10Hz update rate
@@ -106,7 +169,6 @@ enum class ErrorType {
 };
 
 // Global Objects
-CRGB leds[NUM_LEDS];
 SFE_UBLOX_GNSS_SERIAL myGNSS;  // u-blox GNSS object
 ESP32Time rtc;
 WiFiManager wifiManager;
@@ -308,9 +370,8 @@ void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
 }
 
 void initializeLed() {
-  FastLED.addLeds<LED_TYPE, LED_PIN, LED_COLOR_ORDER>(leds, NUM_LEDS);
-  FastLED.setBrightness(LED_BRIGHTNESS);
-  FastLED.showColor(CRGB::White);
+  ledcAttachAll();
+  writeRGB(LED_WHITE);
 }
 
 void provisionDevice() {
@@ -338,7 +399,7 @@ void updateLedPattern() {
 
   switch (state) {
     case SystemState::INIT:
-      FastLED.showColor(CRGB::White);
+      writeRGB(LED_WHITE);
       break;
 
     case SystemState::WAIT_SD:
@@ -349,20 +410,20 @@ void updateLedPattern() {
       if (currentMillis - lastLedToggleMillis > 500) {
         lastLedToggleMillis = currentMillis;
         ledToggleState = !ledToggleState;
-        FastLED.showColor(ledToggleState ? CRGB::Yellow : CRGB::Black);
+        writeRGB(ledToggleState ? LED_YELLOW : LED_OFF);
       }
       break;
 
     case SystemState::OTA_UPDATE:
-      FastLED.showColor(CRGB::Orange);
+      writeRGB(LED_ORANGE);
       break;
 
     case SystemState::RUNNING:
-      FastLED.showColor(CRGB::Green);
+      writeRGB(LED_GREEN);
       break;
 
     case SystemState::OFFLOAD:
-      FastLED.showColor(CRGB::Blue);
+      writeRGB(LED_BLUE);
       break;
 
     case SystemState::ERROR:
@@ -386,12 +447,12 @@ void updateLedPattern() {
       if (currentMillis - lastLedToggleMillis > blinkInterval) {
         lastLedToggleMillis = currentMillis;
         ledToggleState = !ledToggleState;
-        FastLED.showColor(ledToggleState ? CRGB::Red : CRGB::Black);
+        writeRGB(ledToggleState ? LED_RED : LED_OFF);
       }
       break;
 
     case SystemState::SLEEP:
-      FastLED.showColor(CRGB::Black);
+      writeRGB(LED_OFF);
       break;
   }
 }
@@ -651,7 +712,7 @@ void handleSleepState() {
   disableGps();
 
   // Turn off LED
-  FastLED.showColor(CRGB::Black);
+  writeRGB(LED_OFF);
 
   // Configure wake on USB power only if unconnected, else wake on reset
   if (!hasUsbPower()) {
