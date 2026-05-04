@@ -40,6 +40,7 @@ async function assembleMeta(adapter: Adapter): Promise<TMetaObj> {
     epoch_time_s: header.epoch_time_s,
     tick_base_us: header.tick_base_us,
     meta_structure: header.meta_structure,
+    meta_size: header.meta_size,
     meta: data,
   };
 }
@@ -102,6 +103,7 @@ test("Round-trip for Meta: Primitive Fields", async () => {
     epoch_time_s: 1763485651,
     tick_base_us: 100000,
     meta_structure: "double",
+    meta_size: 8,
     meta: 3.14,
   };
 
@@ -118,6 +120,7 @@ test("Round-trip for Meta: Non-Primitive Fields", async () => {
     epoch_time_s: 1763485651,
     tick_base_us: 100000,
     meta_structure: "meta_struct;id:uint32_t:0;active:bool:4",
+    meta_size: 5,
     meta: {
       id: 42,
       active: 1,
@@ -137,6 +140,7 @@ test("Round-trip for Meta: Zero'd Out", async () => {
     epoch_time_s: 0,
     tick_base_us: 0,
     meta_structure: "meta_struct;meta_size:uint32_t:0;epoch_time_s:uint32_t:4",
+    meta_size: 8,
     meta: {
       meta_size: 0,
       epoch_time_s: 0,
@@ -156,6 +160,7 @@ test("Round-trip for Meta: Missing and Extra Fields", async () => {
     epoch_time_s: 1763485651,
     tick_base_us: 100000,
     meta_structure: "meta_struct;id:uint32_t:0;active:bool:4",
+    meta_size: 5,
     meta: {
       id: 42,
       extra_field: "Ignore me",
@@ -178,6 +183,7 @@ test("Round-trip for Meta: Internal Padding", async () => {
     epoch_time_s: 1763485651,
     tick_base_us: 100000,
     meta_structure: "padded;a:uint8_t:0;b:uint32_t:8",
+    meta_size: 12,
     meta: {
       a: 255,
       b: 4294967295,
@@ -197,6 +203,7 @@ test("Round-trip for Meta: Tail Padding", async () => {
     epoch_time_s: 1763485651,
     tick_base_us: 100000,
     meta_structure: "tailpadding;a:uint8_t:0;b:uint8_t:1",
+    meta_size: 4,
     meta: {
       a: 10,
       b: 20,
@@ -216,6 +223,7 @@ test("Round-trip for Meta: Ignores ! prefix", async () => {
     epoch_time_s: 1763485651,
     tick_base_us: 100000,
     meta_structure: "!test",
+    meta_size: 0,
     meta: null,
   };
 
