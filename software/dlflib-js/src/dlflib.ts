@@ -135,8 +135,9 @@ function createPolledStreamHeaderEncoder() {
 function getEncoderField(
   typeStructure: string,
   dataObj: any,
+  structureSize?: number,
 ): ConstructDataType | undefined {
-  const encoder = createEncoder(typeStructure);
+  const encoder = createEncoder(typeStructure, structureSize);
 
   // Handle primitive data
   if (typeof encoder === "function") {
@@ -191,6 +192,7 @@ export type TMetaObj = {
   epoch_time_s: number;
   tick_base_us: number;
   meta_structure: string;
+  meta_size: number;
   meta: any;
 };
 
@@ -293,7 +295,6 @@ Encoder Functions Block:
 export function encodeMeta(metaObj: TMetaObj): Uint8Array {
   const metaHeaderEncoder = createMetaHeaderEncoder();
   let metaDataField: ConstructDataType | undefined;
-  let metaSize = 0;
 
   metaHeaderEncoder.get<DataType<typeof U16>>("magic").set(metaObj.magic);
   metaHeaderEncoder
@@ -305,16 +306,18 @@ export function encodeMeta(metaObj: TMetaObj): Uint8Array {
   metaHeaderEncoder
     .get<DataType<typeof NullTerminatedString>>("meta_structure")
     .set(metaObj.meta_structure);
+  metaHeaderEncoder
+    .get<DataType<typeof U32>>("meta_size")
+    .set(metaObj.meta_size);
 
   const metaDlfEncoder = Struct("meta_dlf").field("header", metaHeaderEncoder);
 
-  metaDataField = getEncoderField(metaObj.meta_structure, metaObj.meta);
+  metaDataField = getEncoderField(
+    metaObj.meta_structure,
+    metaObj.meta,
+    metaObj.meta_size,
+  );
 
-  if (metaDataField) {
-    metaSize = metaDataField.computeBufferSize();
-  }
-
-  metaHeaderEncoder.get<DataType<typeof U32>>("meta_size").set(metaSize);
   if (metaDataField) {
     metaDlfEncoder.field("meta", metaDataField);
   }
@@ -341,30 +344,27 @@ export function encodePolled(polledObj: TPolledLogObj): Uint8Array {
   );
 
   for (const [idx, stream] of polledObj.streams.entries()) {
-    const polled_stream_header_encoder_t = createPolledStreamHeaderEncoder();
-    polled_stream_header_encoder_t
+    const polledStreamHeaderEncoder = createPolledStreamHeaderEncoder();
+    polledStreamHeaderEncoder
       .get<DataType<typeof NullTerminatedString>>("type_structure")
       .set(stream.type_structure);
-    polled_stream_header_encoder_t
+    polledStreamHeaderEncoder
       .get<DataType<typeof NullTerminatedString>>("id")
       .set(stream.id);
-    polled_stream_header_encoder_t
+    polledStreamHeaderEncoder
       .get<DataType<typeof NullTerminatedString>>("notes")
       .set(stream.notes);
-    polled_stream_header_encoder_t
+    polledStreamHeaderEncoder
       .get<DataType<typeof U32>>("type_size")
       .set(stream.type_size);
-    polled_stream_header_encoder_t
+    polledStreamHeaderEncoder
       .get<DataType<typeof U64>>("tick_interval")
       .set(stream.tick_interval);
-    polled_stream_header_encoder_t
+    polledStreamHeaderEncoder
       .get<DataType<typeof U64>>("tick_phase")
       .set(stream.tick_phase);
 
-    polledDlfEncoder.field(
-      `stream_header_${idx}`,
-      polled_stream_header_encoder_t,
-    );
+    polledDlfEncoder.field(`stream_header_${idx}`, polledStreamHeaderEncoder);
   }
 
   for (const [idx, sample] of polledObj.samples.entries()) {
@@ -373,6 +373,7 @@ export function encodePolled(polledObj: TPolledLogObj): Uint8Array {
     const sampleDataField = getEncoderField(
       streamDef.type_structure,
       sample.buffer,
+      streamDef.type_size,
     );
 
     if (sampleDataField) {
@@ -402,41 +403,39 @@ export function encodeEvents(logObj: TEventLogObj): Uint8Array {
   );
 
   for (const [idx, stream] of logObj.streams.entries()) {
-    const event_stream_header_encoder_t = createEventStreamHeaderEncoder();
-    event_stream_header_encoder_t
+    const eventStreamHeaderEncoder = createEventStreamHeaderEncoder();
+    eventStreamHeaderEncoder
       .get<DataType<typeof NullTerminatedString>>("type_structure")
       .set(stream.type_structure);
-    event_stream_header_encoder_t
+    eventStreamHeaderEncoder
       .get<DataType<typeof NullTerminatedString>>("id")
       .set(stream.id);
-    event_stream_header_encoder_t
+    eventStreamHeaderEncoder
       .get<DataType<typeof NullTerminatedString>>("notes")
       .set(stream.notes);
-    event_stream_header_encoder_t
+    eventStreamHeaderEncoder
       .get<DataType<typeof U32>>("type_size")
       .set(stream.type_size);
 
-    eventDlfEncoder.field(
-      `stream_header_${idx}`,
-      event_stream_header_encoder_t,
-    );
+    eventDlfEncoder.field(`stream_header_${idx}`, eventStreamHeaderEncoder);
   }
 
   for (const [idx, sample] of logObj.samples.entries()) {
-    const sample_header_encoder_t = createSampleHeaderEncoder();
-    sample_header_encoder_t
+    const sampleHeaderEncoder = createSampleHeaderEncoder();
+    sampleHeaderEncoder
       .get<DataType<typeof U16>>("stream_idx")
       .set(sample.stream_idx);
-    sample_header_encoder_t
+    sampleHeaderEncoder
       .get<DataType<typeof U64>>("sample_tick")
       .set(sample.sample_tick);
 
-    eventDlfEncoder.field(`sample_header_${idx}`, sample_header_encoder_t);
+    eventDlfEncoder.field(`sample_header_${idx}`, sampleHeaderEncoder);
 
     const streamDef = logObj.streams[sample.stream_idx];
     const sampleDataField = getEncoderField(
       streamDef.type_structure,
       sample.buffer,
+      streamDef.type_size,
     );
 
     if (sampleDataField) {
