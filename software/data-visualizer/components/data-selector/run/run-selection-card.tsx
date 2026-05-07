@@ -1,0 +1,75 @@
+import DeviceSelector from "@/components/data-selector/device-selector";
+import RunSelector from "@/components/data-selector/run/run-selector";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { type Device, type Run } from "@/lib/api";
+import { colorForRunIndex } from "@/lib/utils";
+
+export default function RunSelectionCard({
+  title,
+  index,
+  row,
+  onChange,
+  onRemove,
+}: {
+  title?: string;
+  index: number;
+  row: { rowId: string; device: Device | null; run: Run | null };
+  onChange?: (
+    patch: Partial<{ device: Device | null; run: Run | null }>,
+  ) => void;
+  onRemove?: () => void;
+}) {
+  const { device, run } = row;
+  const color = colorForRunIndex(index);
+
+  return (
+    <Card>
+      {(title || onRemove) && (
+        <CardHeader className="flex items-center justify-between">
+          <CardTitle>
+            <span
+              className="inline-block h-2.5 w-2.5 rounded-full"
+              style={{ backgroundColor: color }}
+              aria-hidden
+            />
+            <span className="text-sm font-medium pl-2">{title}</span>
+          </CardTitle>
+          {onRemove && (
+            <Button variant="secondary" size="sm" onClick={onRemove}>
+              Remove
+            </Button>
+          )}
+        </CardHeader>
+      )}
+
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <div className="text-sm font-medium">Device</div>
+          <DeviceSelector
+            value={device?.id ?? ""}
+            onValueChange={(nextDevice) => {
+              // Clear run if device changes
+              onChange?.({ device: nextDevice, run: null });
+            }}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <div className="text-sm font-medium">Run</div>
+          {device ? (
+            <RunSelector
+              deviceId={device.id}
+              value={run?.uuid ?? ""}
+              onValueChange={(nextRun) => onChange?.({ run: nextRun })}
+            />
+          ) : (
+            <div className="rounded-md border border-dashed py-2 px-3 text-sm text-muted-foreground">
+              Select a device to load runs.
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
