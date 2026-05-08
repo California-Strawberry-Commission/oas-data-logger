@@ -139,11 +139,11 @@ char deviceUid[13]{0};     // Populated at boot
 char deviceSecret[65]{0};  // Populated from NVS at boot
 
 // Backend endpoints
-const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
-const char* OTA_MANIFEST_ENDPOINT{
-    "https://oas-data-logger.vercel.app/api/ota/manifest/%s/%s"};
-const char* OTA_FIRMWARE_ENDPOINT{
-    "https://oas-data-logger.vercel.app/api/ota/firmware/%s/%s/%d"};
+// LOCAL TESTING: pointing at host dev server on LAN IP
+#define BACKEND_BASE "http://10.144.134.74:3000"
+const char* UPLOAD_ENDPOINT{BACKEND_BASE "/api/upload/%s"};
+const char* OTA_MANIFEST_ENDPOINT{BACKEND_BASE "/api/ota/manifest/%s/%s"};
+const char* OTA_FIRMWARE_ENDPOINT{BACKEND_BASE "/api/ota/firmware/%s/%s/%d"};
 
 // State Machine States
 enum class SystemState {
