@@ -50,10 +50,14 @@ async function computeRunDurationS(
 ): Promise<number> {
   let maxTick: bigint = 0n;
   for (const sample of polledSamples) {
-    if (sample.tick > maxTick) maxTick = sample.tick;
+    if (sample.tick > maxTick) {
+      maxTick = sample.tick;
+    }
   }
   for (const sample of eventSamples) {
-    if (sample.tick > maxTick) maxTick = sample.tick;
+    if (sample.tick > maxTick) {
+      maxTick = sample.tick;
+    }
   }
   return Number((maxTick * tickBaseUs) / 1_000_000n);
 }
@@ -227,22 +231,22 @@ export async function POST(
       // Create or update run record
       const adapter = new FSAdapter(uploadDir);
       if (!runExists) {
-        const [metaHeader, polledSamples, eventSamples] = await Promise.all([
-          adapter.meta_header(),
-          adapter.polled_data().catch(() => []),
-          adapter.events_data().catch(() => []),
+        const [meta, polledSamples, eventSamples] = await Promise.all([
+          adapter.getMetaDlf(),
+          adapter.getPolledData().catch(() => []),
+          adapter.getEventData().catch(() => []),
         ]);
         const durationS = await computeRunDurationS(
           polledSamples,
           eventSamples,
-          BigInt(metaHeader.tick_base_us),
+          BigInt(meta.tickBaseUs),
         );
         await prisma.run.create({
           data: {
             uuid,
             deviceId,
-            epochTimeS: BigInt(metaHeader.epoch_time_s),
-            tickBaseUs: BigInt(metaHeader.tick_base_us),
+            epochTimeS: BigInt(meta.epochTimeS),
+            tickBaseUs: BigInt(meta.tickBaseUs),
             durationS,
             metadata: {},
             isActive,
@@ -260,8 +264,8 @@ export async function POST(
           assembledFiles.includes("event.dlf")
         ) {
           const [polledSamples, eventSamples] = await Promise.all([
-            adapter.polled_data().catch(() => []),
-            adapter.events_data().catch(() => []),
+            adapter.getPolledData().catch(() => []),
+            adapter.getEventData().catch(() => []),
           ]);
           updateData.durationS = await computeRunDurationS(
             polledSamples,
