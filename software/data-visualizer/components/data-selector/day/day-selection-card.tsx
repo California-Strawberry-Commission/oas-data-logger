@@ -3,7 +3,7 @@ import DaySelector from "@/components/data-selector/day/day-selector";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { type Device } from "@/lib/api";
-import { colorForRunIndex } from "@/lib/utils";
+import { colorForSelectionIndex } from "@/lib/utils";
 
 export default function DaySelectionCard({
   title,
@@ -22,7 +22,7 @@ export default function DaySelectionCard({
   onDayKeyChange?: (dayKey: string) => void;
   onRemove?: () => void;
 }) {
-  const color = colorForRunIndex(index);
+  const color = colorForSelectionIndex(index);
 
   return (
     <Card>

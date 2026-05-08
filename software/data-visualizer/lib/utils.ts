@@ -5,7 +5,7 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-const RUN_COLORS = [
+const SELECTION_COLORS = [
   "#2563eb", // blue
   "#dc2626", // red
   "#16a34a", // green
@@ -14,8 +14,8 @@ const RUN_COLORS = [
   "#0891b2", // cyan
 ];
 
-export function colorForRunIndex(i: number): string {
-  return RUN_COLORS[i % RUN_COLORS.length];
+export function colorForSelectionIndex(i: number): string {
+  return SELECTION_COLORS[i % SELECTION_COLORS.length];
 }
 
 export function colorForRssi(rssiDbm: number): string {
@@ -42,6 +42,34 @@ export function formatElapsed(seconds: number): string {
     return `${m}m ${s}s`;
   }
   return `${s}s`;
+}
+
+/**
+ * Formats an epoch time in seconds as a local time-of-day string, like "1:23 PM".
+ *
+ * @param epochTimeS - Epoch time in seconds.
+ * @returns A local time-of-day string.
+ */
+export function formatTimeOfDay(epochTimeS: number): string {
+  return new Date(epochTimeS * 1000).toLocaleString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+/**
+ * Returns a `YYYY-MM-DD` string for the local calendar date of the given epoch time in seconds.
+ *
+ * @param epochTimeS - Epoch time in seconds.
+ * @returns A string in `YYYY-MM-DD` format.
+ */
+export function getDayKey(epochTimeS: number): string {
+  const date = new Date(epochTimeS * 1000);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 const UUID_RE =

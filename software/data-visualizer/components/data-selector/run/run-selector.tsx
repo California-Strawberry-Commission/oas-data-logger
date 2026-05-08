@@ -1,8 +1,8 @@
 "use client";
 
 import Combobox, { type Group } from "@/components/ui/combobox";
-import { getDayKey } from "@/lib/day-utils";
 import { useDeviceRuns, type Run } from "@/lib/api";
+import { getDayKey } from "@/lib/utils";
 import posthog from "posthog-js";
 import { useEffect, useMemo } from "react";
 

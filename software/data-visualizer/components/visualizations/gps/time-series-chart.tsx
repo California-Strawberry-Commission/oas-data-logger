@@ -222,9 +222,10 @@ export default function TimeSeriesChart({
   selectedElapsedS,
   onSelectedElapsedChange,
   xAxisLabel = "Elapsed Time",
+  xAxisTickFormatter = (v: number) => formatElapsed(Number(v)),
   yAxisLabel = "Value",
   yAxisLabelOffset = 0,
-  yTickFormatter = (value: number) => `${Math.round(value)}`,
+  yAxisTickFormatter = (value: number) => `${Math.round(value)}`,
   tooltipValueFormatter = (value: number) => value.toFixed(1),
   smooth = false,
   smoothingHalfLifeS = 5,
@@ -234,9 +235,10 @@ export default function TimeSeriesChart({
   selectedElapsedS?: number;
   onSelectedElapsedChange?: (elapsedS: number | null) => void;
   xAxisLabel?: string;
+  xAxisTickFormatter?: (value: number) => string;
   yAxisLabel?: string;
   yAxisLabelOffset?: number;
-  yTickFormatter?: (value: number) => string;
+  yAxisTickFormatter?: (value: number) => string;
   tooltipValueFormatter?: (value: number) => string;
   smooth?: boolean;
   smoothingHalfLifeS?: number;
@@ -453,7 +455,7 @@ export default function TimeSeriesChart({
             type="number"
             domain={zoomRange ?? ["dataMin", "dataMax"]}
             allowDataOverflow
-            tickFormatter={(v) => formatElapsed(Number(v))}
+            tickFormatter={(v) => xAxisTickFormatter(Number(v))}
             minTickGap={24}
           >
             <Label
@@ -467,7 +469,7 @@ export default function TimeSeriesChart({
             width={42}
             domain={yDomain ?? undefined}
             allowDataOverflow
-            tickFormatter={(v) => yTickFormatter(Number(v))}
+            tickFormatter={(v) => yAxisTickFormatter(Number(v))}
           >
             <Label
               value={yAxisLabel}

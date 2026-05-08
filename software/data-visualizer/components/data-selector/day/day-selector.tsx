@@ -2,7 +2,7 @@
 
 import Combobox from "@/components/ui/combobox";
 import { useDeviceRuns } from "@/lib/api";
-import { getDayKey } from "@/lib/day-utils";
+import { getDayKey } from "@/lib/utils";
 import posthog from "posthog-js";
 import { useMemo } from "react";
 

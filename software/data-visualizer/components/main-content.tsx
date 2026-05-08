@@ -3,7 +3,6 @@
 import DataSelector, {
   type Selection,
 } from "@/components/data-selector/data-selector";
-import DayVisualizationArea from "@/components/visualizations/day-visualization-area";
 import VisualizationArea from "@/components/visualizations/visualization-area";
 import { useDevices, useRuns } from "@/lib/api";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -148,11 +147,7 @@ export default function MainContent() {
 
       {/* Main visualization area */}
       <section className="flex-1 md:min-w-0 md:min-h-0 md:overflow-y-auto">
-        {selection.kind === "day" ? (
-          <DayVisualizationArea rows={selection.rows} />
-        ) : (
-          <VisualizationArea selection={selection} />
-        )}
+        <VisualizationArea selection={selection} />
       </section>
     </>
   );

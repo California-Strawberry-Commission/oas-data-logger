@@ -3,7 +3,7 @@ import RunSelector from "@/components/data-selector/run/run-selector";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { type Device, type Run } from "@/lib/api";
-import { colorForRunIndex } from "@/lib/utils";
+import { colorForSelectionIndex } from "@/lib/utils";
 
 export default function RunSelectionCard({
   title,
@@ -21,7 +21,7 @@ export default function RunSelectionCard({
   onRemove?: () => void;
 }) {
   const { device, run } = row;
-  const color = colorForRunIndex(index);
+  const color = colorForSelectionIndex(index);
 
   return (
     <Card>

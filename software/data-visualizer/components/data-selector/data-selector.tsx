@@ -57,7 +57,7 @@ export default function DataSelector({
             setViewMode("run");
           }}
         >
-          Run
+          By Run
         </Button>
         <Button
           variant={viewMode === "day" ? "default" : "ghost"}
@@ -69,7 +69,7 @@ export default function DataSelector({
             setViewMode("day");
           }}
         >
-          Day
+          By Day
         </Button>
       </div>
 
