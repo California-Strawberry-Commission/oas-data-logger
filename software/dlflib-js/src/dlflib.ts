@@ -17,150 +17,7 @@ import {
 } from "construct-js";
 import { F32, F64 } from "./construct_float.js";
 
-/**
- * Creates an adapter to a remote, hosted, DLF Logfile
- */
-export class LogClient {
-  constructor(adapter: Adapter) {}
-}
-
-const BINARY_PARSERS_PRIMITIVES = {
-  uint8_t: "uint8",
-  bool: "uint8",
-  uint16_t: "uint16le",
-  uint32_t: "uint32le",
-  uint64_t: "uint64le",
-  int8_t: "int8",
-  int16_t: "int16le",
-  int32_t: "int32le",
-  int64_t: "int64le",
-  float: "floatle",
-  double: "doublele",
-} as const;
-
-// see construct_float.js for implementation of F32 && F64
-const ENCODER_PRIMITIVES = {
-  uint8_t: U8,
-  bool: U8,
-  uint16_t: U16,
-  uint32_t: U32,
-  uint64_t: U64,
-  int8_t: I8,
-  int16_t: I16,
-  int32_t: I32,
-  int64_t: I64,
-  float: F32,
-  double: F64,
-} as const;
-
-const meta_header_t = new Parser()
-  .endianness("little")
-  .uint16("magic")
-  .uint32("epoch_time_s")
-  .uint32("tick_base_us")
-  .string("meta_structure", { zeroTerminated: true })
-  .uint32("meta_size")
-  .buffer("meta", { readUntil: "eof" });
-
-const logfile_header_t = new Parser()
-  // @ts-ignore
-  .useContextVars()
-  .endianness("little")
-  .uint16("magic")
-  .uint8("stream_type")
-  .uint64("tick_span")
-  .uint16("num_streams")
-  .array("streams", {
-    length: "num_streams",
-    type: new Parser()
-      .string("type_structure", { zeroTerminated: true })
-      .string("id", { zeroTerminated: true })
-      .string("notes", { zeroTerminated: true })
-      .uint32le("type_size")
-      .choice("stream_info", {
-        tag: function () {
-          // $root references the root structure
-          // @ts-ignore
-          return this.$root.stream_type;
-        },
-        choices: {
-          0: new Parser().uint64le("tick_interval").uint64le("tick_phase"), // polled
-          1: new Parser(), // event
-        },
-      }),
-  })
-  .buffer("data", { readUntil: "eof" });
-
-function createMetaHeaderEncoder() {
-  return Struct("meta_header_t")
-    .field("magic", U16(0))
-    .field("epoch_time_s", U32(0))
-    .field("tick_base_us", U32(0))
-    .field("meta_structure", NullTerminatedString(""))
-    .field("meta_size", U32(0));
-}
-
-function createLogfileHeaderEncoder() {
-  return Struct("logfile_header_t")
-    .field("magic", U16(0))
-    .field("stream_type", U8(0))
-    .field("tick_span", U64(0n))
-    .field("num_streams", U16(0));
-}
-
-function createEventStreamHeaderEncoder() {
-  return Struct("stream_header_t")
-    .field("type_structure", NullTerminatedString(""))
-    .field("id", NullTerminatedString(""))
-    .field("notes", NullTerminatedString(""))
-    .field("type_size", U32(0));
-}
-
-function createSampleHeaderEncoder() {
-  return Struct("sample_header_t")
-    .field("stream_idx", U16(0))
-    .field("sample_tick", U64(0n));
-}
-
-function createPolledStreamHeaderEncoder() {
-  return Struct("polled_stream_header_t")
-    .field("type_structure", NullTerminatedString(""))
-    .field("id", NullTerminatedString(""))
-    .field("notes", NullTerminatedString(""))
-    .field("type_size", U32(0))
-    .field("tick_interval", U64(0n))
-    .field("tick_phase", U64(0n));
-}
-
-function getEncoderField(
-  typeStructure: string,
-  dataObj: any,
-  structureSize?: number,
-): ConstructDataType | undefined {
-  const encoder = createEncoder(typeStructure, structureSize);
-
-  // Handle primitive data
-  if (typeof encoder === "function") {
-    return encoder(dataObj);
-  }
-
-  // Handle object data
-  if (encoder) {
-    for (const key of Object.keys(dataObj)) {
-      try {
-        const field = encoder.get(key) as any;
-        if (field && typeof field.set === "function") {
-          field.set(dataObj[key]);
-        }
-      } catch (error) {
-        continue; // simply ignore non defined struct values
-      }
-    }
-    return encoder;
-  }
-
-  return undefined;
-}
+//#region Types
 
 type Tlogfile_header_t = {
   magic: number;
@@ -184,8 +41,6 @@ type Tlogfile_header_t = {
 };
 
 type Stream = Tlogfile_header_t["streams"][0];
-
-// export for unit testing
 
 export type TMetaObj = {
   magic: number;
@@ -232,18 +87,140 @@ export type TPolledLogObj = {
   }>;
 };
 
-//Factory function for encode functions, returns primitive or struct to be populated
+//#endregion
+
+//#region Primitive type maps
+
+const BINARY_PARSERS_PRIMITIVES = {
+  uint8_t: "uint8",
+  bool: "uint8",
+  uint16_t: "uint16le",
+  uint32_t: "uint32le",
+  uint64_t: "uint64le",
+  int8_t: "int8",
+  int16_t: "int16le",
+  int32_t: "int32le",
+  int64_t: "int64le",
+  float: "floatle",
+  double: "doublele",
+} as const;
+
+// See construct_float.js for implementation of F32 && F64
+const ENCODER_PRIMITIVES = {
+  uint8_t: U8,
+  bool: U8,
+  uint16_t: U16,
+  uint32_t: U32,
+  uint64_t: U64,
+  int8_t: I8,
+  int16_t: I16,
+  int32_t: I32,
+  int64_t: I64,
+  float: F32,
+  double: F64,
+} as const;
+
+//#endregion
+
+//#region Binary parsers
+
+const metaDlfParser = new Parser()
+  .endianness("little")
+  .uint16("magic")
+  .uint32("epoch_time_s")
+  .uint32("tick_base_us")
+  .string("meta_structure", { zeroTerminated: true })
+  .uint32("meta_size")
+  .buffer("meta", { readUntil: "eof" });
+
+const dataDlfParser = new Parser()
+  // @ts-ignore
+  .useContextVars()
+  .endianness("little")
+  .uint16("magic")
+  .uint8("stream_type")
+  .uint64("tick_span")
+  .uint16("num_streams")
+  .array("streams", {
+    length: "num_streams",
+    type: new Parser()
+      .string("type_structure", { zeroTerminated: true })
+      .string("id", { zeroTerminated: true })
+      .string("notes", { zeroTerminated: true })
+      .uint32le("type_size")
+      .choice("stream_info", {
+        tag: function () {
+          // $root references the root structure
+          // @ts-ignore
+          return this.$root.stream_type;
+        },
+        choices: {
+          0: new Parser().uint64le("tick_interval").uint64le("tick_phase"), // polled
+          1: new Parser(), // event
+        },
+      }),
+  })
+  .buffer("data", { readUntil: "eof" });
+
+//#endregion
+
+//#region Encoder factories
+
+function createMetaHeaderEncoder() {
+  return Struct("MetaDlfHeader")
+    .field("magic", U16(0))
+    .field("epoch_time_s", U32(0))
+    .field("tick_base_us", U32(0))
+    .field("meta_structure", NullTerminatedString(""))
+    .field("meta_size", U32(0));
+}
+
+function createDataDlfHeaderEncoder() {
+  return Struct("DataDlfHeader")
+    .field("magic", U16(0))
+    .field("stream_type", U8(0))
+    .field("tick_span", U64(0n))
+    .field("num_streams", U16(0));
+}
+
+function createEventStreamHeaderEncoder() {
+  return Struct("EventStreamHeader")
+    .field("type_structure", NullTerminatedString(""))
+    .field("id", NullTerminatedString(""))
+    .field("notes", NullTerminatedString(""))
+    .field("type_size", U32(0));
+}
+
+function createEventSampleHeaderEncoder() {
+  return Struct("EventSampleHeader")
+    .field("stream_idx", U16(0))
+    .field("sample_tick", U64(0n));
+}
+
+function createPolledStreamHeaderEncoder() {
+  return Struct("PolledStreamHeader")
+    .field("type_structure", NullTerminatedString(""))
+    .field("id", NullTerminatedString(""))
+    .field("notes", NullTerminatedString(""))
+    .field("type_size", U32(0))
+    .field("tick_interval", U64(0n))
+    .field("tick_phase", U64(0n));
+}
+
+//#endregion
+
+//#region Encoder helpers
 
 export function createEncoder(
   structure: string,
-  structure_size?: number,
+  structureSize?: number,
 ): StructType | Function | null {
   if (structure.startsWith("!")) {
     return null;
   }
 
   if (structure in ENCODER_PRIMITIVES) {
-    return ENCODER_PRIMITIVES[structure];
+    return ENCODER_PRIMITIVES[structure as keyof typeof ENCODER_PRIMITIVES];
   }
 
   const [name, ...members] = structure.split(";");
@@ -253,7 +230,9 @@ export function createEncoder(
   for (const m of members) {
     const [memberName, typeName, offsetStr] = m.split(":");
     const relOff = parseInt(offsetStr);
-    const EncoderType = ENCODER_PRIMITIVES[typeName];
+    const primitiveEncoder = ENCODER_PRIMITIVES[
+      typeName as keyof typeof ENCODER_PRIMITIVES
+    ] as (value: number | bigint) => ConstructDataType;
     const paddingNeeded = relOff - currentOffset;
 
     if (paddingNeeded > 0) {
@@ -270,27 +249,86 @@ export function createEncoder(
       defaultValue = 0n;
     }
 
-    const fieldInstance = EncoderType(defaultValue);
+    const fieldInstance = primitiveEncoder(defaultValue);
     encoder.field(memberName, fieldInstance);
     currentOffset += fieldInstance.computeBufferSize();
   }
 
-  if (structure_size != null && structure_size > currentOffset) {
-    const tailPadding = structure_size - currentOffset;
+  if (structureSize != null && structureSize > currentOffset) {
+    const tailPadding = structureSize - currentOffset;
     encoder.field(`__padding_eof`, U8s(new Array(tailPadding).fill(0)));
   }
 
   return encoder;
 }
 
-/*
-Encoder Functions Block:
-  All 3 functions follow similar format.
-  Checking for "function" since U8 etc. implement IField and IValue.
-  For polled and events, we utilize a struct builder pattern to incrementally build
-  sub-structures, appends to root structure polledDlfEncoder before serialization.
+function getEncoderField(
+  typeStructure: string,
+  dataObj: any,
+  structureSize?: number,
+): ConstructDataType | undefined {
+  const encoder = createEncoder(typeStructure, structureSize);
 
-*/
+  // Handle primitive data
+  if (typeof encoder === "function") {
+    return encoder(dataObj);
+  }
+
+  // Handle object data
+  if (encoder) {
+    for (const key of Object.keys(dataObj)) {
+      try {
+        const field = encoder.get(key) as any;
+        if (field && typeof field.set === "function") {
+          field.set(dataObj[key]);
+        }
+      } catch (error) {
+        continue; // simply ignore non defined struct values
+      }
+    }
+    return encoder;
+  }
+
+  return undefined;
+}
+
+//#endregion
+
+//#region Math helpers
+
+function mod(a: bigint, m: bigint) {
+  const r = a % m;
+  return r < 0n ? r + m : r;
+}
+
+// First tick >= 0 such that (tick + phase) % interval == 0
+function firstTick(interval: bigint, phase: bigint) {
+  return mod(-phase, interval);
+}
+
+// Smallest tick >= start such that (tick + phase) % interval == 0
+function nextDueAtOrAfter(start: bigint, interval: bigint, phase: bigint) {
+  const f = firstTick(interval, phase);
+  if (start <= f) {
+    return f;
+  }
+  const k = (start - f + interval - 1n) / interval; // ceil
+  return f + k * interval;
+}
+
+// Number of due ticks in [0, t) for a stream
+function countBefore(t: bigint, interval: bigint, phase: bigint) {
+  const f = firstTick(interval, phase);
+  if (t <= f) {
+    return 0n;
+  }
+  // Ticks are f, f+interval, f+2*interval, ... < t
+  return 1n + (t - 1n - f) / interval;
+}
+
+//#endregion
+
+//#region Encode functions
 
 export function encodeMeta(metaObj: TMetaObj): Uint8Array {
   const metaHeaderEncoder = createMetaHeaderEncoder();
@@ -326,45 +364,40 @@ export function encodeMeta(metaObj: TMetaObj): Uint8Array {
 }
 
 export function encodePolled(polledObj: TPolledLogObj): Uint8Array {
-  const logfileHeaderEncoder = createLogfileHeaderEncoder();
-  logfileHeaderEncoder.get<DataType<typeof U16>>("magic").set(polledObj.magic);
-  logfileHeaderEncoder
+  const headerEncoder = createDataDlfHeaderEncoder();
+  headerEncoder.get<DataType<typeof U16>>("magic").set(polledObj.magic);
+  headerEncoder
     .get<DataType<typeof U8>>("stream_type")
     .set(polledObj.stream_type);
-  logfileHeaderEncoder
-    .get<DataType<typeof U64>>("tick_span")
-    .set(polledObj.tick_span);
-  logfileHeaderEncoder
+  headerEncoder.get<DataType<typeof U64>>("tick_span").set(polledObj.tick_span);
+  headerEncoder
     .get<DataType<typeof U16>>("num_streams")
     .set(polledObj.streams.length);
 
-  const polledDlfEncoder = Struct("polled_dlf").field(
-    "logfile_header",
-    logfileHeaderEncoder,
-  );
+  const polledDlfEncoder = Struct("PolledDlf").field("header", headerEncoder);
 
   for (const [idx, stream] of polledObj.streams.entries()) {
-    const polledStreamHeaderEncoder = createPolledStreamHeaderEncoder();
-    polledStreamHeaderEncoder
+    const streamHeaderEncoder = createPolledStreamHeaderEncoder();
+    streamHeaderEncoder
       .get<DataType<typeof NullTerminatedString>>("type_structure")
       .set(stream.type_structure);
-    polledStreamHeaderEncoder
+    streamHeaderEncoder
       .get<DataType<typeof NullTerminatedString>>("id")
       .set(stream.id);
-    polledStreamHeaderEncoder
+    streamHeaderEncoder
       .get<DataType<typeof NullTerminatedString>>("notes")
       .set(stream.notes);
-    polledStreamHeaderEncoder
+    streamHeaderEncoder
       .get<DataType<typeof U32>>("type_size")
       .set(stream.type_size);
-    polledStreamHeaderEncoder
+    streamHeaderEncoder
       .get<DataType<typeof U64>>("tick_interval")
       .set(stream.tick_interval);
-    polledStreamHeaderEncoder
+    streamHeaderEncoder
       .get<DataType<typeof U64>>("tick_phase")
       .set(stream.tick_phase);
 
-    polledDlfEncoder.field(`stream_header_${idx}`, polledStreamHeaderEncoder);
+    polledDlfEncoder.field(`streamHeader${idx}`, streamHeaderEncoder);
   }
 
   for (const [idx, sample] of polledObj.samples.entries()) {
@@ -377,51 +410,44 @@ export function encodePolled(polledObj: TPolledLogObj): Uint8Array {
     );
 
     if (sampleDataField) {
-      polledDlfEncoder.field(`sample_data_${idx}`, sampleDataField);
+      polledDlfEncoder.field(`sampleData${idx}`, sampleDataField);
     }
   }
 
   return polledDlfEncoder.toUint8Array();
 }
 
-export function encodeEvents(logObj: TEventLogObj): Uint8Array {
-  const logfileHeaderEncoder = createLogfileHeaderEncoder();
-  logfileHeaderEncoder.get<DataType<typeof U16>>("magic").set(logObj.magic);
-  logfileHeaderEncoder
-    .get<DataType<typeof U8>>("stream_type")
-    .set(logObj.stream_type);
-  logfileHeaderEncoder
-    .get<DataType<typeof U64>>("tick_span")
-    .set(logObj.tick_span);
-  logfileHeaderEncoder
+export function encodeEvent(logObj: TEventLogObj): Uint8Array {
+  const headerEncoder = createDataDlfHeaderEncoder();
+  headerEncoder.get<DataType<typeof U16>>("magic").set(logObj.magic);
+  headerEncoder.get<DataType<typeof U8>>("stream_type").set(logObj.stream_type);
+  headerEncoder.get<DataType<typeof U64>>("tick_span").set(logObj.tick_span);
+  headerEncoder
     .get<DataType<typeof U16>>("num_streams")
     .set(logObj.streams.length);
 
-  const eventDlfEncoder = Struct("event_dlf").field(
-    "logfile_header",
-    logfileHeaderEncoder,
-  );
+  const eventDlfEncoder = Struct("EventDlf").field("header", headerEncoder);
 
   for (const [idx, stream] of logObj.streams.entries()) {
-    const eventStreamHeaderEncoder = createEventStreamHeaderEncoder();
-    eventStreamHeaderEncoder
+    const streamHeaderEncoder = createEventStreamHeaderEncoder();
+    streamHeaderEncoder
       .get<DataType<typeof NullTerminatedString>>("type_structure")
       .set(stream.type_structure);
-    eventStreamHeaderEncoder
+    streamHeaderEncoder
       .get<DataType<typeof NullTerminatedString>>("id")
       .set(stream.id);
-    eventStreamHeaderEncoder
+    streamHeaderEncoder
       .get<DataType<typeof NullTerminatedString>>("notes")
       .set(stream.notes);
-    eventStreamHeaderEncoder
+    streamHeaderEncoder
       .get<DataType<typeof U32>>("type_size")
       .set(stream.type_size);
 
-    eventDlfEncoder.field(`stream_header_${idx}`, eventStreamHeaderEncoder);
+    eventDlfEncoder.field(`streamHeader${idx}`, streamHeaderEncoder);
   }
 
   for (const [idx, sample] of logObj.samples.entries()) {
-    const sampleHeaderEncoder = createSampleHeaderEncoder();
+    const sampleHeaderEncoder = createEventSampleHeaderEncoder();
     sampleHeaderEncoder
       .get<DataType<typeof U16>>("stream_idx")
       .set(sample.stream_idx);
@@ -429,7 +455,7 @@ export function encodeEvents(logObj: TEventLogObj): Uint8Array {
       .get<DataType<typeof U64>>("sample_tick")
       .set(sample.sample_tick);
 
-    eventDlfEncoder.field(`sample_header_${idx}`, sampleHeaderEncoder);
+    eventDlfEncoder.field(`sampleHeader${idx}`, sampleHeaderEncoder);
 
     const streamDef = logObj.streams[sample.stream_idx];
     const sampleDataField = getEncoderField(
@@ -439,12 +465,14 @@ export function encodeEvents(logObj: TEventLogObj): Uint8Array {
     );
 
     if (sampleDataField) {
-      eventDlfEncoder.field(`sample_data_${idx}`, sampleDataField);
+      eventDlfEncoder.field(`sampleData${idx}`, sampleDataField);
     }
   }
 
   return eventDlfEncoder.toUint8Array();
 }
+
+//#endregion
 
 export abstract class Adapter {
   abstract get polled_dlf(): Promise<Uint8Array>;
@@ -468,12 +496,14 @@ export abstract class Adapter {
 
     // To indicate a buffer that contains a single primitive value, return a string
     if (structure in BINARY_PARSERS_PRIMITIVES) {
-      return BINARY_PARSERS_PRIMITIVES[structure];
+      return BINARY_PARSERS_PRIMITIVES[
+        structure as keyof typeof BINARY_PARSERS_PRIMITIVES
+      ];
     }
 
     // Create parser for multi-field buffer
     // name;member_1:primitive_type:offset;...
-    const [name, ...members] = structure.split(";");
+    const [_name, ...members] = structure.split(";");
 
     let parser = new Parser()
       .endianness("little")
@@ -484,9 +514,10 @@ export abstract class Adapter {
       const [name, type_name, offset] = m.split(":");
 
       const relOff = parseInt(offset);
-      const parserType = BINARY_PARSERS_PRIMITIVES[type_name];
-
-      console.log("Member parser", name, parserType, relOff);
+      const parserType =
+        BINARY_PARSERS_PRIMITIVES[
+          type_name as keyof typeof BINARY_PARSERS_PRIMITIVES
+        ];
 
       parser = parser.pointer(name, {
         type: parserType,
@@ -503,9 +534,8 @@ export abstract class Adapter {
     return parser;
   }
 
-  /** From metafile **/
   async meta_header() {
-    return meta_header_t.parse(Buffer.from(await this.meta_dlf));
+    return metaDlfParser.parse(Buffer.from(await this.meta_dlf));
   }
 
   async meta() {
@@ -528,19 +558,19 @@ export abstract class Adapter {
 
   async polled_header(): Promise<Tlogfile_header_t> {
     const polledDataFile = await this.polled_dlf;
-    return logfile_header_t.parse(polledDataFile);
+    return dataDlfParser.parse(polledDataFile);
   }
 
   async events_header(): Promise<Tlogfile_header_t> {
     const eventDataFile = await this.events_dlf;
-    return logfile_header_t.parse(eventDataFile);
+    return dataDlfParser.parse(eventDataFile);
   }
 
   async events_data() {
     const header = await this.events_header();
 
     // Create choices
-    const choices = {};
+    const choices: Record<number, Parser | string | null> = {};
     for (const [i, stream] of header.streams.entries()) {
       choices[i] = this.create_parser(stream.type_structure, stream.type_size);
     }
@@ -558,47 +588,27 @@ export abstract class Adapter {
 
     const { data } = file_parser.parse(Buffer.from(header.data));
 
-    const merged_data = data.map(({ stream_idx, sample_tick, data }) => ({
-      stream: header.streams[stream_idx],
-      stream_idx,
-      tick: sample_tick,
-      data,
-    }));
+    const merged_data = data.map(
+      ({
+        stream_idx,
+        sample_tick,
+        data,
+      }: {
+        stream_idx: number;
+        sample_tick: bigint;
+        data: any;
+      }) => ({
+        stream: header.streams[stream_idx],
+        stream_idx,
+        tick: sample_tick,
+        data,
+      }),
+    );
 
     return merged_data;
   }
 
   async polled_data(startTick = 0n, endTick: null | bigint = null) {
-    function mod(a: bigint, m: bigint) {
-      const r = a % m;
-      return r < 0n ? r + m : r;
-    }
-
-    // First tick >= 0 such that (tick + phase) % interval == 0
-    function firstTick(interval: bigint, phase: bigint) {
-      return mod(-phase, interval);
-    }
-
-    // Smallest tick >= start such that (tick + phase) % interval == 0
-    function nextDueAtOrAfter(start: bigint, interval: bigint, phase: bigint) {
-      const f = firstTick(interval, phase);
-      if (start <= f) {
-        return f;
-      }
-      const k = (start - f + interval - 1n) / interval; // ceil
-      return f + k * interval;
-    }
-
-    // Number of due ticks in [0, t) for a stream
-    function countBefore(t: bigint, interval: bigint, phase: bigint) {
-      const f = firstTick(interval, phase);
-      if (t <= f) {
-        return 0n;
-      }
-      // Ticks are f, f+interval, f+2*interval, ... < t
-      return 1n + (t - 1n - f) / interval;
-    }
-
     // Read header
     const header = await this.polled_header();
     // Note: stream order in the header is important because it dictates the order for data across

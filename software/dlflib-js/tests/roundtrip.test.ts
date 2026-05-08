@@ -6,7 +6,7 @@ import {
   TMetaObj,
   encodeMeta,
   encodePolled,
-  encodeEvents,
+  encodeEvent,
 } from "../src/dlflib.js";
 
 class LocalAdapter extends Adapter {
@@ -463,7 +463,7 @@ test("Round-trip for Events: Primitive Fields", async () => {
     ],
   };
 
-  const encodedBytes = encodeEvents(originalObj);
+  const encodedBytes = encodeEvent(originalObj);
   const adapter = new LocalAdapter(
     new Uint8Array(),
     new Uint8Array(),
@@ -499,7 +499,7 @@ test("Round-trip for Events: Non Primitive Fields", async () => {
     ],
   };
 
-  const encodedBytes = encodeEvents(originalObj);
+  const encodedBytes = encodeEvent(originalObj);
   const adapter = new LocalAdapter(
     new Uint8Array(),
     new Uint8Array(),
@@ -526,7 +526,7 @@ test("Round-trip for Events: Zero Events", async () => {
     samples: [],
   };
 
-  const encodedBytes = encodeEvents(originalObj);
+  const encodedBytes = encodeEvent(originalObj);
   const adapter = new LocalAdapter(
     new Uint8Array(),
     new Uint8Array(),
@@ -561,7 +561,7 @@ test("Round-trip for Events: Missing struct fields default to zero", async () =>
     ],
   };
 
-  const encodedBytes = encodeEvents(originalObj);
+  const encodedBytes = encodeEvent(originalObj);
   const adapter = new LocalAdapter(
     new Uint8Array(),
     new Uint8Array(),
@@ -600,7 +600,7 @@ test("Round-trip for Events: Extra fields are safely ignored", async () => {
     ],
   };
 
-  const encodedBytes = encodeEvents(originalObj);
+  const encodedBytes = encodeEvent(originalObj);
   const adapter = new LocalAdapter(
     new Uint8Array(),
     new Uint8Array(),
