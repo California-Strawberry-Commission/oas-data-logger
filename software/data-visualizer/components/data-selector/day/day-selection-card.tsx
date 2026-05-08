@@ -1,27 +1,28 @@
 import DeviceSelector from "@/components/data-selector/device-selector";
-import RunSelector from "@/components/data-selector/run-selector";
+import DaySelector from "@/components/data-selector/day/day-selector";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { type Device, type Run } from "@/lib/api";
-import { colorForRunIndex } from "@/lib/utils";
+import { type Device } from "@/lib/api";
+import { colorForSelectionIndex } from "@/lib/utils";
 
-export default function RunSelectionCard({
+export default function DaySelectionCard({
   title,
   index,
-  row,
-  onChange,
+  device,
+  dayKey,
+  onDeviceChange,
+  onDayKeyChange,
   onRemove,
 }: {
   title?: string;
   index: number;
-  row: { rowId: string; device: Device | null; run: Run | null };
-  onChange: (
-    patch: Partial<{ device: Device | null; run: Run | null }>,
-  ) => void;
+  device: Device | null;
+  dayKey: string;
+  onDeviceChange?: (device: Device | null) => void;
+  onDayKeyChange?: (dayKey: string) => void;
   onRemove?: () => void;
 }) {
-  const { device, run } = row;
-  const color = colorForRunIndex(index);
+  const color = colorForSelectionIndex(index);
 
   return (
     <Card>
@@ -49,23 +50,23 @@ export default function RunSelectionCard({
           <DeviceSelector
             value={device?.id ?? ""}
             onValueChange={(nextDevice) => {
-              // Clear run if device changes
-              onChange({ device: nextDevice, run: null });
+              onDeviceChange?.(nextDevice);
+              onDayKeyChange?.("");
             }}
           />
         </div>
 
         <div className="space-y-2">
-          <div className="text-sm font-medium">Run</div>
+          <div className="text-sm font-medium">Day</div>
           {device ? (
-            <RunSelector
+            <DaySelector
               deviceId={device.id}
-              value={run?.uuid ?? ""}
-              onValueChange={(nextRun) => onChange({ run: nextRun })}
+              value={dayKey}
+              onValueChange={onDayKeyChange}
             />
           ) : (
             <div className="rounded-md border border-dashed py-2 px-3 text-sm text-muted-foreground">
-              Select a device to load runs.
+              Select a device to load days.
             </div>
           )}
         </div>

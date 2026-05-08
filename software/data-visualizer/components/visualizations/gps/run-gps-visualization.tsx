@@ -23,8 +23,13 @@ import RunSummaryCard, {
 import TimeSeriesChart, {
   type TimeSeries,
 } from "@/components/visualizations/gps/time-series-chart";
-import { useRunStreamsMany, type Run } from "@/lib/api";
-import { formatElapsed } from "@/lib/utils";
+import {
+  useRunStreamsMany,
+  type Device,
+  type Run,
+  type RunDataSample,
+} from "@/lib/api";
+import { formatElapsed, formatTimeOfDay } from "@/lib/utils";
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 
@@ -37,9 +42,47 @@ const MapComponent = dynamic(() => import("./map"), {
 export type RunWithColor = {
   run: Run;
   color?: string;
+  device?: Device;
 };
 
-function LoadingMap() {
+export function computeFilteredPointsByRun(
+  runs: Run[],
+  dataByUuid: Record<string, RunDataSample[]>,
+): Record<string, MapPoint[]> {
+  const result: Record<string, MapPoint[]> = {};
+  for (const run of runs) {
+    const data = dataByUuid[run.uuid];
+    if (!data) {
+      continue;
+    }
+
+    const points = toMapPoints(data, run.tickBaseUs);
+    points.sort((a, b) => a.elapsedS - b.elapsedS);
+
+    // Apply filtering
+    let lastKept: MapPoint | null = null;
+    const filtered: MapPoint[] = [];
+    for (const point of points) {
+      if (point.numSatellites < MIN_NUM_SATELLITES) {
+        continue;
+      }
+
+      if (
+        lastKept &&
+        distanceMeters(lastKept.position, point.position) > MAX_JUMP_METERS
+      ) {
+        continue;
+      }
+
+      filtered.push(point);
+      lastKept = point;
+    }
+    result[run.uuid] = filtered;
+  }
+  return result;
+}
+
+export function LoadingMap() {
   return (
     <div className="flex items-center justify-center h-full bg-gray-200">
       <span className="text-gray-500 animate-pulse">Loading...</span>
@@ -47,7 +90,7 @@ function LoadingMap() {
   );
 }
 
-function NoDataMap() {
+export function NoDataMap() {
   return (
     <div className="flex items-center justify-center h-full bg-gray-200">
       <span className="text-gray-500">No data</span>
@@ -55,7 +98,7 @@ function NoDataMap() {
   );
 }
 
-function ErrorMap({ msg }: { msg: string }) {
+export function ErrorMap({ msg }: { msg: string }) {
   return (
     <div className="flex items-center justify-center h-full bg-gray-200">
       <span className="text-gray-500">Error: {msg}</span>
@@ -63,9 +106,11 @@ function ErrorMap({ msg }: { msg: string }) {
   );
 }
 
-export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
-  // TODO: Be able to toggle filter through UI
-  const [filterEnabled, setFilterEnabled] = useState(true);
+export default function RunGpsVisualization({
+  runs,
+}: {
+  runs: RunWithColor[];
+}) {
   const [selectedElapsedS, setSelectedElapsedS] = useState<number | null>(null);
 
   // Dedupe runs
@@ -91,7 +136,7 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
     [filteredRuns],
   );
 
-  // Fetch each run's GPS streams
+  // Fetch GPS streams for all runs
   const { anyLoading, firstError, dataByUuid } = useRunStreamsMany(runUuids, [
     STREAM_ID_SATELLITES,
     STREAM_ID_LATITUDE,
@@ -100,58 +145,16 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
     STREAM_ID_WIFI_RSSI,
   ]);
 
-  // Build rawPointsByRun from query results
-  const rawPointsByRun = useMemo(() => {
-    const result: Record<string, MapPoint[]> = {};
+  const filteredPointsByRun = useMemo(
+    () =>
+      computeFilteredPointsByRun(
+        filteredRuns.map((r) => r.run),
+        dataByUuid,
+      ),
+    [filteredRuns, dataByUuid],
+  );
 
-    for (const r of filteredRuns) {
-      const run = r.run;
-      const data = dataByUuid[run.uuid];
-      if (!data) {
-        continue;
-      }
-
-      const mapPoints = toMapPoints(data, run.tickBaseUs);
-      mapPoints.sort((a, b) => a.elapsedS - b.elapsedS);
-      result[run.uuid] = mapPoints;
-    }
-    return result;
-  }, [filteredRuns, dataByUuid]);
-
-  // Filter outliers from raw GPS data
-  const filteredPointsByRun = useMemo(() => {
-    const result: Record<string, MapPoint[]> = {};
-
-    for (const [uuid, points] of Object.entries(rawPointsByRun)) {
-      if (!filterEnabled) {
-        result[uuid] = points;
-        continue;
-      }
-
-      let lastKept: MapPoint | null = null;
-      const filtered: MapPoint[] = [];
-      for (const point of points) {
-        if (point.numSatellites < MIN_NUM_SATELLITES) {
-          continue;
-        }
-
-        if (lastKept) {
-          const jump = distanceMeters(lastKept.position, point.position);
-          if (jump > MAX_JUMP_METERS) {
-            continue;
-          }
-        }
-
-        filtered.push(point);
-        lastKept = point;
-      }
-
-      result[uuid] = filtered;
-    }
-
-    return result;
-  }, [rawPointsByRun, filterEnabled]);
-
+  // Create a Track for each run
   const tracks: Track[] = useMemo(() => {
     return filteredRuns
       .map((r) => ({
@@ -163,6 +166,7 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
       .filter((t) => t.points.length > 0);
   }, [filteredRuns, filteredPointsByRun]);
 
+  // Calculate speed and dwell time time series for each run
   const { speedMphSeries, dwellMinsSeries } = useMemo(() => {
     const speedMphSeries: TimeSeries[] = [];
     const dwellMinsSeries: TimeSeries[] = [];
@@ -191,6 +195,7 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
     return { speedMphSeries, dwellMinsSeries };
   }, [filteredRuns, filteredPointsByRun]);
 
+  // Calculate summary metrics for each run
   const runSummaries: RunSummary[] = useMemo(() => {
     return filteredRuns
       .map((r) => {
@@ -227,6 +232,7 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
         return {
           run: r.run,
           color: r.color,
+          deviceName: r.device?.name ?? r.device?.id,
           totalDistanceMi,
           maxSpeedMph,
           avgSpeedMph,
@@ -277,6 +283,8 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
     );
   }
 
+  const isSingleRun = filteredRuns.length === 1;
+
   return (
     <>
       {runSummaries.length > 0 && (
@@ -302,6 +310,12 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
             yAxisLabel="Speed (mph)"
             yAxisLabelOffset={25}
             tooltipValueFormatter={(v) => `${v.toFixed(1)} mph`}
+            xAxisLabel={isSingleRun ? "Time of Day" : "Elapsed Time"}
+            xAxisTickFormatter={
+              isSingleRun
+                ? (v) => formatTimeOfDay(filteredRuns[0].run.epochTimeS + v)
+                : (v) => formatElapsed(v)
+            }
             smooth
             smoothingHalfLifeS={2}
           />
@@ -316,6 +330,12 @@ export default function GpsVisualization({ runs }: { runs: RunWithColor[] }) {
             yAxisLabel="Dwell time (minutes)"
             yAxisLabelOffset={50}
             tooltipValueFormatter={(v) => `${formatElapsed(v * 60)}`}
+            xAxisLabel={isSingleRun ? "Time of Day" : "Elapsed Time"}
+            xAxisTickFormatter={
+              isSingleRun
+                ? (v) => formatTimeOfDay(filteredRuns[0].run.epochTimeS + v)
+                : (v) => formatElapsed(v)
+            }
           />
         </CardContent>
       </Card>

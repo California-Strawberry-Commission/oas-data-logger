@@ -1,5 +1,6 @@
 import {
   distanceMeters,
+  findClosestIndex,
   median,
   STREAM_ID_ALTITUDE,
   STREAM_ID_LATITUDE,
@@ -10,10 +11,9 @@ import {
   toLatLng,
   toMapPoints,
   toSpeedMphSamples,
-  findClosestIndex,
   type MapPoint,
 } from "@/components/visualizations/gps/gps-processing";
-import type { TimeSeriesSample } from "@/components/visualizations/gps/time-series-chart-utils";
+import type { TimeSeriesSample } from "@/components/visualizations/gps/time-series-chart";
 import type { RunDataSample } from "@/lib/api";
 import { describe, expect, it } from "vitest";
 

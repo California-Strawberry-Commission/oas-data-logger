@@ -1,7 +1,6 @@
 "use client";
 
 import DataSelector, {
-  type RunSelectionRow,
   type Selection,
 } from "@/components/data-selector/data-selector";
 import VisualizationArea from "@/components/visualizations/visualization-area";
@@ -9,68 +8,129 @@ import { useDevices, useRuns } from "@/lib/api";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 
-// Extract run UUIDs from search params
-// Example: ?runs=runUuid1,runUuid2,...
-function parseRunUuids(searchParams: URLSearchParams): string[] {
-  const raw = searchParams.get("runs");
-  if (!raw) {
-    return [];
+type ParsedUrl =
+  | { kind: "run"; runUuids: string[] }
+  | { kind: "day"; rows: Array<{ deviceId: string; dayKey: string }> }
+  | null;
+
+// Expected URL search params:
+//   ?view=run&rows=uuid1,uuid2,...
+//   ?view=day&rows=deviceId1:dayKey1,deviceId2:dayKey2,...
+function parseUrl(searchParams: URLSearchParams): ParsedUrl {
+  const view = searchParams.get("view");
+  const rawRows = searchParams.get("rows") ?? "";
+
+  if (view === "run") {
+    const runUuids = rawRows.split(",").filter(Boolean);
+    return runUuids.length > 0 ? { kind: "run", runUuids } : null;
   }
-  return raw.split(",").filter(Boolean);
+
+  if (view === "day") {
+    const rows = rawRows
+      .split(",")
+      .filter(Boolean)
+      .map((chunk) => {
+        const colonIdx = chunk.indexOf(":");
+        if (colonIdx === -1) {
+          return null;
+        }
+        return {
+          deviceId: chunk.slice(0, colonIdx),
+          dayKey: chunk.slice(colonIdx + 1),
+        };
+      })
+      .filter((r) => r !== null);
+    return rows.length > 0 ? { kind: "day", rows } : null;
+  }
+
+  return null;
 }
 
 export default function MainContent() {
-  const [selection, setSelection] = useState<Selection>({ runs: [] });
+  const [selection, setSelection] = useState<Selection>({
+    kind: "run",
+    rows: [],
+  });
 
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
 
-  // Parse search params for run UUIDs, once on mount
-  const runUuidsFromUrl = useMemo(
-    () => parseRunUuids(searchParams),
-    // Only parse once on mount. searchParams reference is stable on initial load
+  // Parse URL once on mount
+  const parsed = useMemo(
+    () => parseUrl(searchParams),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
+  const runUuidsFromUrl = parsed?.kind === "run" ? parsed.runUuids : [];
+
   const { data: devices = [], isSuccess: devicesLoaded } = useDevices();
   const { data: runs = [], isSuccess: runsLoaded } = useRuns(runUuidsFromUrl);
 
-  // Resolve URL run UUIDs to full objects once all data has loaded
-  const initialRows = useMemo<RunSelectionRow[] | undefined>(() => {
-    if (runUuidsFromUrl.length === 0) {
-      return undefined;
-    }
-    if (!devicesLoaded || !runsLoaded) {
+  // Build initialSelection from the parsed URL. Rows are populated once the
+  // required async data has loaded.
+  const initialSelection = useMemo<Selection | undefined>(() => {
+    if (!parsed) {
       return undefined;
     }
 
-    return runUuidsFromUrl.map((uuid) => {
-      const run = runs.find((r) => r.uuid === uuid) ?? null;
+    if (parsed.kind === "run") {
+      if (!devicesLoaded || !runsLoaded) {
+        return { kind: "run", rows: [] };
+      }
       return {
-        rowId: crypto.randomUUID(),
-        device: devices.find((d) => d.id === run?.deviceId) ?? null,
-        run,
+        kind: "run",
+        rows: parsed.runUuids.map((uuid) => {
+          const run = runs.find((r) => r.uuid === uuid) ?? null;
+          return {
+            rowId: crypto.randomUUID(),
+            device: devices.find((d) => d.id === run?.deviceId) ?? null,
+            run,
+          };
+        }),
       };
-    });
-  }, [runUuidsFromUrl, devices, devicesLoaded, runs, runsLoaded]);
+    }
+
+    if (parsed.kind === "day") {
+      if (!devicesLoaded) {
+        return { kind: "day", rows: [] };
+      }
+      return {
+        kind: "day",
+        rows: parsed.rows.map(({ deviceId, dayKey }) => ({
+          rowId: crypto.randomUUID(),
+          device: devices.find((d) => d.id === deviceId) ?? null,
+          dayKey,
+        })),
+      };
+    }
+  }, [parsed, devices, devicesLoaded, runs, runsLoaded]);
 
   const handleSelectionChanged = useCallback(
     (next: Selection) => {
       setSelection(next);
 
-      // Update URL to match selection. Note that we only manage the `runs` param,
-      // and we build the URL from scratch so that we can avoid depending on
-      // searchParams (which would cause this callback to get recreated on
-      // searchParams changing).
-      const pairs = next.runs
-        .filter((r) => r.run)
-        .map((r) => r.run!.uuid)
-        .join(",");
-
-      const newUrl = pairs ? `${pathname}?runs=${pairs}` : pathname;
-      router.replace(newUrl, { scroll: false });
+      // Update URL to match selection
+      if (next.kind === "run") {
+        const rowsStr = next.rows
+          .filter((r) => r.run)
+          .map((r) => r.run!.uuid)
+          .join(",");
+        router.replace(
+          rowsStr ? `${pathname}?view=run&rows=${rowsStr}` : pathname,
+          { scroll: false },
+        );
+      } else {
+        const rowsStr = next.rows
+          .filter((r) => r.device && r.dayKey)
+          .map((r) => `${r.device!.id}:${r.dayKey}`)
+          .join(",");
+        router.replace(
+          rowsStr ? `${pathname}?view=day&rows=${rowsStr}` : pathname,
+          { scroll: false },
+        );
+      }
     },
     [pathname, router],
   );
@@ -80,7 +140,7 @@ export default function MainContent() {
       {/* Sidebar */}
       <aside className="w-full md:w-90 md:shrink-0 p-4 border-b md:border-b-0 md:border-r md:overflow-y-auto">
         <DataSelector
-          initialRows={initialRows}
+          initialSelection={initialSelection}
           onSelectionChanged={handleSelectionChanged}
         />
       </aside>

@@ -74,6 +74,26 @@ export function useDeviceRuns(deviceId: string) {
   });
 }
 
+export function useMultipleDeviceRuns(deviceIds: string[]) {
+  return useQueries({
+    queries: deviceIds.map((deviceId) => ({
+      queryKey: ["deviceRuns", deviceId] as const,
+      queryFn: () => fetchDeviceRuns(deviceId),
+      enabled: !!deviceId,
+      staleTime: 60 * 1000,
+      gcTime: 15 * 60 * 1000,
+      refetchOnWindowFocus: false,
+    })),
+    combine: (results) => ({
+      runsByDeviceId: Object.fromEntries(
+        deviceIds.map((id, i) => [id, results[i]?.data ?? []]),
+      ) as Record<string, Run[]>,
+      anyLoading: results.some((r) => r.isLoading),
+      firstError: results.find((r) => r.isError)?.error ?? null,
+    }),
+  });
+}
+
 export function useRuns(runUuids: string[]) {
   // Note: runUuids must be order-stable for a stable queryKey
   const uuidsKey = runUuids.join(",");

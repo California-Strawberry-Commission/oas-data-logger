@@ -5,17 +5,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { Run } from "@/lib/api";
 import { formatElapsed } from "@/lib/utils";
 
-export type RunSummary = {
-  run: Run;
+export type DaySummary = {
+  dayKey: string;
   color?: string;
   deviceName?: string;
+  runCount: number;
   totalDistanceMi: number;
   maxSpeedMph: number;
   avgSpeedMph: number;
-  maxDwellMins: number;
+  totalDurationS: number;
 };
 
 function StatRow({ label, value }: { label: string; value: string }) {
@@ -27,17 +27,16 @@ function StatRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-export default function RunSummaryCard({ summary }: { summary: RunSummary }) {
-  const startTime = new Date(summary.run.epochTimeS * 1000).toLocaleString(
-    "en-US",
-    {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    },
-  );
+export default function DaySummaryCard({ summary }: { summary: DaySummary }) {
+  const [year, month, day] = summary.dayKey.split("-").map(Number);
+  const dateLabel = new Date(year, month - 1, day).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  const runWord = summary.runCount === 1 ? "run" : "runs";
 
   return (
     <Card className="min-w-44">
@@ -50,7 +49,7 @@ export default function RunSummaryCard({ summary }: { summary: RunSummary }) {
               aria-hidden
             />
           )}
-          <span className="text-sm font-medium">{startTime}</span>
+          <span className="text-sm font-medium">{dateLabel}</span>
         </CardTitle>
         {summary.deviceName && (
           <CardDescription>{summary.deviceName}</CardDescription>
@@ -58,12 +57,13 @@ export default function RunSummaryCard({ summary }: { summary: RunSummary }) {
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+          <StatRow label="Runs" value={`${summary.runCount} ${runWord}`} />
           <StatRow
-            label="Duration"
-            value={formatElapsed(summary.run.durationS)}
+            label="Total duration"
+            value={formatElapsed(summary.totalDurationS)}
           />
           <StatRow
-            label="Distance"
+            label="Total distance"
             value={`${summary.totalDistanceMi.toFixed(2)} mi`}
           />
           <StatRow
@@ -73,10 +73,6 @@ export default function RunSummaryCard({ summary }: { summary: RunSummary }) {
           <StatRow
             label="Avg speed"
             value={`${summary.avgSpeedMph.toFixed(1)} mph`}
-          />
-          <StatRow
-            label="Max dwell"
-            value={formatElapsed(summary.maxDwellMins * 60)}
           />
         </div>
       </CardContent>

@@ -2,6 +2,7 @@
 
 import Combobox, { type Group } from "@/components/ui/combobox";
 import { useDeviceRuns, type Run } from "@/lib/api";
+import { getDayKey } from "@/lib/utils";
 import posthog from "posthog-js";
 import { useEffect, useMemo } from "react";
 
@@ -49,15 +50,6 @@ function getRunLabel(run: Run): string {
   return `${timeStr} (${formatDuration(run.durationS)}) <${run.uuid}>`;
 }
 
-// Converts Unix timestamp into YYYY-MM-DD in local time
-function getDayKey(epochTimeS: number): string {
-  const date = new Date(epochTimeS * 1000);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0"); // months are 0-indexed
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 export default function RunSelector({
   deviceId,
   value,
@@ -65,7 +57,7 @@ export default function RunSelector({
 }: {
   deviceId: string;
   value: string;
-  onValueChange: (run: Run | null) => void;
+  onValueChange?: (run: Run | null) => void;
 }) {
   const { data: runs = [], isLoading, error } = useDeviceRuns(deviceId);
 
@@ -83,7 +75,7 @@ export default function RunSelector({
     }
 
     if (!isLoading && value && !sortedRuns.some((r) => r.uuid === value)) {
-      onValueChange(null);
+      onValueChange?.(null);
     }
   }, [deviceId, value, sortedRuns, isLoading, onValueChange]);
 
@@ -163,7 +155,7 @@ export default function RunSelector({
           run_uuid: run?.uuid,
           is_active: run?.isActive,
         });
-        onValueChange(run);
+        onValueChange?.(run);
       }}
       placeholder={isLoading ? "Loading runs..." : "Select run..."}
       searchPlaceholder={isLoading ? "Loading..." : "Search run..."}

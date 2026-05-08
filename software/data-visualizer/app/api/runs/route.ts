@@ -13,8 +13,8 @@ import { NextRequest, NextResponse } from "next/server";
  */
 export const GET = withAuth(async (request: NextRequest, user: User) => {
   // Parse and validate UUID list
-  const { searchParams } = new URL(request.url);
-  const uuids = searchParams.get("uuids")?.split(",").filter(Boolean) ?? [];
+  const uuids =
+    request.nextUrl.searchParams.get("uuids")?.split(",").filter(Boolean) ?? [];
   if (uuids.length === 0) {
     return NextResponse.json({ error: "No UUIDs provided" }, { status: 400 });
   }
