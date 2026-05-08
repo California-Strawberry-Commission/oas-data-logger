@@ -7,21 +7,21 @@ import { Adapter } from "dlflib-js";
  */
 class BufferAdapter extends Adapter {
   constructor(
+    private readonly _meta: Buffer | null,
     private readonly _polled: Buffer | null,
     private readonly _events: Buffer | null,
-    private readonly _meta: Buffer | null,
   ) {
     super();
   }
 
-  get polled_dlf(): Promise<Uint8Array> {
+  get metaDlfBytes(): Promise<Uint8Array> {
+    return Promise.resolve(this._meta!);
+  }
+  get polledDlfBytes(): Promise<Uint8Array> {
     return Promise.resolve(this._polled!);
   }
-  get events_dlf(): Promise<Uint8Array> {
+  get eventDlfBytes(): Promise<Uint8Array> {
     return Promise.resolve(this._events!);
-  }
-  get meta_dlf(): Promise<Uint8Array> {
-    return Promise.resolve(this._meta!);
   }
 }
 
@@ -88,15 +88,15 @@ export async function listChunkKeys(
 export async function getRunDlfAdapter(
   runUuid: string,
 ): Promise<BufferAdapter | null> {
-  const [polled, events, meta] = await Promise.all([
+  const [meta, polled, event] = await Promise.all([
+    fetchS3Object(dlfS3Key(runUuid, "meta.dlf")),
     fetchS3Object(dlfS3Key(runUuid, "polled.dlf")),
     fetchS3Object(dlfS3Key(runUuid, "event.dlf")),
-    fetchS3Object(dlfS3Key(runUuid, "meta.dlf")),
   ]);
 
-  if (!polled && !events && !meta) {
+  if (!meta && !polled && !event) {
     return null;
   }
 
-  return new BufferAdapter(polled, events, meta);
+  return new BufferAdapter(meta, polled, event);
 }

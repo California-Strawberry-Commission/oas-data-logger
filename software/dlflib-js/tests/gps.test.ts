@@ -4,62 +4,62 @@ import { FSAdapter } from "../src/fsadapter";
 const fsAdapter = new FSAdapter("tests/resources/gps");
 
 test("Meta header", async () => {
-  expect(await fsAdapter.meta_header()).toMatchObject({
+  expect(await fsAdapter.getMetaDlf()).toMatchObject({
     magic: 33812,
-    epoch_time_s: 1763485651,
-    tick_base_us: 100000,
-    meta_structure: "double",
-    meta_size: 8,
+    epochTimeS: 1763485651,
+    tickBaseUs: 100000,
+    metaStructure: "double",
+    metaSize: 8,
   });
 
   // TODO: check fsAdapter.meta()
 });
 
 test("Polled headers", async () => {
-  expect(await fsAdapter.polled_header()).toMatchObject({
+  expect(await fsAdapter.getPolledDlf()).toMatchObject({
     magic: 33812,
-    stream_type: 0,
-    tick_span: 1832n,
-    num_streams: 4,
+    streamType: 0,
+    tickSpan: 1832n,
+    numStreams: 4,
     streams: [
       {
-        type_structure: "uint32_t",
+        typeStructure: "uint32_t",
         id: "gpsData.satellites",
         notes: "N/A",
-        type_size: 4,
-        stream_info: {
-          tick_interval: 50n,
-          tick_phase: 0n,
+        typeSize: 4,
+        streamInfo: {
+          tickInterval: 50n,
+          tickPhase: 0n,
         },
       },
       {
-        type_structure: "double",
+        typeStructure: "double",
         id: "gpsData.lat",
         notes: "N/A",
-        type_size: 8,
-        stream_info: {
-          tick_interval: 10n,
-          tick_phase: 0n,
+        typeSize: 8,
+        streamInfo: {
+          tickInterval: 10n,
+          tickPhase: 0n,
         },
       },
       {
-        type_structure: "double",
+        typeStructure: "double",
         id: "gpsData.lng",
         notes: "N/A",
-        type_size: 8,
-        stream_info: {
-          tick_interval: 10n,
-          tick_phase: 0n,
+        typeSize: 8,
+        streamInfo: {
+          tickInterval: 10n,
+          tickPhase: 0n,
         },
       },
       {
-        type_structure: "double",
+        typeStructure: "double",
         id: "gpsData.alt",
         notes: "N/A",
-        type_size: 8,
-        stream_info: {
-          tick_interval: 10n,
-          tick_phase: 0n,
+        typeSize: 8,
+        streamInfo: {
+          tickInterval: 10n,
+          tickPhase: 0n,
         },
       },
     ],
@@ -67,16 +67,16 @@ test("Polled headers", async () => {
 });
 
 test("Polled data", async () => {
-  expect(await fsAdapter.polled_data(0n, 10n)).toMatchObject([
+  expect(await fsAdapter.getPolledData(0n, 10n)).toMatchObject([
     {
       stream: {
-        type_structure: "uint32_t",
+        typeStructure: "uint32_t",
         id: "gpsData.satellites",
         notes: "N/A",
-        type_size: 4,
-        stream_info: {
-          tick_interval: 50n,
-          tick_phase: 0n,
+        typeSize: 4,
+        streamInfo: {
+          tickInterval: 50n,
+          tickPhase: 0n,
         },
       },
       data: 3,
@@ -85,13 +85,13 @@ test("Polled data", async () => {
     },
     {
       stream: {
-        type_structure: "double",
+        typeStructure: "double",
         id: "gpsData.lat",
         notes: "N/A",
-        type_size: 8,
-        stream_info: {
-          tick_interval: 10n,
-          tick_phase: 0n,
+        typeSize: 8,
+        streamInfo: {
+          tickInterval: 10n,
+          tickPhase: 0n,
         },
       },
       data: 35.3053619,
@@ -100,13 +100,13 @@ test("Polled data", async () => {
     },
     {
       stream: {
-        type_structure: "double",
+        typeStructure: "double",
         id: "gpsData.lng",
         notes: "N/A",
-        type_size: 8,
-        stream_info: {
-          tick_interval: 10n,
-          tick_phase: 0n,
+        typeSize: 8,
+        streamInfo: {
+          tickInterval: 10n,
+          tickPhase: 0n,
         },
       },
       data: -120.6720945,
@@ -115,13 +115,13 @@ test("Polled data", async () => {
     },
     {
       stream: {
-        type_structure: "double",
+        typeStructure: "double",
         id: "gpsData.alt",
         notes: "N/A",
-        type_size: 8,
-        stream_info: {
-          tick_interval: 10n,
-          tick_phase: 0n,
+        typeSize: 8,
+        streamInfo: {
+          tickInterval: 10n,
+          tickPhase: 0n,
         },
       },
       data: 85.306,
@@ -133,11 +133,11 @@ test("Polled data", async () => {
 
 // TODO: test with actual event data
 test("Events header", async () => {
-  expect(await fsAdapter.events_header()).toMatchObject({
+  expect(await fsAdapter.getEventDlf()).toMatchObject({
     magic: 33812,
-    stream_type: 1,
-    tick_span: 1832n,
-    num_streams: 0,
+    streamType: 1,
+    tickSpan: 1832n,
+    numStreams: 0,
     streams: [],
   });
 });

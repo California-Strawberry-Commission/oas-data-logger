@@ -1,9 +1,9 @@
 import { expect, test } from "vitest";
 import {
   Adapter,
-  TEventLogObj,
-  TPolledLogObj,
-  TMetaObj,
+  EventDlf,
+  PolledDlf,
+  MetaDlf,
   encodeMeta,
   encodePolled,
   encodeEvent,
@@ -13,83 +13,83 @@ class LocalAdapter extends Adapter {
   constructor(
     private metaBytes: Uint8Array = new Uint8Array(),
     private polledBytes: Uint8Array = new Uint8Array(),
-    private eventsBytes: Uint8Array = new Uint8Array(),
+    private eventBytes: Uint8Array = new Uint8Array(),
   ) {
     super();
   }
-  get polled_dlf() {
+  get metaDlfBytes() {
+    return Promise.resolve(this.metaBytes);
+  }
+  get polledDlfBytes() {
     return Promise.resolve(this.polledBytes);
   }
-  get events_dlf() {
-    return Promise.resolve(this.eventsBytes);
-  }
-  get meta_dlf() {
-    return Promise.resolve(this.metaBytes);
+  get eventDlfBytes() {
+    return Promise.resolve(this.eventBytes);
   }
 }
 
 // Helper functions
 
-async function assembleMeta(adapter: Adapter): Promise<TMetaObj> {
+async function assembleMeta(adapter: Adapter): Promise<MetaDlf> {
   const [header, data] = await Promise.all([
-    adapter.meta_header(),
-    adapter.meta(),
+    adapter.getMetaDlf(),
+    adapter.getMeta(),
   ]);
   return {
     magic: header.magic,
-    epoch_time_s: header.epoch_time_s,
-    tick_base_us: header.tick_base_us,
-    meta_structure: header.meta_structure,
-    meta_size: header.meta_size,
+    epochTimeS: header.epochTimeS,
+    tickBaseUs: header.tickBaseUs,
+    metaStructure: header.metaStructure,
+    metaSize: header.metaSize,
     meta: data,
   };
 }
 
-async function assemblePolled(adapter: Adapter): Promise<TPolledLogObj> {
+async function assemblePolled(adapter: Adapter): Promise<PolledDlf> {
   const [header, data] = await Promise.all([
-    adapter.polled_header(),
-    adapter.polled_data(),
+    adapter.getPolledDlf(),
+    adapter.getPolledData(),
   ]);
   return {
     magic: header.magic,
-    stream_type: header.stream_type,
-    tick_span: header.tick_span as bigint,
+    streamType: header.streamType,
+    tickSpan: header.tickSpan as bigint,
     streams: header.streams.map((s: any) => ({
-      type_structure: s.type_structure,
+      typeStructure: s.typeStructure,
       id: s.id,
       notes: s.notes,
-      type_size: s.type_size,
-      tick_interval: BigInt(s.stream_info.tick_interval),
-      tick_phase: BigInt(s.stream_info.tick_phase),
+      typeSize: s.typeSize,
+      tickInterval: BigInt(s.streamInfo.tickInterval),
+      tickPhase: BigInt(s.streamInfo.tickPhase),
     })),
     samples: data.map((s: any) => ({
-      stream_idx: header.streams.findIndex(
+      streamIdx: header.streams.findIndex(
         (stream: any) => stream.id === s.stream.id,
       ),
-      sample_tick: BigInt(s.tick),
+      sampleTick: BigInt(s.tick),
       buffer: s.data,
     })),
   };
 }
 
-async function assembleEvent(adapter: Adapter): Promise<TEventLogObj> {
+async function assembleEvent(adapter: Adapter): Promise<EventDlf> {
   const [header, data] = await Promise.all([
-    adapter.events_header(),
-    adapter.events_data(),
+    adapter.getEventDlf(),
+    adapter.getEventData(),
   ]);
   return {
     magic: header.magic,
-    stream_type: header.stream_type,
-    tick_span: header.tick_span as bigint,
+    streamType: header.streamType,
+    tickSpan: header.tickSpan as bigint,
     streams: header.streams.map((s: any) => ({
-      type_structure: s.type_structure,
+      typeStructure: s.typeStructure,
       id: s.id,
       notes: s.notes,
-      type_size: s.type_size,
+      typeSize: s.typeSize,
     })),
     samples: data.map((s: any) => ({
-      stream_idx: s.stream_idx,
-      sample_tick: BigInt(s.tick),
+      streamIdx: s.streamIdx,
+      sampleTick: BigInt(s.tick),
       buffer: s.data,
     })),
   };
@@ -98,12 +98,12 @@ async function assembleEvent(adapter: Adapter): Promise<TEventLogObj> {
 // Meta Tests
 
 test("Round-trip for Meta: Primitive Fields", async () => {
-  const originalObj: TMetaObj = {
+  const originalObj: MetaDlf = {
     magic: 33812,
-    epoch_time_s: 1763485651,
-    tick_base_us: 100000,
-    meta_structure: "double",
-    meta_size: 8,
+    epochTimeS: 1763485651,
+    tickBaseUs: 100000,
+    metaStructure: "double",
+    metaSize: 8,
     meta: 3.14,
   };
 
@@ -115,12 +115,12 @@ test("Round-trip for Meta: Primitive Fields", async () => {
 });
 
 test("Round-trip for Meta: Non-Primitive Fields", async () => {
-  const originalObj: TMetaObj = {
+  const originalObj: MetaDlf = {
     magic: 33812,
-    epoch_time_s: 1763485651,
-    tick_base_us: 100000,
-    meta_structure: "meta_struct;id:uint32_t:0;active:bool:4",
-    meta_size: 5,
+    epochTimeS: 1763485651,
+    tickBaseUs: 100000,
+    metaStructure: "meta_struct;id:uint32_t:0;active:bool:4",
+    metaSize: 5,
     meta: {
       id: 42,
       active: 1,
@@ -135,12 +135,12 @@ test("Round-trip for Meta: Non-Primitive Fields", async () => {
 });
 
 test("Round-trip for Meta: Zero'd Out", async () => {
-  const originalObj: TMetaObj = {
+  const originalObj: MetaDlf = {
     magic: 0,
-    epoch_time_s: 0,
-    tick_base_us: 0,
-    meta_structure: "meta_struct;meta_size:uint32_t:0;epoch_time_s:uint32_t:4",
-    meta_size: 8,
+    epochTimeS: 0,
+    tickBaseUs: 0,
+    metaStructure: "meta_struct;meta_size:uint32_t:0;epoch_time_s:uint32_t:4",
+    metaSize: 8,
     meta: {
       meta_size: 0,
       epoch_time_s: 0,
@@ -155,12 +155,12 @@ test("Round-trip for Meta: Zero'd Out", async () => {
 });
 
 test("Round-trip for Meta: Missing and Extra Fields", async () => {
-  const originalObj: TMetaObj = {
+  const originalObj: MetaDlf = {
     magic: 33812,
-    epoch_time_s: 1763485651,
-    tick_base_us: 100000,
-    meta_structure: "meta_struct;id:uint32_t:0;active:bool:4",
-    meta_size: 5,
+    epochTimeS: 1763485651,
+    tickBaseUs: 100000,
+    metaStructure: "meta_struct;id:uint32_t:0;active:bool:4",
+    metaSize: 5,
     meta: {
       id: 42,
       extra_field: "Ignore me",
@@ -178,12 +178,12 @@ test("Round-trip for Meta: Missing and Extra Fields", async () => {
 });
 
 test("Round-trip for Meta: Internal Padding", async () => {
-  const originalObj: TMetaObj = {
+  const originalObj: MetaDlf = {
     magic: 33812,
-    epoch_time_s: 1763485651,
-    tick_base_us: 100000,
-    meta_structure: "padded;a:uint8_t:0;b:uint32_t:8",
-    meta_size: 12,
+    epochTimeS: 1763485651,
+    tickBaseUs: 100000,
+    metaStructure: "padded;a:uint8_t:0;b:uint32_t:8",
+    metaSize: 12,
     meta: {
       a: 255,
       b: 4294967295,
@@ -198,12 +198,12 @@ test("Round-trip for Meta: Internal Padding", async () => {
 });
 
 test("Round-trip for Meta: Tail Padding", async () => {
-  const originalObj: TMetaObj = {
+  const originalObj: MetaDlf = {
     magic: 33812,
-    epoch_time_s: 1763485651,
-    tick_base_us: 100000,
-    meta_structure: "tailpadding;a:uint8_t:0;b:uint8_t:1",
-    meta_size: 4,
+    epochTimeS: 1763485651,
+    tickBaseUs: 100000,
+    metaStructure: "tailpadding;a:uint8_t:0;b:uint8_t:1",
+    metaSize: 4,
     meta: {
       a: 10,
       b: 20,
@@ -218,12 +218,12 @@ test("Round-trip for Meta: Tail Padding", async () => {
 });
 
 test("Round-trip for Meta: Ignores ! prefix", async () => {
-  const originalObj: TMetaObj = {
+  const originalObj: MetaDlf = {
     magic: 33812,
-    epoch_time_s: 1763485651,
-    tick_base_us: 100000,
-    meta_structure: "!test",
-    meta_size: 0,
+    epochTimeS: 1763485651,
+    tickBaseUs: 100000,
+    metaStructure: "!test",
+    metaSize: 0,
     meta: null,
   };
 
@@ -237,29 +237,29 @@ test("Round-trip for Meta: Ignores ! prefix", async () => {
 // Polled Tests
 
 test("Round-trip for Polled: Primitive Fields", async () => {
-  const originalObj: TPolledLogObj = {
+  const originalObj: PolledDlf = {
     magic: 33812,
-    stream_type: 0,
-    tick_span: 1000n,
+    streamType: 0,
+    tickSpan: 1000n,
     streams: [
       {
-        type_structure: "double",
+        typeStructure: "double",
         id: "gpsData.lat",
         notes: "Primitive Data",
-        type_size: 8,
-        tick_interval: 10n,
-        tick_phase: 0n,
+        typeSize: 8,
+        tickInterval: 10n,
+        tickPhase: 0n,
       },
     ],
     samples: [
       {
-        stream_idx: 0,
-        sample_tick: 0n,
+        streamIdx: 0,
+        sampleTick: 0n,
         buffer: 35.3053619,
       },
       {
-        stream_idx: 0,
-        sample_tick: 10n,
+        streamIdx: 0,
+        sampleTick: 10n,
         buffer: 35.305365,
       },
     ],
@@ -277,25 +277,25 @@ test("Round-trip for Polled: Primitive Fields", async () => {
 });
 
 test("Round-trip for Polled: Non-Primitive Fields", async () => {
-  const originalObj: TPolledLogObj = {
+  const originalObj: PolledDlf = {
     magic: 33812,
-    stream_type: 0,
-    tick_span: 1000n,
+    streamType: 0,
+    tickSpan: 1000n,
     streams: [
       {
-        type_structure:
+        typeStructure:
           "gps_data;satellites:uint32_t:0;lat:double:4;lng:double:12",
         id: "gpsData",
         notes: "Non Prim Data",
-        type_size: 20,
-        tick_interval: 10n,
-        tick_phase: 0n,
+        typeSize: 20,
+        tickInterval: 10n,
+        tickPhase: 0n,
       },
     ],
     samples: [
       {
-        stream_idx: 0,
-        sample_tick: 0n,
+        streamIdx: 0,
+        sampleTick: 0n,
         buffer: {
           satellites: 4,
           lat: 35.305,
@@ -317,42 +317,42 @@ test("Round-trip for Polled: Non-Primitive Fields", async () => {
 });
 
 test("Round-trip for Polled: Multiple Interleaved Streams", async () => {
-  const originalObj: TPolledLogObj = {
+  const originalObj: PolledDlf = {
     magic: 33812,
-    stream_type: 0,
-    tick_span: 100n,
+    streamType: 0,
+    tickSpan: 100n,
     streams: [
       {
-        type_structure: "uint32_t",
+        typeStructure: "uint32_t",
         id: "gpsData.satellites",
         notes: "Slower interval",
-        type_size: 4,
-        tick_interval: 50n,
-        tick_phase: 0n,
+        typeSize: 4,
+        tickInterval: 50n,
+        tickPhase: 0n,
       },
       {
-        type_structure: "double",
+        typeStructure: "double",
         id: "gpsData.lat",
         notes: "Faster interval",
-        type_size: 8,
-        tick_interval: 10n,
-        tick_phase: 0n,
+        typeSize: 8,
+        tickInterval: 10n,
+        tickPhase: 0n,
       },
     ],
     samples: [
       {
-        stream_idx: 0,
-        sample_tick: 0n,
+        streamIdx: 0,
+        sampleTick: 0n,
         buffer: 4,
       },
       {
-        stream_idx: 1,
-        sample_tick: 0n,
+        streamIdx: 1,
+        sampleTick: 0n,
         buffer: 35.305,
       },
       {
-        stream_idx: 1,
-        sample_tick: 10n,
+        streamIdx: 1,
+        sampleTick: 10n,
         buffer: 35.306,
       },
     ],
@@ -370,18 +370,18 @@ test("Round-trip for Polled: Multiple Interleaved Streams", async () => {
 });
 
 test("Round-trip for Polled: Zero Samples", async () => {
-  const originalObj: TPolledLogObj = {
+  const originalObj: PolledDlf = {
     magic: 33812,
-    stream_type: 0,
-    tick_span: 0n,
+    streamType: 0,
+    tickSpan: 0n,
     streams: [
       {
-        type_structure: "double",
+        typeStructure: "double",
         id: "gpsData.lat",
         notes: "Empty",
-        type_size: 8,
-        tick_interval: 10n,
-        tick_phase: 0n,
+        typeSize: 8,
+        tickInterval: 10n,
+        tickPhase: 0n,
       },
     ],
     samples: [],
@@ -399,24 +399,24 @@ test("Round-trip for Polled: Zero Samples", async () => {
 });
 
 test("Round-trip for Polled: Missing and Extra Fields", async () => {
-  const originalObj: TPolledLogObj = {
+  const originalObj: PolledDlf = {
     magic: 33812,
-    stream_type: 0,
-    tick_span: 1000n,
+    streamType: 0,
+    tickSpan: 1000n,
     streams: [
       {
-        type_structure: "gps_data;lat:double:0;lng:double:8",
+        typeStructure: "gps_data;lat:double:0;lng:double:8",
         id: "gpsData",
         notes: "Missing and Extra fields",
-        type_size: 16,
-        tick_interval: 10n,
-        tick_phase: 0n,
+        typeSize: 16,
+        tickInterval: 10n,
+        tickPhase: 0n,
       },
     ],
     samples: [
       {
-        stream_idx: 0,
-        sample_tick: 0n,
+        streamIdx: 0,
+        sampleTick: 0n,
         buffer: {
           lat: 35.305,
           speed: 120.5,
@@ -442,22 +442,22 @@ test("Round-trip for Polled: Missing and Extra Fields", async () => {
 // Events Tests
 
 test("Round-trip for Events: Primitive Fields", async () => {
-  const originalObj: TEventLogObj = {
+  const originalObj: EventDlf = {
     magic: 33812,
-    stream_type: 1,
-    tick_span: 500n,
+    streamType: 1,
+    tickSpan: 500n,
     streams: [
       {
-        type_structure: "uint8_t",
+        typeStructure: "uint8_t",
         id: "gpsData",
         notes: "Primitive Data",
-        type_size: 1,
+        typeSize: 1,
       },
     ],
     samples: [
       {
-        stream_idx: 0,
-        sample_tick: 150n,
+        streamIdx: 0,
+        sampleTick: 150n,
         buffer: 1,
       },
     ],
@@ -475,22 +475,22 @@ test("Round-trip for Events: Primitive Fields", async () => {
 });
 
 test("Round-trip for Events: Non Primitive Fields", async () => {
-  const originalObj: TEventLogObj = {
+  const originalObj: EventDlf = {
     magic: 33812,
-    stream_type: 1,
-    tick_span: 500n,
+    streamType: 1,
+    tickSpan: 500n,
     streams: [
       {
-        type_structure: "status;on:uint8_t:0;off:uint8_t:1",
+        typeStructure: "status;on:uint8_t:0;off:uint8_t:1",
         id: "gpsData.status",
         notes: "Non Prim Data",
-        type_size: 2,
+        typeSize: 2,
       },
     ],
     samples: [
       {
-        stream_idx: 0,
-        sample_tick: 150n,
+        streamIdx: 0,
+        sampleTick: 150n,
         buffer: {
           on: 1,
           off: 0,
@@ -511,16 +511,16 @@ test("Round-trip for Events: Non Primitive Fields", async () => {
 });
 
 test("Round-trip for Events: Zero Events", async () => {
-  const originalObj: TEventLogObj = {
+  const originalObj: EventDlf = {
     magic: 33812,
-    stream_type: 1,
-    tick_span: 0n,
+    streamType: 1,
+    tickSpan: 0n,
     streams: [
       {
-        type_structure: "uint8_t",
+        typeStructure: "uint8_t",
         id: "gpsData",
         notes: "Zero Events",
-        type_size: 1,
+        typeSize: 1,
       },
     ],
     samples: [],
@@ -538,22 +538,22 @@ test("Round-trip for Events: Zero Events", async () => {
 });
 
 test("Round-trip for Events: Missing struct fields default to zero", async () => {
-  const originalObj: TEventLogObj = {
+  const originalObj: EventDlf = {
     magic: 33812,
-    stream_type: 1,
-    tick_span: 500n,
+    streamType: 1,
+    tickSpan: 500n,
     streams: [
       {
-        type_structure: "gps_data;satellites:uint32_t:0;alt:double:4",
+        typeStructure: "gps_data;satellites:uint32_t:0;alt:double:4",
         id: "gpsData",
         notes: "Missing Data",
-        type_size: 12,
+        typeSize: 12,
       },
     ],
     samples: [
       {
-        stream_idx: 0,
-        sample_tick: 10n,
+        streamIdx: 0,
+        sampleTick: 10n,
         buffer: {
           satellites: 5,
         },
@@ -576,22 +576,22 @@ test("Round-trip for Events: Missing struct fields default to zero", async () =>
 });
 
 test("Round-trip for Events: Extra fields are safely ignored", async () => {
-  const originalObj: TEventLogObj = {
+  const originalObj: EventDlf = {
     magic: 33812,
-    stream_type: 1,
-    tick_span: 500n,
+    streamType: 1,
+    tickSpan: 500n,
     streams: [
       {
-        type_structure: "gps_data;lat:double:0",
+        typeStructure: "gps_data;lat:double:0",
         id: "gpsData",
         notes: "Extra Data",
-        type_size: 8,
+        typeSize: 8,
       },
     ],
     samples: [
       {
-        stream_idx: 0,
-        sample_tick: 20n,
+        streamIdx: 0,
+        sampleTick: 20n,
         buffer: {
           lat: 35.305,
           speed: 120.5,

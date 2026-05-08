@@ -54,8 +54,8 @@ export const GET = withAuth(
       }
 
       const [polledSamples, eventSamples] = await Promise.all([
-        adapter.polled_data(),
-        adapter.events_data(),
+        adapter.getPolledData(),
+        adapter.getEventData(),
       ]);
 
       const result: { streamId: string; tick: number; data: unknown }[] = [];

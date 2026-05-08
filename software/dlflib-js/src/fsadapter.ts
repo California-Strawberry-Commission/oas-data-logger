@@ -13,15 +13,15 @@ export class FSAdapter extends Adapter {
     this._rootDir = rootDir;
   }
 
-  get polled_dlf() {
+  get metaDlfBytes() {
+    return readFile(resolve(this._rootDir, "meta.dlf"));
+  }
+
+  get polledDlfBytes() {
     return readFile(resolve(this._rootDir, "polled.dlf"));
   }
 
-  get events_dlf() {
+  get eventDlfBytes() {
     return readFile(resolve(this._rootDir, "event.dlf"));
-  }
-
-  get meta_dlf() {
-    return readFile(resolve(this._rootDir, "meta.dlf"));
   }
 }

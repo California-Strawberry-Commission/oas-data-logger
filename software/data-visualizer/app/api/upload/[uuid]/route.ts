@@ -191,21 +191,21 @@ export async function POST(
       const adapter = new FSAdapter(uploadDir);
       if (!runExists) {
         const [metaHeader, polledSamples, eventSamples] = await Promise.all([
-          adapter.meta_header(),
-          adapter.polled_data().catch(() => []),
-          adapter.events_data().catch(() => []),
+          adapter.getMetaDlf(),
+          adapter.getPolledData().catch(() => []),
+          adapter.getEventData().catch(() => []),
         ]);
         const durationS = await computeRunDurationS(
           polledSamples,
           eventSamples,
-          BigInt(metaHeader.tick_base_us),
+          BigInt(metaHeader.tickBaseUs),
         );
         await prisma.run.create({
           data: {
             uuid,
             deviceId,
-            epochTimeS: BigInt(metaHeader.epoch_time_s),
-            tickBaseUs: BigInt(metaHeader.tick_base_us),
+            epochTimeS: BigInt(metaHeader.epochTimeS),
+            tickBaseUs: BigInt(metaHeader.tickBaseUs),
             durationS,
             metadata: {},
             isActive,
@@ -220,8 +220,8 @@ export async function POST(
         };
         if (uploadedFiles.has("polled.dlf") || uploadedFiles.has("event.dlf")) {
           const [polledSamples, eventSamples] = await Promise.all([
-            adapter.polled_data().catch(() => []),
-            adapter.events_data().catch(() => []),
+            adapter.getPolledData().catch(() => []),
+            adapter.getEventData().catch(() => []),
           ]);
           updateData.durationS = await computeRunDurationS(
             polledSamples,
