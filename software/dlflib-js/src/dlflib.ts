@@ -22,20 +22,16 @@ import { F32, F64 } from "./construct_float.js";
 export type ParsedDataDlf = {
   magic: number;
   streamType: number;
-  tickSpan: BigInt;
+  tickSpan: bigint;
   numStreams: number;
   streams: {
-    typeId: string;
     typeStructure: string;
     id: string;
     notes: string;
     typeSize: number;
     streamInfo:
-      | {
-          tickInterval: number;
-          tickPhase: number;
-        }
-      | {};
+      | { tickInterval: bigint; tickPhase: bigint }
+      | Record<string, never>;
   }[];
   data: Uint8Array;
 };
@@ -218,9 +214,43 @@ function createPolledStreamHeaderEncoder() {
 
 //#endregion
 
+//#region Math helpers
+
+function mod(a: bigint, m: bigint) {
+  const r = a % m;
+  return r < 0n ? r + m : r;
+}
+
+// First tick >= 0 such that (tick + phase) % interval == 0
+function firstTick(interval: bigint, phase: bigint) {
+  return mod(-phase, interval);
+}
+
+// Smallest tick >= start such that (tick + phase) % interval == 0
+function nextDueAtOrAfter(start: bigint, interval: bigint, phase: bigint) {
+  const f = firstTick(interval, phase);
+  if (start <= f) {
+    return f;
+  }
+  const k = (start - f + interval - 1n) / interval; // ceil
+  return f + k * interval;
+}
+
+// Number of due ticks in [0, t) for a stream
+function countBefore(t: bigint, interval: bigint, phase: bigint) {
+  const f = firstTick(interval, phase);
+  if (t <= f) {
+    return 0n;
+  }
+  // Ticks are f, f+interval, f+2*interval, ... < t
+  return 1n + (t - 1n - f) / interval;
+}
+
+//#endregion
+
 //#region Encoder helpers
 
-export function createEncoder(
+function createEncoder(
   structure: string,
   structureSize?: number,
 ): StructType | Function | null {
@@ -299,40 +329,6 @@ function getEncoderField(
   }
 
   return undefined;
-}
-
-//#endregion
-
-//#region Math helpers
-
-function mod(a: bigint, m: bigint) {
-  const r = a % m;
-  return r < 0n ? r + m : r;
-}
-
-// First tick >= 0 such that (tick + phase) % interval == 0
-function firstTick(interval: bigint, phase: bigint) {
-  return mod(-phase, interval);
-}
-
-// Smallest tick >= start such that (tick + phase) % interval == 0
-function nextDueAtOrAfter(start: bigint, interval: bigint, phase: bigint) {
-  const f = firstTick(interval, phase);
-  if (start <= f) {
-    return f;
-  }
-  const k = (start - f + interval - 1n) / interval; // ceil
-  return f + k * interval;
-}
-
-// Number of due ticks in [0, t) for a stream
-function countBefore(t: bigint, interval: bigint, phase: bigint) {
-  const f = firstTick(interval, phase);
-  if (t <= f) {
-    return 0n;
-  }
-  // Ticks are f, f+interval, f+2*interval, ... < t
-  return 1n + (t - 1n - f) / interval;
 }
 
 //#endregion
@@ -481,74 +477,76 @@ export function encodeEvent(logObj: EventDlf): Uint8Array {
 
 //#endregion
 
+/**
+ * `structure` describing a multi-field buffer is formatted like:
+ *   "name;member_1_name:member_1_type:offset;...member_n_name:member_n_type:offset"
+ * and `createParser` will return a Parser. Otherwise, `structure` describing a single
+ * primitive is like:
+ *   "double"
+ * and `createParser` will return a string that contains the binary-parser method name.
+ */
+function createParser(
+  structure: string,
+  structureSize?: number,
+): Parser | string | null {
+  // No contained structure
+  if (structure.startsWith("!")) {
+    return null;
+  }
+
+  // To indicate a buffer that contains a single primitive value, return a string
+  if (structure in BINARY_PARSERS_PRIMITIVES) {
+    return BINARY_PARSERS_PRIMITIVES[
+      structure as keyof typeof BINARY_PARSERS_PRIMITIVES
+    ];
+  }
+
+  // Create parser for multi-field buffer
+  // name;member_1:primitive_type:offset;...
+  const [_name, ...members] = structure.split(";");
+
+  let parser = new Parser()
+    .endianness("little")
+    // @ts-ignore
+    .saveOffset("structureStartOffset");
+
+  for (const member of members) {
+    const [name, typeName, offset] = member.split(":");
+
+    const relOff = parseInt(offset);
+    const parserType =
+      BINARY_PARSERS_PRIMITIVES[
+        typeName as keyof typeof BINARY_PARSERS_PRIMITIVES
+      ];
+
+    parser = parser.pointer(name, {
+      type: parserType,
+      offset: function () {
+        return this.structureStartOffset + relOff;
+      },
+    });
+  }
+
+  if (structureSize != null) {
+    parser = parser.seek(structureSize);
+  }
+
+  return parser;
+}
+
 export abstract class Adapter {
   abstract get polledDlfBytes(): Promise<Uint8Array>;
   abstract get eventDlfBytes(): Promise<Uint8Array>;
   abstract get metaDlfBytes(): Promise<Uint8Array>;
 
-  // `structure` describing a multi-field buffer is formatted like:
-  //    "name;member_1_name:member_1_type:offset;...member_n_name:member_n_type:offset"
-  // and `createParser` will return a Parser. Otherwise, `structure` describing
-  // a single primitive is like:
-  //    "double"
-  // and `createParser` will return a string that contains the binary-parser method.
-  createParser(
-    structure: string,
-    structureSize?: number,
-  ): Parser | string | null {
-    // No contained structure
-    if (structure.startsWith("!")) {
-      return null;
-    }
-
-    // To indicate a buffer that contains a single primitive value, return a string
-    if (structure in BINARY_PARSERS_PRIMITIVES) {
-      return BINARY_PARSERS_PRIMITIVES[
-        structure as keyof typeof BINARY_PARSERS_PRIMITIVES
-      ];
-    }
-
-    // Create parser for multi-field buffer
-    // name;member_1:primitive_type:offset;...
-    const [_name, ...members] = structure.split(";");
-
-    let parser = new Parser()
-      .endianness("little")
-      // @ts-ignore
-      .saveOffset("structureStartOffset");
-
-    for (const member of members) {
-      const [name, typeName, offset] = member.split(":");
-
-      const relOff = parseInt(offset);
-      const parserType =
-        BINARY_PARSERS_PRIMITIVES[
-          typeName as keyof typeof BINARY_PARSERS_PRIMITIVES
-        ];
-
-      parser = parser.pointer(name, {
-        type: parserType,
-        offset: function () {
-          return this.structureStartOffset + relOff;
-        },
-      });
-    }
-
-    if (structureSize != null) {
-      parser = parser.seek(structureSize);
-    }
-
-    return parser;
-  }
-
   async getMetaDlf(): Promise<ParsedMetaDlf> {
-    return metaDlfParser.parse(Buffer.from(await this.metaDlfBytes));
+    return metaDlfParser.parse(await this.metaDlfBytes);
   }
 
   async getMeta() {
     const parsed = await this.getMetaDlf();
 
-    const parser = this.createParser(parsed.metaStructure, parsed.metaSize);
+    const parser = createParser(parsed.metaStructure, parsed.metaSize);
     if (!parser) {
       return null;
     }
@@ -579,7 +577,7 @@ export abstract class Adapter {
     // Create choices
     const choices: Record<number, Parser | string | null> = {};
     for (const [i, stream] of header.streams.entries()) {
-      choices[i] = this.createParser(stream.typeStructure, stream.typeSize);
+      choices[i] = createParser(stream.typeStructure, stream.typeSize);
     }
 
     const dataParser = new Parser().array("data", {
@@ -593,7 +591,7 @@ export abstract class Adapter {
         }),
     });
 
-    const { data } = dataParser.parse(Buffer.from(header.data));
+    const { data } = dataParser.parse(header.data);
 
     return data.map(
       ({
@@ -627,7 +625,7 @@ export abstract class Adapter {
 
     // Build parsers for each stream
     const parsers = streams.map((s) => {
-      const parser = this.createParser(s.typeStructure, s.typeSize);
+      const parser = createParser(s.typeStructure, s.typeSize);
       if (typeof parser === "string") {
         // @ts-ignore
         return new Parser()[parser]("data");
@@ -639,8 +637,8 @@ export abstract class Adapter {
 
     // Pull out per-stream interval/phase/size values for convenience
     const streamInfos = streams.map((stream, index) => {
-      const interval = BigInt((stream as any).streamInfo.tickInterval);
-      const phase = BigInt((stream as any).streamInfo.tickPhase);
+      const { tickInterval: interval, tickPhase: phase } =
+        stream.streamInfo as { tickInterval: bigint; tickPhase: bigint };
       const size = BigInt(stream.typeSize);
       return {
         stream,
@@ -675,7 +673,12 @@ export abstract class Adapter {
     const minNextDue = () => nextDue.reduce((a, b) => (a < b ? a : b));
     let currentTick = minNextDue();
 
-    const out: any[] = [];
+    const out: Array<{
+      stream: Stream;
+      data: any;
+      tick: bigint;
+      offset: bigint;
+    }> = [];
 
     while (true) {
       if (endTick != null && currentTick >= endTick) {
