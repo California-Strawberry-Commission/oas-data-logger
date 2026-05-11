@@ -184,6 +184,12 @@ export default function SessionGpsVisualization({
           ? speedValues.reduce((a, b) => a + b, 0) / speedValues.length
           : 0;
 
+      const dwellValues = dwellMinsSeries
+        .filter((s) => s.id.startsWith(`dwell-${session.sessionKey}-`))
+        .flatMap((s) => s.samples.map((sample) => sample.value));
+      const maxDwellMins =
+        dwellValues.length > 0 ? Math.max(...dwellValues) : 0;
+
       result.push({
         sessionKey: session.sessionKey,
         epochTimeS: session.runs[0].epochTimeS,
@@ -191,9 +197,10 @@ export default function SessionGpsVisualization({
         deviceName: session.device?.name ?? session.device?.id,
         runCount: session.runs.length,
         totalDistanceMi,
+        totalDurationS,
         maxSpeedMph,
         avgSpeedMph,
-        totalDurationS,
+        maxDwellMins,
       });
     }
     return result;
