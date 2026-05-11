@@ -2,36 +2,9 @@
 
 import Combobox, { type Group } from "@/components/ui/combobox";
 import { useDeviceRuns, type Run } from "@/lib/api";
-import { getDayKey } from "@/lib/utils";
+import { formatElapsed, formatTimeAgo, getDayKey } from "@/lib/utils";
 import posthog from "posthog-js";
 import { useEffect, useMemo } from "react";
-
-function formatDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-
-  if (h > 0) {
-    return `${h}h ${m}m ${s}s`;
-  }
-  if (m > 0) {
-    return `${m}m ${s}s`;
-  }
-  return `${s}s`;
-}
-
-function formatTimeDiff(seconds: number): string {
-  if (seconds < 60) {
-    return `${Math.floor(seconds)}s ago`;
-  }
-  if (seconds < 3600) {
-    return `${Math.floor(seconds / 60)}m ago`;
-  }
-  if (seconds < 86400) {
-    return `${Math.floor(seconds / 3600)}h ago`;
-  }
-  return `${Math.floor(seconds / 86400)}d ago`;
-}
 
 function getRunLabel(run: Run): string {
   const startTime = new Date(run.epochTimeS * 1000);
@@ -45,9 +18,9 @@ function getRunLabel(run: Run): string {
 
   if (run.isActive) {
     const secsSinceLastData = (Date.now() - lastDataTime.getTime()) / 1000;
-    return `🟢 ${timeStr} (Active - ${formatTimeDiff(secsSinceLastData)}) <${run.uuid}>`;
+    return `🟢 ${timeStr} (Active - ${formatTimeAgo(secsSinceLastData)}) <${run.uuid}>`;
   }
-  return `${timeStr} (${formatDuration(run.durationS)}) <${run.uuid}>`;
+  return `${timeStr} (${formatElapsed(run.durationS)}) <${run.uuid}>`;
 }
 
 export default function RunSelector({

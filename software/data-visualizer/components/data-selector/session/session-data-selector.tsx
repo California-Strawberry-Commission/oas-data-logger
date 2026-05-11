@@ -1,7 +1,7 @@
 "use client";
 
-import type { DaySelectionRow } from "@/components/data-selector/data-selector";
-import DaySelectionCard from "@/components/data-selector/day/day-selection-card";
+import type { SessionSelectionRow } from "@/components/data-selector/data-selector";
+import SessionSelectionCard from "@/components/data-selector/session/session-selection-card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import posthog from "posthog-js";
@@ -9,18 +9,18 @@ import { useEffect, useRef, useState } from "react";
 
 const MAX_ROWS = 4;
 
-function createRow(): DaySelectionRow {
-  return { rowId: crypto.randomUUID(), device: null, dayKey: "" };
+function createRow(): SessionSelectionRow {
+  return { rowId: crypto.randomUUID(), device: null, sessionKey: "" };
 }
 
-export default function DayDataSelector({
+export default function SessionDataSelector({
   initialRows,
   onRowsChanged,
 }: {
-  initialRows?: DaySelectionRow[];
-  onRowsChanged?: (rows: DaySelectionRow[]) => void;
+  initialRows?: SessionSelectionRow[];
+  onRowsChanged?: (rows: SessionSelectionRow[]) => void;
 }) {
-  const [rows, setRows] = useState<DaySelectionRow[]>(() => [createRow()]);
+  const [rows, setRows] = useState<SessionSelectionRow[]>(() => [createRow()]);
 
   // One-time initialization of rows from initialRows. Only initializes when
   // initialRows is not empty.
@@ -40,31 +40,31 @@ export default function DayDataSelector({
 
   function updateRow(
     rowId: string,
-    patch: Partial<Omit<DaySelectionRow, "rowId">>,
+    patch: Partial<Omit<SessionSelectionRow, "rowId">>,
   ) {
     setRows((prev) =>
       prev.map((r) => (r.rowId === rowId ? { ...r, ...patch } : r)),
     );
   }
   function addRow() {
-    posthog.capture("selection:day_comparison_added");
+    posthog.capture("selection:session_comparison_added");
     setRows((prev) => [...prev, createRow()]);
   }
   function removeRow(rowId: string) {
-    posthog.capture("selection:day_comparison_removed");
+    posthog.capture("selection:session_comparison_removed");
     setRows((prev) =>
       prev.length === 1 ? prev : prev.filter((r) => r.rowId !== rowId),
     );
   }
 
   const primary = rows[0];
-  const primaryHasSelection = !!primary?.device && !!primary?.dayKey;
+  const primaryHasSelection = !!primary?.device && !!primary?.sessionKey;
   const showAddComparison = primaryHasSelection && rows.length < MAX_ROWS;
 
   return (
     <>
       {rows.map((row, idx) => (
-        <DaySelectionCard
+        <SessionSelectionCard
           key={row.rowId}
           index={idx}
           title={
@@ -75,11 +75,13 @@ export default function DayDataSelector({
               : `Comparison ${idx}`
           }
           device={row.device}
-          dayKey={row.dayKey}
+          sessionKey={row.sessionKey}
           onDeviceChange={(device) =>
-            updateRow(row.rowId, { device, dayKey: "" })
+            updateRow(row.rowId, { device, sessionKey: "" })
           }
-          onDayKeyChange={(dayKey) => updateRow(row.rowId, { dayKey })}
+          onSessionKeyChange={(sessionKey) =>
+            updateRow(row.rowId, { sessionKey })
+          }
           onRemove={idx === 0 ? undefined : () => removeRow(row.rowId)}
         />
       ))}

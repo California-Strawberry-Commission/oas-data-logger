@@ -8,39 +8,19 @@ import { useDevices, useRuns } from "@/lib/api";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 
-type ParsedUrl =
-  | { kind: "run"; runUuids: string[] }
-  | { kind: "day"; rows: Array<{ deviceId: string; dayKey: string }> }
-  | null;
+type ParsedUrl = { kind: "run" | "session"; rows: string[] } | null;
 
 // Expected URL search params:
 //   ?view=run&rows=uuid1,uuid2,...
-//   ?view=day&rows=deviceId1:dayKey1,deviceId2:dayKey2,...
+//   ?view=session&rows=sessionKey1,sessionKey2,...
+// where sessionKey is the run UUID of the first run in the session.
 function parseUrl(searchParams: URLSearchParams): ParsedUrl {
   const view = searchParams.get("view");
   const rawRows = searchParams.get("rows") ?? "";
 
-  if (view === "run") {
+  if (view === "run" || view === "session") {
     const runUuids = rawRows.split(",").filter(Boolean);
-    return runUuids.length > 0 ? { kind: "run", runUuids } : null;
-  }
-
-  if (view === "day") {
-    const rows = rawRows
-      .split(",")
-      .filter(Boolean)
-      .map((chunk) => {
-        const colonIdx = chunk.indexOf(":");
-        if (colonIdx === -1) {
-          return null;
-        }
-        return {
-          deviceId: chunk.slice(0, colonIdx),
-          dayKey: chunk.slice(colonIdx + 1),
-        };
-      })
-      .filter((r) => r !== null);
-    return rows.length > 0 ? { kind: "day", rows } : null;
+    return runUuids.length > 0 ? { kind: view, rows: runUuids } : null;
   }
 
   return null;
@@ -48,7 +28,7 @@ function parseUrl(searchParams: URLSearchParams): ParsedUrl {
 
 export default function MainContent() {
   const [selection, setSelection] = useState<Selection>({
-    kind: "run",
+    kind: "session",
     rows: [],
   });
 
@@ -63,10 +43,11 @@ export default function MainContent() {
     [],
   );
 
-  const runUuidsFromUrl = parsed?.kind === "run" ? parsed.runUuids : [];
+  const runUuidsFromUrl = parsed?.kind === "run" ? parsed.rows : [];
 
   const { data: devices = [], isSuccess: devicesLoaded } = useDevices();
-  const { data: runs = [], isSuccess: runsLoaded } = useRuns(runUuidsFromUrl);
+  const { data: runsFromUrl = [], isSuccess: runsFromUrlLoaded } =
+    useRuns(runUuidsFromUrl);
 
   // Build initialSelection from the parsed URL. Rows are populated once the
   // required async data has loaded.
@@ -75,14 +56,15 @@ export default function MainContent() {
       return undefined;
     }
 
+    if (!devicesLoaded || !runsFromUrlLoaded) {
+      return { kind: parsed.kind, rows: [] };
+    }
+
     if (parsed.kind === "run") {
-      if (!devicesLoaded || !runsLoaded) {
-        return { kind: "run", rows: [] };
-      }
       return {
         kind: "run",
-        rows: parsed.runUuids.map((uuid) => {
-          const run = runs.find((r) => r.uuid === uuid) ?? null;
+        rows: parsed.rows.map((uuid) => {
+          const run = runsFromUrl.find((r) => r.uuid === uuid) ?? null;
           return {
             rowId: crypto.randomUUID(),
             device: devices.find((d) => d.id === run?.deviceId) ?? null,
@@ -90,22 +72,20 @@ export default function MainContent() {
           };
         }),
       };
-    }
-
-    if (parsed.kind === "day") {
-      if (!devicesLoaded) {
-        return { kind: "day", rows: [] };
-      }
+    } else {
       return {
-        kind: "day",
-        rows: parsed.rows.map(({ deviceId, dayKey }) => ({
-          rowId: crypto.randomUUID(),
-          device: devices.find((d) => d.id === deviceId) ?? null,
-          dayKey,
-        })),
+        kind: "session",
+        rows: parsed.rows.map((sessionKey) => {
+          const run = runsFromUrl.find((r) => r.uuid === sessionKey) ?? null;
+          return {
+            rowId: crypto.randomUUID(),
+            device: devices.find((d) => d.id === run?.deviceId) ?? null,
+            sessionKey,
+          };
+        }),
       };
     }
-  }, [parsed, devices, devicesLoaded, runs, runsLoaded]);
+  }, [parsed, devices, devicesLoaded, runsFromUrl, runsFromUrlLoaded]);
 
   const handleSelectionChanged = useCallback(
     (next: Selection) => {
@@ -123,11 +103,11 @@ export default function MainContent() {
         );
       } else {
         const rowsStr = next.rows
-          .filter((r) => r.device && r.dayKey)
-          .map((r) => `${r.device!.id}:${r.dayKey}`)
+          .filter((r) => r.sessionKey)
+          .map((r) => r.sessionKey)
           .join(",");
         router.replace(
-          rowsStr ? `${pathname}?view=day&rows=${rowsStr}` : pathname,
+          rowsStr ? `${pathname}?view=session&rows=${rowsStr}` : pathname,
           { scroll: false },
         );
       }
