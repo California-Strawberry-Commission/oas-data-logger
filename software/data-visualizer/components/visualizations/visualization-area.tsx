@@ -1,14 +1,14 @@
 "use client";
 
 import type { Selection } from "@/components/data-selector/data-selector";
-import DayGpsVisualization, {
-  type DayGroup,
-} from "@/components/visualizations/gps/day-gps-visualization";
 import RunGpsVisualization, {
   type RunWithColor,
 } from "@/components/visualizations/gps/run-gps-visualization";
+import SessionGpsVisualization, {
+  type Session,
+} from "@/components/visualizations/gps/session-gps-visualization";
 import { useMultipleDeviceRuns } from "@/lib/api";
-import { colorForSelectionIndex, getDayKey } from "@/lib/utils";
+import { colorForSelectionIndex, groupRunsIntoSessions } from "@/lib/utils";
 import { useMemo } from "react";
 
 export default function VisualizationArea({
@@ -34,33 +34,35 @@ export default function VisualizationArea({
     );
   }, [selection]);
 
-  // For day selection mode, create DayGroup[] from selection
+  // For session selection mode, create Session[] from selection
   const deviceIds = useMemo(
     () =>
-      selection.kind === "day"
+      selection.kind === "session"
         ? selection.rows.map((r) => r.device?.id ?? "")
         : [],
     [selection],
   );
   const { runsByDeviceId, anyLoading } = useMultipleDeviceRuns(deviceIds);
-  const dayGroups: DayGroup[] = useMemo(() => {
-    if (selection.kind !== "day") {
+  const sessions: Session[] = useMemo(() => {
+    if (selection.kind !== "session") {
       return [];
     }
     return selection.rows
       .map((row, idx) => {
         const deviceId = row.device?.id ?? "";
-        const { dayKey } = row;
-        if (!deviceId || !dayKey) {
+        const { sessionKey } = row;
+        if (!deviceId || !sessionKey) {
           return null;
         }
 
         const allRuns = runsByDeviceId[deviceId] ?? [];
-        const runs = allRuns
-          .filter((r) => getDayKey(r.epochTimeS) === dayKey)
+        const sessions = groupRunsIntoSessions(allRuns);
+        const session = sessions.find((s) => s[0].uuid === sessionKey);
+        const runs = (session ?? [])
+          .slice() // shallow copy
           .sort((a, b) => a.epochTimeS - b.epochTimeS);
         return {
-          dayKey,
+          sessionKey,
           color: colorForSelectionIndex(idx),
           runs,
           device: row.device ?? undefined,
@@ -84,11 +86,11 @@ export default function VisualizationArea({
       </div>
     );
   } else {
-    const hasAnyValidRow = selection.rows.some((r) => r.device && r.dayKey);
+    const hasAnyValidRow = selection.rows.some((r) => r.device && r.sessionKey);
     if (!hasAnyValidRow) {
       return (
         <div className="h-full w-full flex items-center justify-center text-muted-foreground p-4 text-center">
-          Select a device and day.
+          Select a device and session.
         </div>
       );
     }
@@ -103,7 +105,7 @@ export default function VisualizationArea({
 
     return (
       <div className="flex flex-col w-full items-center p-4 gap-4 md:overflow-y-auto">
-        <DayGpsVisualization dayGroups={dayGroups} />
+        <SessionGpsVisualization sessions={sessions} />
       </div>
     );
   }

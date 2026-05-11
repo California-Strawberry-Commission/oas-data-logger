@@ -5,6 +5,13 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isValidUuid(value: string): boolean {
+  return UUID_RE.test(value);
+}
+
 const SELECTION_COLORS = [
   "#2563eb", // blue
   "#dc2626", // red
@@ -59,6 +66,25 @@ export function formatTimeOfDay(epochTimeS: number): string {
 }
 
 /**
+ * Formats a duration in seconds as a human-readable "time ago" string.
+ *
+ * @param seconds - Elapsed time in seconds since the event.
+ * @returns A string like `"30s ago"`, `"5m ago"`, `"2h ago"`, or `"3d ago"`.
+ */
+export function formatTimeAgo(seconds: number): string {
+  if (seconds < 60) {
+    return `${Math.floor(seconds)}s ago`;
+  }
+  if (seconds < 3600) {
+    return `${Math.floor(seconds / 60)}m ago`;
+  }
+  if (seconds < 86400) {
+    return `${Math.floor(seconds / 3600)}h ago`;
+  }
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+/**
  * Returns a `YYYY-MM-DD` string for the local calendar date of the given epoch time in seconds.
  *
  * @param epochTimeS - Epoch time in seconds.
@@ -72,9 +98,36 @@ export function getDayKey(epochTimeS: number): string {
   return `${year}-${month}-${day}`;
 }
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export function isValidUuid(value: string): boolean {
-  return UUID_RE.test(value);
+/**
+ * Groups runs into sessions by merging consecutive runs whose end-to-start gap
+ * is less than `gapThresholdS` seconds.
+ *
+ * Runs are sorted ascending by `epochTimeS` before grouping. Each returned
+ * sub-array is a session in ascending start-time order.
+ *
+ * @param runs - Array of run-like objects with `epochTimeS` and `durationS`.
+ * @param gapThresholdS - Maximum allowed end-to-start gap in seconds for two
+ *   runs to belong to the same session. Defaults to 8 hours.
+ * @returns Array of sessions, where each session is a non-empty array of runs.
+ */
+export function groupRunsIntoSessions<
+  T extends { epochTimeS: number; durationS: number },
+>(runs: T[], gapThresholdS = 8 * 3600): T[][] {
+  const sorted = [...runs].sort((a, b) => a.epochTimeS - b.epochTimeS);
+  const sessions: T[][] = [];
+  for (const run of sorted) {
+    if (sessions.length === 0) {
+      sessions.push([run]);
+      continue;
+    }
+    const lastSession = sessions[sessions.length - 1];
+    const lastRun = lastSession[lastSession.length - 1];
+    const gap = run.epochTimeS - (lastRun.epochTimeS + lastRun.durationS);
+    if (gap < gapThresholdS) {
+      lastSession.push(run);
+    } else {
+      sessions.push([run]);
+    }
+  }
+  return sessions;
 }

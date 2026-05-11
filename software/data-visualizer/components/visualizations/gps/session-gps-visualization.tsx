@@ -1,9 +1,6 @@
 "use client";
 
 import { Card, CardContent } from "@/components/ui/card";
-import DaySummaryCard, {
-  type DaySummary,
-} from "@/components/visualizations/gps/day-summary-card";
 import {
   distanceMeters,
   MILES_TO_METERS,
@@ -23,6 +20,9 @@ import {
   LoadingMap,
   NoDataMap,
 } from "@/components/visualizations/gps/run-gps-visualization";
+import SessionSummaryCard, {
+  type SessionSummary,
+} from "@/components/visualizations/gps/session-summary-card";
 import TimeSeriesChart, {
   type TimeSeries,
 } from "@/components/visualizations/gps/time-series-chart";
@@ -37,22 +37,22 @@ const MapComponent = dynamic(() => import("./map"), {
   loading: () => <LoadingMap />,
 });
 
-export type DayGroup = {
-  dayKey: string;
+export type Session = {
+  sessionKey: string;
   color: string;
   runs: Run[];
   device?: Device;
 };
 
-export default function DayGpsVisualization({
-  dayGroups,
+export default function SessionGpsVisualization({
+  sessions,
 }: {
-  dayGroups: DayGroup[];
+  sessions: Session[];
 }) {
   const [selectedElapsedS, setSelectedElapsedS] = useState<number | null>(null);
 
-  // Collect all run UUIDs across all groups for a single batched stream fetch
-  const allRuns = useMemo(() => dayGroups.flatMap((g) => g.runs), [dayGroups]);
+  // Collect all run UUIDs across all sessions for a single batched fetch for stream data
+  const allRuns = useMemo(() => sessions.flatMap((s) => s.runs), [sessions]);
   const allRunUuids = useMemo(() => allRuns.map((r) => r.uuid), [allRuns]);
 
   // Fetch GPS streams for all runs
@@ -75,16 +75,16 @@ export default function DayGpsVisualization({
   // Create a Track for each DayGroup by concatenating all runs in the group
   const tracks: Track[] = useMemo(() => {
     const result: Track[] = [];
-    for (const group of dayGroups) {
-      if (group.runs.length === 0) {
+    for (const session of sessions) {
+      if (session.runs.length === 0) {
         continue;
       }
 
       // When concatenating points from all runs, recalculate elapsedS to be relative
       // to the epoch time of the earliest run in the group. Note that group.runs is
       // already sorted by epochTimeS.
-      const firstRunEpochS = group.runs[0].epochTimeS;
-      const allPoints: MapPoint[] = group.runs.flatMap((run) => {
+      const firstRunEpochS = session.runs[0].epochTimeS;
+      const allPoints: MapPoint[] = session.runs.flatMap((run) => {
         const timeOffset = run.epochTimeS - firstRunEpochS;
         return (filteredPointsByRun[run.uuid] ?? []).map((p) => ({
           ...p,
@@ -95,32 +95,32 @@ export default function DayGpsVisualization({
 
       if (allPoints.length > 0) {
         result.push({
-          id: `day-${group.dayKey}-${group.color}`,
+          id: `session-${session.sessionKey}`,
           epochTimeS: firstRunEpochS,
           points: allPoints,
-          color: group.color,
+          color: session.color,
         });
       }
     }
     return result;
-  }, [dayGroups, filteredPointsByRun]);
+  }, [sessions, filteredPointsByRun]);
 
-  // Calculate speed and dwell time time series for each DayGroup
+  // Calculate speed and dwell time time series for each session
   const { speedMphSeries, dwellMinsSeries } = useMemo(() => {
     const speedMphSeries: TimeSeries[] = [];
     const dwellMinsSeries: TimeSeries[] = [];
 
-    for (const group of dayGroups) {
-      if (group.runs.length === 0) {
+    for (const session of sessions) {
+      if (session.runs.length === 0) {
         continue;
       }
 
-      const firstRunEpochS = group.runs[0].epochTimeS;
+      const firstRunEpochS = session.runs[0].epochTimeS;
 
-      const groupSpeeds: TimeSeries["samples"] = [];
-      const groupDwell: TimeSeries["samples"] = [];
+      const sessionSpeeds: TimeSeries["samples"] = [];
+      const sessionDwell: TimeSeries["samples"] = [];
 
-      for (const run of group.runs) {
+      for (const run of session.runs) {
         const points = filteredPointsByRun[run.uuid];
         if (!points || points.length === 0) {
           continue;
@@ -129,44 +129,44 @@ export default function DayGpsVisualization({
         const timeOffset = run.epochTimeS - firstRunEpochS;
 
         for (const s of toSpeedMphSamples(points)) {
-          groupSpeeds.push({ ...s, elapsedS: s.elapsedS + timeOffset });
+          sessionSpeeds.push({ ...s, elapsedS: s.elapsedS + timeOffset });
         }
         for (const s of toDwellMinsSamples(points, toSpeedMphSamples(points))) {
-          groupDwell.push({ ...s, elapsedS: s.elapsedS + timeOffset });
+          sessionDwell.push({ ...s, elapsedS: s.elapsedS + timeOffset });
         }
       }
 
-      if (groupSpeeds.length > 0) {
+      if (sessionSpeeds.length > 0) {
         speedMphSeries.push({
-          id: `speed-${group.dayKey}-${group.color}`,
-          samples: groupSpeeds,
-          color: group.color,
+          id: `speed-${session.sessionKey}`,
+          samples: sessionSpeeds,
+          color: session.color,
         });
       }
-      if (groupDwell.length > 0) {
+      if (sessionDwell.length > 0) {
         dwellMinsSeries.push({
-          id: `dwell-${group.dayKey}-${group.color}`,
-          samples: groupDwell,
-          color: group.color,
+          id: `dwell-${session.sessionKey}`,
+          samples: sessionDwell,
+          color: session.color,
         });
       }
     }
 
     return { speedMphSeries, dwellMinsSeries };
-  }, [dayGroups, filteredPointsByRun]);
+  }, [sessions, filteredPointsByRun]);
 
-  // Calculate summary metrics for each day group
-  const daySummaries: DaySummary[] = useMemo(() => {
-    const result: DaySummary[] = [];
-    for (const group of dayGroups) {
-      if (group.runs.length === 0) {
+  // Calculate summary metrics for each session
+  const sessionSummaries: SessionSummary[] = useMemo(() => {
+    const result: SessionSummary[] = [];
+    for (const session of sessions) {
+      if (session.runs.length === 0) {
         continue;
       }
 
       let totalDistanceMi = 0;
       let totalDurationS = 0;
 
-      for (const run of group.runs) {
+      for (const run of session.runs) {
         const points = filteredPointsByRun[run.uuid];
         if (!points || points.length === 0) {
           continue;
@@ -182,7 +182,7 @@ export default function DayGpsVisualization({
 
       const speedValues =
         speedMphSeries
-          .find((s) => s.id === `speed-${group.dayKey}-${group.color}`)
+          .find((s) => s.id === `speed-${session.sessionKey}`)
           ?.samples.map((s) => s.value) ?? [];
       const maxSpeedMph = speedValues.length > 0 ? Math.max(...speedValues) : 0;
       const avgSpeedMph =
@@ -191,10 +191,11 @@ export default function DayGpsVisualization({
           : 0;
 
       result.push({
-        dayKey: group.dayKey,
-        color: group.color,
-        deviceName: group.device?.name ?? group.device?.id,
-        runCount: group.runs.length,
+        sessionKey: session.sessionKey,
+        epochTimeS: session.runs[0].epochTimeS,
+        color: session.color,
+        deviceName: session.device?.name ?? session.device?.id,
+        runCount: session.runs.length,
         totalDistanceMi,
         maxSpeedMph,
         avgSpeedMph,
@@ -202,7 +203,7 @@ export default function DayGpsVisualization({
       });
     }
     return result;
-  }, [dayGroups, filteredPointsByRun, speedMphSeries]);
+  }, [sessions, filteredPointsByRun, speedMphSeries]);
 
   if (firstError) {
     return (
@@ -242,15 +243,18 @@ export default function DayGpsVisualization({
     );
   }
 
-  const isSingleGroup = dayGroups.length === 1;
-  const firstGroupEpochS = dayGroups[0]?.runs[0]?.epochTimeS ?? 0;
+  const isSingleSession = sessions.length === 1;
+  const firstSessionEpochS = sessions[0]?.runs[0]?.epochTimeS ?? 0;
 
   return (
     <>
-      {daySummaries.length > 0 && (
+      {sessionSummaries.length > 0 && (
         <div className="flex flex-wrap gap-4">
-          {daySummaries.map((s) => (
-            <DaySummaryCard key={`${s.dayKey}-${s.color}`} summary={s} />
+          {sessionSummaries.map((s) => (
+            <SessionSummaryCard
+              key={`${s.sessionKey}-${s.color}`}
+              summary={s}
+            />
           ))}
         </div>
       )}
@@ -267,10 +271,10 @@ export default function DayGpsVisualization({
             data={speedMphSeries}
             selectedElapsedS={selectedElapsedS ?? undefined}
             onSelectedElapsedChange={setSelectedElapsedS}
-            xAxisLabel={isSingleGroup ? "Time of Day" : "Elapsed Time"}
+            xAxisLabel={isSingleSession ? "Time of Day" : "Elapsed Time"}
             xAxisTickFormatter={
-              isSingleGroup
-                ? (v) => formatTimeOfDay(firstGroupEpochS + v)
+              isSingleSession
+                ? (v) => formatTimeOfDay(firstSessionEpochS + v)
                 : (v) => formatElapsed(v)
             }
             yAxisLabel="Speed (mph)"
@@ -287,10 +291,10 @@ export default function DayGpsVisualization({
             data={dwellMinsSeries}
             selectedElapsedS={selectedElapsedS ?? undefined}
             onSelectedElapsedChange={setSelectedElapsedS}
-            xAxisLabel={isSingleGroup ? "Time of Day" : "Elapsed Time"}
+            xAxisLabel={isSingleSession ? "Time of Day" : "Elapsed Time"}
             xAxisTickFormatter={
-              isSingleGroup
-                ? (v) => formatTimeOfDay(firstGroupEpochS + v)
+              isSingleSession
+                ? (v) => formatTimeOfDay(firstSessionEpochS + v)
                 : (v) => formatElapsed(v)
             }
             yAxisLabel="Dwell time (minutes)"

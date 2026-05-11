@@ -1,25 +1,25 @@
 import DeviceSelector from "@/components/data-selector/device-selector";
-import DaySelector from "@/components/data-selector/day/day-selector";
+import SessionSelector from "@/components/data-selector/session/session-selector";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { type Device } from "@/lib/api";
 import { colorForSelectionIndex } from "@/lib/utils";
 
-export default function DaySelectionCard({
+export default function SessionSelectionCard({
   title,
   index,
   device,
-  dayKey,
+  sessionKey,
   onDeviceChange,
-  onDayKeyChange,
+  onSessionKeyChange,
   onRemove,
 }: {
   title?: string;
   index: number;
   device: Device | null;
-  dayKey: string;
+  sessionKey: string;
   onDeviceChange?: (device: Device | null) => void;
-  onDayKeyChange?: (dayKey: string) => void;
+  onSessionKeyChange?: (sessionKey: string) => void;
   onRemove?: () => void;
 }) {
   const color = colorForSelectionIndex(index);
@@ -51,22 +51,22 @@ export default function DaySelectionCard({
             value={device?.id ?? ""}
             onValueChange={(nextDevice) => {
               onDeviceChange?.(nextDevice);
-              onDayKeyChange?.("");
+              onSessionKeyChange?.("");
             }}
           />
         </div>
 
         <div className="space-y-2">
-          <div className="text-sm font-medium">Day</div>
+          <div className="text-sm font-medium">Session</div>
           {device ? (
-            <DaySelector
+            <SessionSelector
               deviceId={device.id}
-              value={dayKey}
-              onValueChange={onDayKeyChange}
+              value={sessionKey}
+              onValueChange={onSessionKeyChange}
             />
           ) : (
             <div className="rounded-md border border-dashed py-2 px-3 text-sm text-muted-foreground">
-              Select a device to load days.
+              Select a device to load sessions.
             </div>
           )}
         </div>

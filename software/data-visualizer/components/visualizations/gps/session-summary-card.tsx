@@ -7,8 +7,9 @@ import {
 } from "@/components/ui/card";
 import { formatElapsed } from "@/lib/utils";
 
-export type DaySummary = {
-  dayKey: string;
+export type SessionSummary = {
+  sessionKey: string;
+  epochTimeS: number;
   color?: string;
   deviceName?: string;
   runCount: number;
@@ -27,14 +28,21 @@ function StatRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-export default function DaySummaryCard({ summary }: { summary: DaySummary }) {
-  const [year, month, day] = summary.dayKey.split("-").map(Number);
-  const dateLabel = new Date(year, month - 1, day).toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+export default function SessionSummaryCard({
+  summary,
+}: {
+  summary: SessionSummary;
+}) {
+  const startTime = new Date(summary.epochTimeS * 1000).toLocaleString(
+    "en-US",
+    {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    },
+  );
 
   const runWord = summary.runCount === 1 ? "run" : "runs";
 
@@ -49,7 +57,7 @@ export default function DaySummaryCard({ summary }: { summary: DaySummary }) {
               aria-hidden
             />
           )}
-          <span className="text-sm font-medium">{dateLabel}</span>
+          <span className="text-sm font-medium">{startTime}</span>
         </CardTitle>
         {summary.deviceName && (
           <CardDescription>{summary.deviceName}</CardDescription>

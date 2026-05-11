@@ -1,6 +1,6 @@
 "use client";
 
-import DayDataSelector from "@/components/data-selector/day/day-data-selector";
+import SessionDataSelector from "@/components/data-selector/session/session-data-selector";
 import RunDataSelector from "@/components/data-selector/run/run-data-selector";
 import { Button } from "@/components/ui/button";
 import { type Device, type Run } from "@/lib/api";
@@ -13,15 +13,15 @@ export type RunSelectionRow = {
   run: Run | null;
 };
 
-export type DaySelectionRow = {
+export type SessionSelectionRow = {
   rowId: string;
   device: Device | null;
-  dayKey: string;
+  sessionKey: string;
 };
 
 export type Selection =
   | { kind: "run"; rows: RunSelectionRow[] }
-  | { kind: "day"; rows: DaySelectionRow[] };
+  | { kind: "session"; rows: SessionSelectionRow[] };
 
 export default function DataSelector({
   initialSelection,
@@ -30,8 +30,8 @@ export default function DataSelector({
   initialSelection?: Selection;
   onSelectionChanged?: (next: Selection) => void;
 }) {
-  const [viewMode, setViewMode] = useState<"run" | "day">(
-    initialSelection?.kind ?? "day",
+  const [viewMode, setViewMode] = useState<"run" | "session">(
+    initialSelection?.kind ?? "session",
   );
 
   const handleRunRowsChanged = useCallback(
@@ -39,8 +39,9 @@ export default function DataSelector({
     [onSelectionChanged],
   );
 
-  const handleDayRowsChanged = useCallback(
-    (rows: DaySelectionRow[]) => onSelectionChanged?.({ kind: "day", rows }),
+  const handleSessionRowsChanged = useCallback(
+    (rows: SessionSelectionRow[]) =>
+      onSelectionChanged?.({ kind: "session", rows }),
     [onSelectionChanged],
   );
 
@@ -48,16 +49,16 @@ export default function DataSelector({
     <div className="h-full flex flex-col gap-4">
       <div className="flex rounded-md border overflow-hidden">
         <Button
-          variant={viewMode === "day" ? "default" : "ghost"}
+          variant={viewMode === "session" ? "default" : "ghost"}
           className="flex-1 rounded-none"
           onClick={() => {
             posthog.capture("selection:view_mode_changed", {
-              view_mode: "day",
+              view_mode: "session",
             });
-            setViewMode("day");
+            setViewMode("session");
           }}
         >
-          By Day
+          By Session
         </Button>
         <Button
           variant={viewMode === "run" ? "default" : "ghost"}
@@ -81,11 +82,13 @@ export default function DataSelector({
           onRowsChanged={handleRunRowsChanged}
         />
       ) : (
-        <DayDataSelector
+        <SessionDataSelector
           initialRows={
-            initialSelection?.kind === "day" ? initialSelection.rows : undefined
+            initialSelection?.kind === "session"
+              ? initialSelection.rows
+              : undefined
           }
-          onRowsChanged={handleDayRowsChanged}
+          onRowsChanged={handleSessionRowsChanged}
         />
       )}
     </div>
