@@ -204,7 +204,7 @@ export default function SessionGpsVisualization({
       });
     }
     return result;
-  }, [sessions, filteredPointsByRun, speedMphSeries]);
+  }, [sessions, filteredPointsByRun, speedMphSeries, dwellMinsSeries]);
 
   if (firstError) {
     return (
