@@ -8,13 +8,13 @@ import { useDevices, useRuns } from "@/lib/api";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 
-type ParsedUrl = { kind: "run" | "session"; rows: string[] } | null;
-
 // Expected URL search params:
 //   ?view=run&rows=uuid1,uuid2,...
 //   ?view=session&rows=sessionKey1,sessionKey2,...
-// where sessionKey is the run UUID of the first run in the session.
-function parseUrl(searchParams: URLSearchParams): ParsedUrl {
+// For sessions, sessionKey is the run UUID of the first run in the session.
+function parseUrl(
+  searchParams: URLSearchParams,
+): { kind: "run" | "session"; rows: string[] } | null {
   const view = searchParams.get("view");
   const rawRows = searchParams.get("rows") ?? "";
 
@@ -43,7 +43,7 @@ export default function MainContent() {
     [],
   );
 
-  const runUuidsFromUrl = parsed?.kind === "run" ? parsed.rows : [];
+  const runUuidsFromUrl = parsed ? parsed.rows : [];
 
   const { data: devices = [], isSuccess: devicesLoaded } = useDevices();
   const { data: runsFromUrl = [], isSuccess: runsFromUrlLoaded } =
