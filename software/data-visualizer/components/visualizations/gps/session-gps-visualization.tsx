@@ -11,7 +11,6 @@ import {
   STREAM_ID_WIFI_RSSI,
   toDwellMinsSamples,
   toSpeedMphSamples,
-  type MapPoint,
 } from "@/components/visualizations/gps/gps-processing";
 import type { Track } from "@/components/visualizations/gps/map";
 import {
@@ -72,7 +71,8 @@ export default function SessionGpsVisualization({
     [allRuns, dataByUuid],
   );
 
-  // Create a Track for each DayGroup by concatenating all runs in the group
+  // Create one Track per run so runs within the same session are not connected.
+  // All runs within the same session share the same color.
   const tracks: Track[] = useMemo(() => {
     const result: Track[] = [];
     for (const session of sessions) {
@@ -80,32 +80,28 @@ export default function SessionGpsVisualization({
         continue;
       }
 
-      // When concatenating points from all runs, recalculate elapsedS to be relative
-      // to the epoch time of the earliest run in the group. Note that group.runs is
-      // already sorted by epochTimeS.
       const firstRunEpochS = session.runs[0].epochTimeS;
-      const allPoints: MapPoint[] = session.runs.flatMap((run) => {
+      for (const run of session.runs) {
         const timeOffset = run.epochTimeS - firstRunEpochS;
-        return (filteredPointsByRun[run.uuid] ?? []).map((p) => ({
+        const points = (filteredPointsByRun[run.uuid] ?? []).map((p) => ({
           ...p,
           elapsedS: p.elapsedS + timeOffset,
         }));
-      });
-      allPoints.sort((a, b) => a.elapsedS - b.elapsedS);
-
-      if (allPoints.length > 0) {
-        result.push({
-          id: `session-${session.sessionKey}`,
-          epochTimeS: firstRunEpochS,
-          points: allPoints,
-          color: session.color,
-        });
+        if (points.length > 0) {
+          result.push({
+            id: run.uuid,
+            epochTimeS: run.epochTimeS,
+            points,
+            color: session.color,
+          });
+        }
       }
     }
     return result;
   }, [sessions, filteredPointsByRun]);
 
-  // Calculate speed and dwell time time series for each session
+  // Create one TimeSeries per run so runs within the same session are not
+  // connected in the charts. All runs within the same session share the same color.
   const { speedMphSeries, dwellMinsSeries } = useMemo(() => {
     const speedMphSeries: TimeSeries[] = [];
     const dwellMinsSeries: TimeSeries[] = [];
@@ -117,9 +113,6 @@ export default function SessionGpsVisualization({
 
       const firstRunEpochS = session.runs[0].epochTimeS;
 
-      const sessionSpeeds: TimeSeries["samples"] = [];
-      const sessionDwell: TimeSeries["samples"] = [];
-
       for (const run of session.runs) {
         const points = filteredPointsByRun[run.uuid];
         if (!points || points.length === 0) {
@@ -128,27 +121,29 @@ export default function SessionGpsVisualization({
 
         const timeOffset = run.epochTimeS - firstRunEpochS;
 
-        for (const s of toSpeedMphSamples(points)) {
-          sessionSpeeds.push({ ...s, elapsedS: s.elapsedS + timeOffset });
+        const speeds = toSpeedMphSamples(points).map((s) => ({
+          ...s,
+          elapsedS: s.elapsedS + timeOffset,
+        }));
+        if (speeds.length > 0) {
+          speedMphSeries.push({
+            id: `speed-${session.sessionKey}-${run.uuid}`,
+            samples: speeds,
+            color: session.color,
+          });
         }
-        for (const s of toDwellMinsSamples(points, toSpeedMphSamples(points))) {
-          sessionDwell.push({ ...s, elapsedS: s.elapsedS + timeOffset });
-        }
-      }
 
-      if (sessionSpeeds.length > 0) {
-        speedMphSeries.push({
-          id: `speed-${session.sessionKey}`,
-          samples: sessionSpeeds,
-          color: session.color,
-        });
-      }
-      if (sessionDwell.length > 0) {
-        dwellMinsSeries.push({
-          id: `dwell-${session.sessionKey}`,
-          samples: sessionDwell,
-          color: session.color,
-        });
+        const dwells = toDwellMinsSamples(
+          points,
+          toSpeedMphSamples(points),
+        ).map((s) => ({ ...s, elapsedS: s.elapsedS + timeOffset }));
+        if (dwells.length > 0) {
+          dwellMinsSeries.push({
+            id: `dwell-${session.sessionKey}-${run.uuid}`,
+            samples: dwells,
+            color: session.color,
+          });
+        }
       }
     }
 
@@ -180,10 +175,9 @@ export default function SessionGpsVisualization({
         totalDurationS += run.durationS;
       }
 
-      const speedValues =
-        speedMphSeries
-          .find((s) => s.id === `speed-${session.sessionKey}`)
-          ?.samples.map((s) => s.value) ?? [];
+      const speedValues = speedMphSeries
+        .filter((s) => s.id.startsWith(`speed-${session.sessionKey}-`))
+        .flatMap((s) => s.samples.map((sample) => sample.value));
       const maxSpeedMph = speedValues.length > 0 ? Math.max(...speedValues) : 0;
       const avgSpeedMph =
         speedValues.length > 0

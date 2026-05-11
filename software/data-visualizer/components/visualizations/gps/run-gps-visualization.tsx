@@ -178,18 +178,22 @@ export default function RunGpsVisualization({
       }
 
       const speeds = toSpeedMphSamples(points);
-      speedMphSeries.push({
-        id: r.run.uuid,
-        samples: speeds,
-        color: r.color,
-      });
+      if (speeds.length > 0) {
+        speedMphSeries.push({
+          id: r.run.uuid,
+          samples: speeds,
+          color: r.color,
+        });
+      }
 
-      const dwell = toDwellMinsSamples(points, speeds);
-      dwellMinsSeries.push({
-        id: r.run.uuid,
-        samples: dwell,
-        color: r.color,
-      });
+      const dwells = toDwellMinsSamples(points, speeds);
+      if (dwells.length > 0) {
+        dwellMinsSeries.push({
+          id: r.run.uuid,
+          samples: dwells,
+          color: r.color,
+        });
+      }
     }
 
     return { speedMphSeries, dwellMinsSeries };
