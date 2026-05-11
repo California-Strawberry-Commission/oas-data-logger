@@ -158,9 +158,8 @@ export default function SessionGpsVisualization({
         continue;
       }
 
+      // Calculate total distance across runs in the session
       let totalDistanceMi = 0;
-      let totalDurationS = 0;
-
       for (const run of session.runs) {
         const points = filteredPointsByRun[run.uuid];
         if (!points || points.length === 0) {
@@ -172,9 +171,15 @@ export default function SessionGpsVisualization({
             distanceMeters(points[i - 1].position, points[i].position) /
             MILES_TO_METERS;
         }
-        totalDurationS += run.durationS;
       }
 
+      // Calculate total duration of the session
+      const firstRun = session.runs[0];
+      const lastRun = session.runs[session.runs.length - 1];
+      const totalDurationS =
+        lastRun.epochTimeS + lastRun.durationS - firstRun.epochTimeS;
+
+      // Calculate speed metrics
       const speedValues = speedMphSeries
         .filter((s) => s.id.startsWith(`speed-${session.sessionKey}-`))
         .flatMap((s) => s.samples.map((sample) => sample.value));
@@ -184,6 +189,7 @@ export default function SessionGpsVisualization({
           ? speedValues.reduce((a, b) => a + b, 0) / speedValues.length
           : 0;
 
+      // Calculate dwell metrics
       const dwellValues = dwellMinsSeries
         .filter((s) => s.id.startsWith(`dwell-${session.sessionKey}-`))
         .flatMap((s) => s.samples.map((sample) => sample.value));
