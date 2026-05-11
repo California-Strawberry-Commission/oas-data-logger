@@ -419,7 +419,6 @@ async function main() {
         }
 
         if (cleanLine.includes("PROV_FAIL")) {
-          console.error("FAILURE: Device rejected the secret.");
           reject(new Error("Device reported provisioning failure"));
         }
       });
