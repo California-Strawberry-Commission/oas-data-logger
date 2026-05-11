@@ -58,8 +58,7 @@ bool DeviceAuth::readSerialInput(char* input, size_t inputLen) {
 }
 
 bool DeviceAuth::isValidSecret(const char* secret, size_t secretLen) {
-  return newSecretLen == 64 &&
-         strspn(newSecret, "0123456789abcdefABCDEF") == 64;
+  return secretLen == 64 && strspn(secret, "0123456789abcdefABCDEF") == 64;
 }
 
 bool DeviceAuth::exportProvisionedSecret(const char* secretBuffer,
