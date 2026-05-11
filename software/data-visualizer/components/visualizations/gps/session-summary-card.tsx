@@ -14,9 +14,10 @@ export type SessionSummary = {
   deviceName?: string;
   runCount: number;
   totalDistanceMi: number;
+  totalDurationS: number;
   maxSpeedMph: number;
   avgSpeedMph: number;
-  totalDurationS: number;
+  maxDwellMins: number;
 };
 
 function StatRow({ label, value }: { label: string; value: string }) {
@@ -81,6 +82,10 @@ export default function SessionSummaryCard({
           <StatRow
             label="Avg speed"
             value={`${summary.avgSpeedMph.toFixed(1)} mph`}
+          />
+          <StatRow
+            label="Max dwell"
+            value={formatElapsed(summary.maxDwellMins * 60)}
           />
         </div>
       </CardContent>
