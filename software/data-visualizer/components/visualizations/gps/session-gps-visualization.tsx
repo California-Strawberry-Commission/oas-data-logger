@@ -201,6 +201,7 @@ export default function SessionGpsVisualization({
         epochTimeS: session.runs[0].epochTimeS,
         color: session.color,
         deviceName: session.device?.name ?? session.device?.id,
+        isActive: session.runs.some((r) => r.isActive),
         runCount: session.runs.length,
         totalDistanceMi,
         totalDurationS,
