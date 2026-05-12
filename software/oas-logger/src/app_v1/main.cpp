@@ -20,10 +20,11 @@ const int SERIAL_BAUD_RATE{115200};
 const int LOGGER_RUN_INTERVAL_S{0};  // <= 0 means disabled
 const dlf::components::UploaderComponent::RetentionMode LOGGER_RETENTION_MODE{
     dlf::components::UploaderComponent::RetentionMode::MARK};
-const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{0};  // <= 0 means disabled
+const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{60};  // <= 0 means disabled
 const int WIFI_RECONFIG_BUTTON_HOLD_TIME_MS{3000};
 const bool ENABLE_OTA_UPDATE{true};
 const bool ENABLE_CHUNKED_UPLOAD{true};
+const int WIFI_RECONNECT_INTERVAL_SECS{60};  // <= 0 means disabled
 
 // Testing overrides
 const bool WAIT_FOR_VALID_TIME{true};
@@ -127,6 +128,7 @@ unsigned long lastLoggerStartRunMillis{0};
 unsigned long lastLedToggleMillis{0};
 unsigned long lastGpsPrintMillis{0};
 bool ledToggleState = false;
+unsigned long lastWifiPollMillis{0};
 
 // GPS data structure with mutex protection
 struct GpsData {
@@ -293,8 +295,7 @@ void loop() {
 void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   switch (event) {
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-      //  This flag release allows handleWaitWifiState to exit
-      //  immediately
+      // This flag release allows handleWaitWifiState to exit immediately
       wifiConnecting = false;
       break;
     default:
@@ -582,9 +583,10 @@ void handleWaitTimeState() {
 }
 
 void handleRunningState() {
+  const unsigned long now{millis()};
+
   // GPS printing logic with enhanced diagnostics
   // Only print if GPS is still enabled (prevents printing during shutdown)
-  const unsigned long now{millis()};
   if (gpsEnabled && GPS_PRINT_INTERVAL_SECS > 0 &&
       now - lastGpsPrintMillis > GPS_PRINT_INTERVAL_SECS * 1000) {
     lastGpsPrintMillis = now;
@@ -603,6 +605,14 @@ void handleRunningState() {
   if (runHandle && LOGGER_RUN_INTERVAL_S > 0 &&
       now - lastLoggerStartRunMillis > LOGGER_RUN_INTERVAL_S * 1000) {
     startLoggerRun();
+  }
+
+  // Periodically attempt WiFi reconnect - only if WIFI_RECONNECT_INTERVAL_SECS
+  // > 0
+  if (WIFI_RECONNECT_INTERVAL_SECS > 0 &&
+      now - lastWifiPollMillis > WIFI_RECONNECT_INTERVAL_SECS * 1000) {
+    lastWifiPollMillis = now;
+    pollWiFiConnection();
   }
 }
 

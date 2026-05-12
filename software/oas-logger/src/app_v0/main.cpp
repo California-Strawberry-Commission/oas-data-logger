@@ -36,10 +36,11 @@ const unsigned long SERIAL_BAUD_RATE{115200};
 const int LOGGER_RUN_INTERVAL_S{0};  // <= 0 means disabled
 const dlf::components::UploaderComponent::RetentionMode LOGGER_RETENTION_MODE{
     dlf::components::UploaderComponent::RetentionMode::MARK};
-const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{0};  // <= 0 means disabled
+const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{60};  // <= 0 means disabled
 const int WIFI_RECONFIG_BUTTON_HOLD_TIME_MS{3000};
 const bool ENABLE_OTA_UPDATE{true};
 const bool ENABLE_CHUNKED_UPLOAD{true};
+const int WIFI_RECONNECT_INTERVAL_SECS{60};  // <= 0 means disabled
 
 // Testing overrides
 const bool WAIT_FOR_VALID_TIME{true};
@@ -73,10 +74,7 @@ const int NUM_LEDS{1};
 const uint8_t LED_BRIGHTNESS{10};
 
 // WiFi Configuration
-const int WIFI_RECONNECT_BACKOFF_MS{2000};
-const int WIFI_MAX_BACKOFF_MS{30000};
 static volatile bool wifiConnecting = false;
-static uint32_t wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;
 
 // Security and Provisioning
 char deviceUid[13]{0};     // Populated at boot
@@ -126,6 +124,7 @@ unsigned long lastWifiReconnectAttemptMillis{0};
 unsigned long lastLoggerStartRunMillis{0};
 unsigned long lastLedToggleMillis{0};
 unsigned long lastGpsPrintMillis{0};
+unsigned long lastWifiPollMillis{0};
 bool ledToggleState{false};
 // State machine
 SystemState currentState{SystemState::INIT};
@@ -423,6 +422,16 @@ bool getSavedSSID(char* out, size_t len) {
   return strlen(out) > 0;
 }
 
+// Fires a reconnect if no WiFi connection
+void pollWiFiConnection() {
+  if (WiFi.status() != WL_CONNECTED) {
+    EZLOG_INFO("[WiFi Poll] Connection lost. Reconnecting...");
+    WiFi.disconnect();
+    WiFi.reconnect();  // Avoids possible WiFi.begin() reinitialization,
+                       // resuses existing STA config in RAM
+  }
+}
+
 void handleWaitWifiState() {
   EZLOG_INFO("Initializing WiFi...");
 
@@ -464,38 +473,12 @@ void handleWaitWifiState() {
   }
 }
 
+// The actual reconnection is now handled by pollWiFiConnection()
 void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   switch (event) {
-    case ARDUINO_EVENT_WIFI_STA_START:
-      EZLOG_INFO("[WiFi] STA started");
-      break;
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-      // Note: only consider connection as successful when we got the IP, not on
-      // ARDUINO_EVENT_WIFI_STA_CONNECTED
-      EZLOG_INFO("[WiFi] Got IP");
+      // This flag release allows handleWaitWifiState to exit immediately
       wifiConnecting = false;
-      wifiReconnectBackoff = WIFI_RECONNECT_BACKOFF_MS;  // Reset backoff
-      break;
-    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-      EZLOG_INFO("[WiFi] Disconnected, reason: %d",
-                 info.wifi_sta_disconnected.reason);
-
-      if (info.wifi_sta_disconnected.reason == WIFI_REASON_AUTH_FAIL) {
-        // Annoyingly, sometimes a disconnect with AUTH_FAIL will fire on the
-        // first connection attempt even though credentials are valid. Just
-        // ignore this event for now. If invalid credentials are indeed stored
-        // on the device, then we'll eventually continue.
-      } else {
-        // For other disconnection reasons, use backoff and reconnect
-        vTaskDelay(pdMS_TO_TICKS(wifiReconnectBackoff));
-        wifiReconnectBackoff =
-            min<uint32_t>(wifiReconnectBackoff * 2, WIFI_MAX_BACKOFF_MS);
-
-        if (!wifiConnecting) {
-          WiFi.reconnect();
-          wifiConnecting = true;
-        }
-      }
       break;
     default:
       break;
@@ -584,9 +567,10 @@ void handleWaitTimeState() {
 }
 
 void handleRunningState() {
+  const unsigned long now{millis()};
+
   // GPS printing logic with enhanced diagnostics
   // Only print if GPS is still enabled (prevents printing during shutdown)
-  const unsigned long now{millis()};
   if (gpsEnabled && GPS_PRINT_INTERVAL_SECS > 0 &&
       now - lastGpsPrintMillis > GPS_PRINT_INTERVAL_SECS * 1000) {
     lastGpsPrintMillis = now;
@@ -605,14 +589,28 @@ void handleRunningState() {
       now - lastLoggerStartRunMillis > LOGGER_RUN_INTERVAL_S * 1000) {
     startLoggerRun();
   }
+
+  // Periodically attempt WiFi reconnect - only if WIFI_RECONNECT_INTERVAL_SECS
+  // > 0
+  if (WIFI_RECONNECT_INTERVAL_SECS > 0 &&
+      now - lastWifiPollMillis > WIFI_RECONNECT_INTERVAL_SECS * 1000) {
+    lastWifiPollMillis = now;
+    pollWiFiConnection();
+  }
 }
 
 void handleOffloadState() {
-  // Give logger sync/upload time to start
-  vTaskDelay(pdMS_TO_TICKS(100));
+  // Check for internet connection before offloading.
+  pollWiFiConnection();
+
+  vTaskDelay(
+      pdMS_TO_TICKS(15000));  // wait for 15 seconds to allow WiFi radio to
+                              // diminish power draw. Required for prevention of
+                              // brownout of SD card on USB power.
 
   logger.waitForSyncCompletion();
 
+  // After sync completion, either sleep or continue
   transitionToState(SystemState::SLEEP);
 }
 
