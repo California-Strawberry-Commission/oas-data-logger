@@ -12,6 +12,7 @@ export type SessionSummary = {
   epochTimeS: number;
   color?: string;
   deviceName?: string;
+  isActive?: boolean;
   runCount: number;
   totalDistanceMi: number;
   totalDurationS: number;
@@ -59,6 +60,11 @@ export default function SessionSummaryCard({
             />
           )}
           <span className="text-sm font-medium">{startTime}</span>
+          {summary.isActive && (
+            <span className="ml-2 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-200">
+              Live
+            </span>
+          )}
         </CardTitle>
         {summary.deviceName && (
           <CardDescription>{summary.deviceName}</CardDescription>
