@@ -80,10 +80,11 @@ export default function SessionSelector({
       (a, b) => sessionMap.get(b)!.epochTimeS - sessionMap.get(a)!.epochTimeS,
     );
     return sortedKeys.map((key) => {
-      const { epochTimeS, durationS, runCount } = sessionMap.get(key)!;
+      const { epochTimeS, durationS, runCount, isActive } =
+        sessionMap.get(key)!;
       return {
         value: key,
-        label: getSessionLabel(epochTimeS, durationS, runCount),
+        label: getSessionLabel(epochTimeS, durationS, runCount, isActive),
       };
     });
   }, [deviceId, isLoading, error, runs]);
