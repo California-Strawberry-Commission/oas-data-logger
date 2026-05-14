@@ -170,7 +170,7 @@ char deviceUid[13]{0};     // Populated at boot
 char deviceSecret[65]{0};  // Populated from NVS at boot
 
 // Backend endpoints
-const char* UPLOAD_ENDPOINT{"http://192.168.1.129:3000/api/upload/%s"};
+const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
 const char* OTA_MANIFEST_ENDPOINT{
     "https://oas-data-logger.vercel.app/api/ota/manifest/%s/%s"};
 const char* OTA_FIRMWARE_ENDPOINT{
@@ -781,9 +781,8 @@ void enableGps() {
 
   EZLOG_INFO("Enabling GPS...");
 
-  vTaskDelay(pdMS_TO_TICKS(1000));  // GPS needs time to boot
-
   // Bind UART to the selected pins
+
   GPS_SERIAL.end();
   GPS_SERIAL.begin(38400, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
   bool connected = myGNSS.begin(GPS_SERIAL);
