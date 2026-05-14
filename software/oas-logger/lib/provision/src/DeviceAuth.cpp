@@ -66,7 +66,7 @@ bool DeviceAuth::exportProvisionedSecret(const char* secretBuffer,
   Serial.println("[Auth] Listening for PROV_GET");
   unsigned long start = millis();
 
-  while (millis() - start < 5000) {
+  while (millis() - start < 100) {
     char input[32];
     if (readSerialInput(input, sizeof(input))) {
       if (strcmp(input, "PROV_GET") == 0) {
@@ -116,11 +116,11 @@ bool DeviceAuth::loadSecretOrProvision(char* secretBuffer,
 bool DeviceAuth::loadSecret(char* secretBuffer, size_t secretBufferLen) {
   Preferences preferences;
   preferences.begin(PREF_NAMESPACE, true);  // Read-only
-  size_t len =
-      preferences.getString(PREF_KEY_SECRET, secretBuffer, secretBufferLen);
+  preferences.getString(PREF_KEY_SECRET, secretBuffer, secretBufferLen);
   preferences.end();
 
-  return len > 0;
+  size_t secretLen = strnlen(secretBuffer, secretBufferLen);
+  return isValidSecret(secretBuffer, secretLen);
 }
 
 void DeviceAuth::saveSecret(const char* secret) {
