@@ -221,6 +221,12 @@ async function readProvisionedDeviceCredentials(
 
           if (cleanLine.startsWith("DEVICE_ID:")) {
             deviceId = cleanLine.split(":")[1]?.trim();
+            port.write("PROV_GET\n", (err) => {
+              if (err) {
+                reject(err);
+                return;
+              }
+            });
           }
 
           if (cleanLine.startsWith("PROV_SECRET:")) {
@@ -262,23 +268,7 @@ async function readProvisionedDeviceCredentials(
         // This prevents further driver issues, although on Ubuntu 22.04 and SerialPort 13.0.0 including dtr flag is safe.
         port.set({ rts: true });
         setTimeout(() => {
-          port.set({ rts: false }, (err) => {
-            port.write("PROV_GET\n", (err) => {
-              if (err) {
-                reject(err);
-                return;
-              }
-            });
-
-            requestInterval = setInterval(() => {
-              port.write("PROV_GET\n", (err) => {
-                if (err) {
-                  reject(err);
-                  return;
-                }
-              });
-            }, 500);
-          });
+          port.set({ rts: false }, (err) => {});
         }, 100);
       },
     );

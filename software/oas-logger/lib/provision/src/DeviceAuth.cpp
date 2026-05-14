@@ -63,6 +63,7 @@ bool DeviceAuth::isValidSecret(const char* secret, size_t secretLen) {
 
 bool DeviceAuth::exportProvisionedSecret(const char* secretBuffer,
                                          size_t secretBufferLen) {
+  Serial.printf("DEVICE_ID:%s\n", deviceId_);
   Serial.println("[Auth] Listening for PROV_GET");
   unsigned long start = millis();
 
@@ -77,7 +78,6 @@ bool DeviceAuth::exportProvisionedSecret(const char* secretBuffer,
           return false;
         }
 
-        Serial.printf("DEVICE_ID:%s\n", deviceId_);
         Serial.printf("PROV_SECRET:%s\n", secretBuffer);
         return true;
       }
