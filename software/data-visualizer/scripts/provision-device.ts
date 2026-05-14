@@ -14,43 +14,48 @@ import { encryptSecret } from "@/lib/crypto";
  * MODES:
  * 1. Interactive (Default): Connects via Serial (USB), waits for the device to announce
  * its ID, generates a secret, saves it to the DB, and flashes it to the device.
- * 2. Manual (--db-only): Manually inserts a known device ID and secret into the database
- * without requiring a physical device connection.
+ * 2. DB Upsert (--db-only): Connects via Serial (USB) to an already provisioned device,
+ * requests its existing ID and secret from NVS, verifies ID against passed --id value,
+ * upserts the existing secret into the passed --env(s).
  *
  * CLI ARGUMENTS:
- * @param {string} [port]   - The serial port path (e.g. /dev/ttyUSB0). Required for interactive mode.
- * @param {string} --env    - The environment config to load (local, preview, prod). Defaults to 'local'.
- * @param {flag}   --db-only - If present, skips serial connection and performs a direct DB update.
- * @param {string} --id     - The Device ID (Required for --db-only mode).
- * @param {string} --secret - The 32-byte Hex Secret (Required for --db-only mode).
+ * @param {string} [port]   - The serial port path (e.g. /dev/ttyACM0). Required for both modes.
+ * @param {string[]} --env    - The environment configs to load (local, preview, prod). Defaults to ['local'].
+ * @param {flag}   --db-only - If present, pulls existing secret from device, performs a direct DB update.
+ * @param {string} --id     - Expected device ID (Required for --db-only mode).
  *
  * USAGE EXAMPLES:
- * npm run provision-device -- /dev/ttyUSB0 --env=local
- * npm run provision-device -- --db-only --id=device_123 --secret=abc...123 --env=prod
+ * Interactive Provisioning:
+ * npm run provision-device -- /dev/ttyACM0
+ * npm run provision-device -- /dev/ttyACM0 --env=local
+ * npm run provision-device -- /dev/ttyACM0 --env=local --env=preview --env=prod
+ *
+ * DB-only
+ * npm run provision-device -- /dev/ttyACM0 --db-only --id=device_123 --env=prod
+ * npm run provision-device -- /dev/ttyACM0 --db-only --id=device_123 --env=preview --env=prod
  */
 
 //#region Types
 
 type EnvName = "local" | "preview" | "prod";
 
+type DeviceCredentials = {
+  deviceId: string;
+  secret: string;
+};
+
 //#endregion
 
 //#region CLI Args
 
 const {
-  values: {
-    env: envRaw,
-    "db-only": dbOnly,
-    id: manualId,
-    secret: manualSecret,
-  },
+  values: { env: envRaw, "db-only": dbOnly, id: expectedDeviceId },
   positionals,
 } = parseArgs({
   options: {
-    env: { type: "string", default: "local" },
+    env: { type: "string", multiple: true, default: ["local"] },
     "db-only": { type: "boolean", default: false },
     id: { type: "string" },
-    secret: { type: "string" },
   },
   allowPositionals: true, // Allows for serialport to be captured
 });
@@ -62,17 +67,21 @@ function isEnvName(x: string): x is EnvName {
   return x === "local" || x === "preview" || x === "prod";
 }
 
-if (!isEnvName(envRaw)) {
-  console.error(
-    `Error: --env must be one of local|preview|prod (got: ${envRaw})`,
-  );
-  process.exit(1);
+const parsedEnvs = envRaw as string[];
+
+for (const env of parsedEnvs) {
+  if (!isEnvName(env)) {
+    console.error(
+      `Error: --env must be one of local|preview|prod (got: ${env})`,
+    );
+    process.exit(1);
+  }
 }
-const env: EnvName = envRaw;
+
+const targetEnvs: EnvName[] = parsedEnvs as EnvName[];
 
 //#endregion
 
-let isProvisioning = false;
 const BAUD_RATE = 115200;
 
 function createPrismaClient(databaseUrl: string): PrismaClient {
@@ -124,8 +133,12 @@ async function closeSerialPort(port: SerialPort) {
   });
 }
 
+function isValidSecret(secret: string): boolean {
+  return /^[0-9a-fA-F]{64}$/.test(secret);
+}
+
 function generateSecret(): string {
-  return nodeCrypto.randomBytes(32).toString("hex"); // 32 hex chars
+  return nodeCrypto.randomBytes(32).toString("hex"); // 64 hex chars
 }
 
 async function registerDeviceInDB(
@@ -158,34 +171,261 @@ async function registerDeviceInDB(
   console.log("[DB] Update successful.");
 }
 
-async function main() {
-  // Resolve .env file relative to this script file
+async function registerDeviceInEnvs(
+  envs: EnvName[],
+  deviceId: string,
+  rawSecret: string,
+) {
   const scriptDirname = path.dirname(fileURLToPath(import.meta.url));
-  dotenv({
-    path: path.resolve(scriptDirname, `../.env.${env}`),
+
+  for (const env of envs) {
+    dotenv({
+      path: path.resolve(scriptDirname, `../.env.${env}`),
+      override: true,
+    });
+
+    const databaseUrl = requireEnv("DATABASE_URL");
+    const prisma = createPrismaClient(databaseUrl);
+
+    try {
+      console.log(`[DB:${env}] Registering device ${deviceId}...`);
+      await registerDeviceInDB(prisma, deviceId, rawSecret);
+    } finally {
+      await prisma.$disconnect();
+    }
+  }
+}
+
+async function readProvisionedDeviceCredentials(
+  portPath: string,
+): Promise<DeviceCredentials> {
+  const port = new SerialPort({
+    path: portPath,
+    baudRate: BAUD_RATE,
+    autoOpen: false,
   });
 
-  const databaseUrl = requireEnv("DATABASE_URL");
+  const parser = port.pipe(new ReadlineParser({ delimiter: "\n" }));
 
-  const prisma = createPrismaClient(databaseUrl);
+  let deviceId: string | undefined;
+  let secret: string | undefined;
+  let requestInterval: NodeJS.Timeout | undefined;
 
-  let parser: ReadlineParser | undefined;
-  let port: SerialPort | undefined;
+  try {
+    await openSerialPort(port);
+
+    const credentialsTask = new Promise<DeviceCredentials>(
+      (resolve, reject) => {
+        parser.on("data", (line) => {
+          const cleanLine = line.toString().trim();
+
+          if (cleanLine.startsWith("DEVICE_ID:")) {
+            deviceId = cleanLine.split(":")[1]?.trim();
+            port.write("PROV_GET\n", (err) => {
+              if (err) {
+                reject(err);
+                return;
+              }
+            });
+          }
+
+          if (cleanLine.startsWith("PROV_SECRET:")) {
+            secret = cleanLine.split(":")[1]?.trim();
+          }
+
+          if (cleanLine.startsWith("PROV_FAIL:")) {
+            reject(new Error("Device reported provisioning failure"));
+            return;
+          }
+
+          if (deviceId && secret) {
+            if (!isValidSecret(secret)) {
+              reject(
+                new Error(
+                  "Invalid secret format. Must be a 32-byte hex string (64 chars).",
+                ),
+              );
+              return;
+            }
+            resolve({ deviceId, secret });
+            return;
+          }
+        });
+
+        // This matches esptool.py behavior of ignoring issues raised by Linux for using set() over native USB
+        // This is required to use port.set() over ACM (native USB, which currently PCB only supports)
+
+        port.on("error", (err) => {
+          if (err.message.includes("Operation not supported, cannot set")) {
+            console.warn("Ignored Linux ACM warning.");
+          } else {
+            // Still notify for non ACM warning for call to set
+            console.error("Serial port error:", err.message);
+          }
+        });
+
+        // It is safer to omit dtr flag and let hardware keep pin at state it is (high for normal boot)
+        // This prevents further driver issues, although on Ubuntu 22.04 and SerialPort 13.0.0 including dtr flag is safe.
+        port.set({ rts: true });
+        setTimeout(() => {
+          port.set({ rts: false }, (err) => {});
+        }, 100);
+      },
+    );
+
+    return await withTimeout(
+      credentialsTask,
+      7000,
+      "Timeout: Device did not return provisioned credentials.",
+    );
+  } finally {
+    if (requestInterval) {
+      clearInterval(requestInterval);
+    }
+
+    parser.removeAllListeners("data");
+    port.removeAllListeners();
+
+    if (port.isOpen) {
+      await closeSerialPort(port);
+    }
+  }
+}
+
+async function firstTimeProvision(
+  portPath: string,
+  targetEnvs: EnvName[],
+): Promise<void> {
+  const port = new SerialPort({
+    path: portPath,
+    baudRate: BAUD_RATE,
+    autoOpen: false,
+  });
+
+  const parser = port.pipe(new ReadlineParser({ delimiter: "\n" }));
+
+  try {
+    await openSerialPort(port);
+    console.log("Port open. Waiting for 'DEVICE_ID:'...");
+
+    const provisioningTask = new Promise<void>((resolve, reject) => {
+      let isProvisioning = false;
+
+      parser.on("data", async (line) => {
+        const cleanLine = line.toString().trim();
+
+        if (cleanLine.startsWith("DEVICE_ID:")) {
+          if (isProvisioning) {
+            return;
+          }
+          isProvisioning = true;
+
+          const deviceId = cleanLine.split(":")[1].trim();
+          if (!deviceId) {
+            reject(new Error("Malformed DEVICE_ID line"));
+            return;
+          }
+          console.log(`\nDetected Device ID: ${deviceId}`);
+
+          const secret = generateSecret();
+          console.log(`Generated Secret: ${secret}`);
+
+          try {
+            await registerDeviceInEnvs(targetEnvs, deviceId, secret);
+
+            console.log("Pushing secret to device...");
+            await sleep(500); // Needed to allow hardware to catch up
+
+            if (!port) {
+              reject(new Error("Serial port not initialized"));
+              return;
+            }
+            port.write(`PROV_SET:${secret}\n`, (err) => {
+              if (err) {
+                reject(err);
+                return;
+              }
+            });
+          } catch (err) {
+            reject(err);
+            return;
+          }
+        }
+
+        if (cleanLine.includes("PROV_SUCCESS")) {
+          console.log("SUCCESS: Device accepted the secret.");
+          resolve();
+          return;
+        }
+
+        if (cleanLine.includes("PROV_FAIL")) {
+          reject(new Error("Device reported provisioning failure"));
+          return;
+        }
+      });
+    });
+
+    await withTimeout(
+      provisioningTask,
+      20000,
+      "Timeout: Device did not respond in 20s.",
+    );
+  } finally {
+    // cleanup, but let main handle error catch
+    parser.removeAllListeners("data");
+    port.removeAllListeners();
+
+    if (port.isOpen) {
+      await closeSerialPort(port);
+    }
+  }
+}
+
+function printUsage() {
+  console.error(
+    "\nUsage:\n" +
+      "  npm run provision-device -- /dev/ttyXXX [--env=local] [--env=preview] [--env=prod]\n" +
+      "  npm run provision-device -- /dev/ttyXX --db-only --id=<deviceId> [--env=local] [--env=preview] [--env=prod]\n\n" +
+      "Notes:\n" +
+      "  --env may be repeated. Allowed values: local, preview, prod. Defaults to local.\n" +
+      "  Repeating --env writes the same device secret to each selected database environment.\n\n" +
+      "Examples:\n" +
+      "  npm run provision-device -- /dev/ttyACM0\n" +
+      "  npm run provision-device -- /dev/ttyACM0 --env=local\n" +
+      "  npm run provision-device -- /dev/ttyACM0 --env=local --env=preview --env=prod\n" +
+      "  npm run provision-device -- /dev/ttyACM0 --db-only --id=device_123 --env=prod\n" +
+      "  npm run provision-device -- /dev/ttyACM0 --db-only --id=device_123 --env=preview --env=prod\n",
+  );
+}
+
+async function main() {
   try {
     if (dbOnly) {
-      if (!manualId || !manualSecret) {
-        throw new Error("Missing --id or --secret for --db-only mode.");
+      if (!expectedDeviceId) {
+        throw new Error("Missing --id for --db-only mode.");
       }
 
-      const hex64Regex = /^[0-9a-fA-F]{64}$/;
-      if (!hex64Regex.test(manualSecret)) {
+      if (!portPath) {
+        throw new Error("Missing serial port for --db-only mode.");
+      }
+
+      console.log(
+        `[Mode] DB Upsert from Provisioned Device (${targetEnvs.join(", ")})`,
+      );
+
+      const credentials = await readProvisionedDeviceCredentials(portPath);
+
+      if (expectedDeviceId !== credentials.deviceId) {
         throw new Error(
-          "Invalid secret format. Must be a 32-byte hex string (64 chars).",
+          `Device ID mismatch. Provided ${expectedDeviceId}, but device gave ${credentials.deviceId}.`,
         );
       }
 
-      console.log(`[Mode] Manual DB Update (${env})`);
-      await registerDeviceInDB(prisma, manualId, manualSecret);
+      await registerDeviceInEnvs(
+        targetEnvs,
+        credentials.deviceId,
+        credentials.secret,
+      );
       return;
     }
 
@@ -214,111 +454,18 @@ async function main() {
         }
       }
 
-      console.error(
-        "\nUsage:\n" +
-          "  npx tsx scripts/provision-device.js /dev/ttyXXX --env=local\n",
-      );
+      printUsage();
 
       process.exitCode = 1;
       return;
     }
-
     console.log(`[Mode] Interactive Serial Provisioning on ${portPath}`);
-    port = new SerialPort({
-      path: portPath,
-      baudRate: BAUD_RATE,
-      autoOpen: false,
-    });
-    parser = port.pipe(new ReadlineParser({ delimiter: "\n" }));
-
-    await openSerialPort(port);
-    console.log("Port open. Waiting for 'DEVICE_ID:'...");
-
-    const provisioningTask = new Promise<void>((resolve, reject) => {
-      if (!parser || !port) {
-        reject(new Error("Serial parser/port not initialized"));
-        return;
-      }
-
-      parser.on("data", async (line) => {
-        const cleanLine = line.toString().trim();
-
-        if (cleanLine.startsWith("DEVICE_ID:")) {
-          if (isProvisioning) {
-            return;
-          }
-          isProvisioning = true;
-
-          const deviceId = cleanLine.split(":")[1].trim();
-          if (!deviceId) {
-            reject(new Error("Malformed DEVICE_ID line"));
-            return;
-          }
-          console.log(`\nDetected Device ID: ${deviceId}`);
-
-          const secret = generateSecret();
-          console.log(`Generated Secret: ${secret}`);
-
-          try {
-            await registerDeviceInDB(prisma, deviceId, secret);
-
-            console.log("Pushing secret to device...");
-            await sleep(500); // Needed to allow hardware to catch up
-
-            if (!port) {
-              reject(new Error("Serial port not initialized"));
-              return;
-            }
-            port.write(`PROV_SET:${secret}\n`, (err) => {
-              if (err) {
-                console.error("Write error:", err);
-              }
-            });
-          } catch (err) {
-            reject(err);
-          }
-        }
-
-        if (cleanLine.includes("PROV_SUCCESS")) {
-          console.log("SUCCESS: Device accepted the secret.");
-          resolve();
-        }
-
-        if (cleanLine.includes("PROV_FAIL")) {
-          console.error("FAILURE: Device rejected the secret.");
-          reject(new Error("Device reported provisioning failure"));
-        }
-      });
-    });
-
-    await withTimeout(
-      provisioningTask,
-      20000,
-      "Timeout: Device did not respond in 20s.",
-    );
-    await closeSerialPort(port);
-  } catch (err: any) {
+    await firstTimeProvision(portPath, targetEnvs);
+  } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("\n[Error]", msg);
+    console.error("[ERROR]", msg);
     process.exitCode = 1;
-  } finally {
-    if (parser) {
-      parser.removeAllListeners("data");
-    }
-
-    if (port) {
-      port.removeAllListeners();
-      if (port.isOpen) {
-        await closeSerialPort(port);
-      }
-    }
-
-    await prisma.$disconnect();
   }
 }
 
-main().catch((err) => {
-  const msg = err instanceof Error ? err.message : String(err);
-  console.error("[ERROR]", msg);
-  process.exit(1);
-});
+main();
