@@ -60,13 +60,17 @@ void LogFile::taskFlusher(void* arg) {
           self->file_.flush();
           self->file_.close();
 
-          // Reopen in append mode
-          self->file_ = self->fs_.open(self->filename_, "a");
+          // Reopen file in read/write mode to update the header
+          // IMPORTANT: we use "r+" (read/write) mode instead of "a" (append)
+          // here because any write in append mode will always go to end of file
+          // regardless of any seeks.
+          self->file_ = self->fs_.open(self->filename_, "r+");
           if (!self->file_) {
             DLFLIB_LOG_ERROR(
                 "[LogFile][taskFlusher] ERROR: Could not reopen file after "
                 "sync!");
           } else {
+            self->file_.seek(0, SeekEnd);
             DLFLIB_LOG_INFO(
                 "[LogFile][taskFlusher] %s: SD sync complete, file reopened",
                 self->filename_);
@@ -131,7 +135,6 @@ void LogFile::taskFlusher(void* arg) {
     self->file_.flush();
     self->file_.close();
 
-    // Reopen in read-write mode (not append) so closeFile can use it
     self->file_ = self->fs_.open(self->filename_, "r+");
     if (self->file_) {
       // Seek to end so we know where data ends
@@ -141,8 +144,6 @@ void LogFile::taskFlusher(void* arg) {
           "[LogFile][taskFlusher] Final SD sync complete. Actual file size: "
           "%zu bytes",
           actualFileSize);
-
-      // Close it - closeFile will reopen for header update
       self->file_.close();
     } else {
       DLFLIB_LOG_ERROR(
@@ -314,7 +315,10 @@ void LogFile::closeFile() {
     checkFile.close();
   }
 
-  // Reopen in read/write mode to update header
+  // Reopen file in read/write mode to update the header
+  // IMPORTANT: we use "r+" (read/write) mode instead of "a" (append)
+  // here because any write in append mode will always go to end of file
+  // regardless of any seeks.
   file_ = fs_.open(filename_, "r+");
   if (!file_) {
     DLFLIB_LOG_ERROR(
