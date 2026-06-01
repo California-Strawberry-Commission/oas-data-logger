@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <ESP32Time.h>
-#include <FastLED.h>
 #include <SD_MMC.h>
 #include <SparkFun_u-blox_GNSS_v3.h>
 #include <WiFi.h>
@@ -14,10 +13,6 @@
 #include "certs/certs.h"
 #include "memory_monitor/memory_monitor.h"
 #include "ota_updater/ota_updater.h"
-
-// Preprocessor Directives for LED
-
-#ifdef LED_REV2
 
 // Rev 2 passive common - anode RGB LED
 const gpio_num_t PIN_LED_R{GPIO_NUM_40};
@@ -72,6 +67,14 @@ static void ledcDetachAll() {
 }
 
 static void setLedColor(LedColor color) {
+  static LedColor lastColor = {0, 0, 0};
+
+  if (color.r == lastColor.r && color.g == lastColor.g &&
+      color.b == lastColor.b) {
+    return;
+  }
+  lastColor = color;
+
   if (color.r == 0 && color.g == 0 && color.b == 0) {
     ledcDetachAll();
 
@@ -92,34 +95,12 @@ static void setLedColor(LedColor color) {
   const uint16_t g = static_cast<uint16_t>(color.g) * LED_MAX_DUTY / 255;
   const uint16_t b = static_cast<uint16_t>(color.b) * LED_MAX_DUTY / 255;
 
-  // Invert for common anode: LOW lights the channel.
+  // 8-bit common anode LED, 256 = 0 in 8 bit which is off, 255 is full
+  // brightness.
   ledcWrite(LEDC_CH_R, 256 - r);
   ledcWrite(LEDC_CH_G, 256 - g);
   ledcWrite(LEDC_CH_B, 256 - b);
 }
-
-#else
-
-// Original WS2812 LED
-#define LED_PIN PIN_NEOPIXEL
-#define LED_TYPE WS2812
-#define LED_COLOR_ORDER GRB
-
-const int NUM_LEDS{1};
-const uint8_t LED_BRIGHTNESS{10};
-CRGB leds[NUM_LEDS];
-
-constexpr CRGB LED_OFF{CRGB::Black};
-constexpr CRGB LED_WHITE{CRGB::White};
-constexpr CRGB LED_RED{CRGB::Red};
-constexpr CRGB LED_GREEN{CRGB::Green};
-constexpr CRGB LED_BLUE{CRGB::Blue};
-constexpr CRGB LED_YELLOW{CRGB::Yellow};
-constexpr CRGB LED_ORANGE{CRGB::Orange};
-
-static void setLedColor(CRGB color) { FastLED.showColor(color); }
-
-#endif
 
 // Configuration
 const int SERIAL_BAUD_RATE{115200};
@@ -397,15 +378,7 @@ void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   }
 }
 
-void initializeLed() {
-#ifdef LED_REV2
-  setLedColor(LED_WHITE);
-#else
-  FastLED.addLeds<LED_TYPE, LED_PIN, LED_COLOR_ORDER>(leds, NUM_LEDS);
-  FastLED.setBrightness(LED_BRIGHTNESS);
-  setLedColor(LED_WHITE);
-#endif
-}
+void initializeLed() { setLedColor(LED_WHITE); }
 
 void provisionDevice() {
   // Set device UID
