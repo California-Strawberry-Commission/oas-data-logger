@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <ESP32Time.h>
-#include <FastLED.h>
 #include <SD_MMC.h>
 #include <SparkFun_u-blox_GNSS_v3.h>
 #include <WiFi.h>
@@ -14,6 +13,94 @@
 #include "certs/certs.h"
 #include "memory_monitor/memory_monitor.h"
 #include "ota_updater/ota_updater.h"
+
+// Rev 2 passive common - anode RGB LED
+const gpio_num_t PIN_LED_R{GPIO_NUM_40};
+const gpio_num_t PIN_LED_G{GPIO_NUM_38};
+const gpio_num_t PIN_LED_B{GPIO_NUM_39};
+
+constexpr int LEDC_CH_R{0};
+constexpr int LEDC_CH_G{1};
+constexpr int LEDC_CH_B{2};
+constexpr int LEDC_FREQ{5000};
+constexpr int LEDC_RES{8};
+constexpr uint8_t LED_MAX_DUTY{20};
+
+struct LedColor {
+  uint8_t r;
+  uint8_t g;
+  uint8_t b;
+};
+
+constexpr LedColor LED_OFF{0, 0, 0};
+constexpr LedColor LED_WHITE{255, 255, 255};
+constexpr LedColor LED_RED{255, 0, 0};
+constexpr LedColor LED_GREEN{0, 255, 0};
+constexpr LedColor LED_BLUE{0, 0, 255};
+constexpr LedColor LED_YELLOW{255, 255, 0};
+constexpr LedColor LED_ORANGE{255, 80, 0};
+
+static bool ledcAttached{false};
+
+static void ledcAttachAll() {
+  if (ledcAttached) return;
+
+  ledcSetup(LEDC_CH_R, LEDC_FREQ, LEDC_RES);
+  ledcSetup(LEDC_CH_G, LEDC_FREQ, LEDC_RES);
+  ledcSetup(LEDC_CH_B, LEDC_FREQ, LEDC_RES);
+
+  ledcAttachPin(PIN_LED_R, LEDC_CH_R);
+  ledcAttachPin(PIN_LED_G, LEDC_CH_G);
+  ledcAttachPin(PIN_LED_B, LEDC_CH_B);
+
+  ledcAttached = true;
+}
+
+static void ledcDetachAll() {
+  if (!ledcAttached) return;
+
+  ledcDetachPin(PIN_LED_R);
+  ledcDetachPin(PIN_LED_G);
+  ledcDetachPin(PIN_LED_B);
+
+  ledcAttached = false;
+}
+
+static void setLedColor(LedColor color) {
+  static LedColor lastColor = {0, 0, 0};
+
+  if (color.r == lastColor.r && color.g == lastColor.g &&
+      color.b == lastColor.b) {
+    return;
+  }
+  lastColor = color;
+
+  if (color.r == 0 && color.g == 0 && color.b == 0) {
+    ledcDetachAll();
+
+    pinMode(PIN_LED_R, OUTPUT);
+    pinMode(PIN_LED_G, OUTPUT);
+    pinMode(PIN_LED_B, OUTPUT);
+
+    digitalWrite(PIN_LED_R, HIGH);
+    digitalWrite(PIN_LED_G, HIGH);
+    digitalWrite(PIN_LED_B, HIGH);
+
+    return;
+  }
+
+  ledcAttachAll();
+
+  const uint16_t r = static_cast<uint16_t>(color.r) * LED_MAX_DUTY / 255;
+  const uint16_t g = static_cast<uint16_t>(color.g) * LED_MAX_DUTY / 255;
+  const uint16_t b = static_cast<uint16_t>(color.b) * LED_MAX_DUTY / 255;
+
+  // 8-bit common anode LED, 256 = 0 in 8 bit which is off, 255 is full
+  // brightness.
+  ledcWrite(LEDC_CH_R, 256 - r);
+  ledcWrite(LEDC_CH_G, 256 - g);
+  ledcWrite(LEDC_CH_B, 256 - b);
+}
 
 // Configuration
 const int SERIAL_BAUD_RATE{115200};
@@ -35,31 +122,22 @@ const int GPS_PRINT_INTERVAL_SECS{0};         // <= 0 means disabled
 const int PRINT_HEAP_USAGE_INTERVAL_SECS{0};  // <= 0 means disabled
 
 // Pin Definitions
-const gpio_num_t PIN_USB_POWER{GPIO_NUM_13};
+const gpio_num_t PIN_USB_POWER{GPIO_NUM_34};
 const gpio_num_t PIN_SLEEP_BUTTON{GPIO_NUM_0};
-const gpio_num_t PIN_SD_CLK{GPIO_NUM_45};  // Clock
-const gpio_num_t PIN_SD_CMD{GPIO_NUM_40};  // Command
-const gpio_num_t PIN_SD_D0{GPIO_NUM_39};   // Data 0
-const gpio_num_t PIN_SD_D1{GPIO_NUM_38};   // Data 1 (for 4-bit mode)
-const gpio_num_t PIN_SD_D2{GPIO_NUM_41};   // Data 2 (for 4-bit mode)
-const gpio_num_t PIN_SD_D3{GPIO_NUM_42};   // Data 3 (for 4-bit mode)
+const gpio_num_t PIN_SD_CLK{GPIO_NUM_4};  // Clock
+const gpio_num_t PIN_SD_CMD{GPIO_NUM_5};  // Command
+const gpio_num_t PIN_SD_D0{GPIO_NUM_2};   // Data 0
+const gpio_num_t PIN_SD_D1{GPIO_NUM_1};   // Data 1 (for 4-bit mode)
+const gpio_num_t PIN_SD_D2{GPIO_NUM_7};   // Data 2 (for 4-bit mode)
+const gpio_num_t PIN_SD_D3{GPIO_NUM_6};   // Data 3 (for 4-bit mode)
 
 // GPS Power and Control Pins (TESTED AND WORKING)
 const gpio_num_t PIN_GPS_ENABLE{
-    GPIO_NUM_3};  // Power enable for GPS module (same as SD card enable)
-const gpio_num_t PIN_GPS_WAKE{
-    GPIO_NUM_5};  // Wake signal for SAM-M10Q (set HIGH)
+    GPIO_NUM_18};  // Power enable for GPS module (same as SD card enable)
 
 // GPS UART Pins (TESTED AND WORKING - RX/TX swapped from schematic)
-const gpio_num_t PIN_GPS_TX{GPIO_NUM_36};  // ESP TX -> GPS RX (swapped)
-const gpio_num_t PIN_GPS_RX{GPIO_NUM_37};  // ESP RX <- GPS TX (swapped)
-
-// LED Configuration
-#define LED_PIN PIN_NEOPIXEL
-#define LED_TYPE WS2812
-#define LED_COLOR_ORDER GRB
-const int NUM_LEDS{1};
-const uint8_t LED_BRIGHTNESS{10};
+const gpio_num_t PIN_GPS_TX{GPIO_NUM_42};  // ESP TX -> GPS RX (swapped)
+const gpio_num_t PIN_GPS_RX{GPIO_NUM_41};  // ESP RX <- GPS TX (swapped)
 
 // GPS Configuration
 const uint32_t GPS_UPDATE_RATE_MS{100};  // 10Hz update rate
@@ -103,7 +181,6 @@ enum class ErrorType {
 };
 
 // Global Objects
-CRGB leds[NUM_LEDS];
 SFE_UBLOX_GNSS_SERIAL myGNSS;  // u-blox GNSS object
 ESP32Time rtc;
 WiFiManager wifiManager;
@@ -207,10 +284,8 @@ void setup() {
   pinMode(PIN_USB_POWER, INPUT_PULLDOWN);
   pinMode(PIN_SLEEP_BUTTON, INPUT_PULLUP);
   pinMode(PIN_GPS_ENABLE, OUTPUT);
-  pinMode(PIN_GPS_WAKE, OUTPUT);
   digitalWrite(PIN_GPS_ENABLE,
                HIGH);  // Enable power for SD card (shared with GPS)
-  digitalWrite(PIN_GPS_WAKE, LOW);  // GPS wake signal LOW (GPS not active yet)
 
   vTaskDelay(pdMS_TO_TICKS(500));  // Give SD card time to power up
 
@@ -303,11 +378,7 @@ void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   }
 }
 
-void initializeLed() {
-  FastLED.addLeds<LED_TYPE, LED_PIN, LED_COLOR_ORDER>(leds, NUM_LEDS);
-  FastLED.setBrightness(LED_BRIGHTNESS);
-  FastLED.showColor(CRGB::White);
-}
+void initializeLed() { setLedColor(LED_WHITE); }
 
 void provisionDevice() {
   // Set device UID
@@ -334,7 +405,7 @@ void updateLedPattern() {
 
   switch (state) {
     case SystemState::INIT:
-      FastLED.showColor(CRGB::White);
+      setLedColor(LED_WHITE);
       break;
 
     case SystemState::WAIT_SD:
@@ -345,20 +416,20 @@ void updateLedPattern() {
       if (currentMillis - lastLedToggleMillis > 500) {
         lastLedToggleMillis = currentMillis;
         ledToggleState = !ledToggleState;
-        FastLED.showColor(ledToggleState ? CRGB::Yellow : CRGB::Black);
+        setLedColor(ledToggleState ? LED_YELLOW : LED_OFF);
       }
       break;
 
     case SystemState::OTA_UPDATE:
-      FastLED.showColor(CRGB::Orange);
+      setLedColor(LED_ORANGE);
       break;
 
     case SystemState::RUNNING:
-      FastLED.showColor(CRGB::Green);
+      setLedColor(LED_GREEN);
       break;
 
     case SystemState::OFFLOAD:
-      FastLED.showColor(CRGB::Blue);
+      setLedColor(LED_BLUE);
       break;
 
     case SystemState::ERROR:
@@ -382,12 +453,12 @@ void updateLedPattern() {
       if (currentMillis - lastLedToggleMillis > blinkInterval) {
         lastLedToggleMillis = currentMillis;
         ledToggleState = !ledToggleState;
-        FastLED.showColor(ledToggleState ? CRGB::Red : CRGB::Black);
+        setLedColor(ledToggleState ? LED_RED : LED_OFF);
       }
       break;
 
     case SystemState::SLEEP:
-      FastLED.showColor(CRGB::Black);
+      setLedColor(LED_OFF);
       break;
   }
 }
@@ -656,7 +727,7 @@ void handleSleepState() {
   disableGps();
 
   // Turn off LED
-  FastLED.showColor(CRGB::Black);
+  setLedColor(LED_OFF);
 
   // Configure wake on USB power only if unconnected, else wake on reset
   if (!hasUsbPower()) {
@@ -683,15 +754,8 @@ void enableGps() {
 
   EZLOG_INFO("Enabling GPS...");
 
-  // Power cycle the GPS module (TESTED AND WORKING)
-  // Note: PIN_GPS_ENABLE is already HIGH from setup() (shared with SD card)
-  // We only need to cycle the WAKE signal
-  digitalWrite(PIN_GPS_WAKE, LOW);
-  vTaskDelay(pdMS_TO_TICKS(100));
-  digitalWrite(PIN_GPS_WAKE, HIGH);  // Wake signal must be HIGH
-  vTaskDelay(pdMS_TO_TICKS(1000));   // GPS needs time to boot
-
   // Bind UART to the selected pins
+
   GPS_SERIAL.end();
   GPS_SERIAL.begin(38400, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
   bool connected = myGNSS.begin(GPS_SERIAL);
@@ -790,11 +854,6 @@ void disableGps() {
     vTaskDelete(xGPS_Handle);
     xGPS_Handle = nullptr;
   }
-
-  // Turn off GPS wake signal
-  // NOTE: We do NOT turn off PIN_GPS_ENABLE because it's shared with SD card!
-  // SD card needs to remain powered for data logging
-  digitalWrite(PIN_GPS_WAKE, LOW);
 
   // Close UART
   GPS_SERIAL.end();
