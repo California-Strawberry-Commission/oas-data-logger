@@ -7,7 +7,7 @@ import RunGpsVisualization, {
 import SessionGpsVisualization, {
   type Session,
 } from "@/components/visualizations/gps/session-gps-visualization";
-import { useMultipleDeviceRuns } from "@/lib/api";
+import { useMultipleDeviceRuns, useRuns } from "@/lib/api";
 import { colorForSelectionIndex, groupRunsIntoSessions } from "@/lib/utils";
 import { useMemo } from "react";
 
@@ -16,23 +16,36 @@ export default function VisualizationArea({
 }: {
   selection: Selection;
 }) {
-  // For run selection mode, create RunWithColor[] from selection
+  // For run selection mode, build RunWithColor[] from selection rows.
+  // Separately fetch fresh run metadata so isActive/durationS don't go stale for
+  // active runs.
+  const selectedRunUuids = useMemo(
+    () =>
+      selection.kind === "run"
+        ? selection.rows.flatMap((r) => (r.run ? [r.run.uuid] : []))
+        : [],
+    [selection],
+  );
+  const { data: runs } = useRuns(selectedRunUuids);
+
   const runsWithColor: RunWithColor[] = useMemo(() => {
     if (selection.kind !== "run") {
       return [];
     }
-    return selection.rows.flatMap((r, idx) =>
-      r.run
-        ? [
-            {
-              run: r.run,
-              color: colorForSelectionIndex(idx),
-              device: r.device ?? undefined,
-            },
-          ]
-        : [],
-    );
-  }, [selection]);
+    return selection.rows.flatMap((selectionRow, idx) => {
+      if (!selectionRow.run) {
+        return [];
+      }
+      const run = runs?.find((r) => r.uuid === selectionRow.run!.uuid);
+      return [
+        {
+          run: run ?? selectionRow.run,
+          color: colorForSelectionIndex(idx),
+          device: selectionRow.device ?? undefined,
+        },
+      ];
+    });
+  }, [selection, runs]);
 
   // For session selection mode, create Session[] from selection
   const deviceIds = useMemo(
