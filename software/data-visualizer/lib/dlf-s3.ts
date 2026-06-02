@@ -5,7 +5,7 @@ import { Adapter } from "dlflib-js";
 /**
  * Adapter that reads DLF files from in-memory buffers fetched from S3.
  */
-class BufferAdapter extends Adapter {
+export class BufferAdapter extends Adapter {
   constructor(
     private readonly _meta: Buffer | null,
     private readonly _polled: Buffer | null,
@@ -82,18 +82,50 @@ export async function listChunkKeys(
 }
 
 /**
+ * Downloads and concatenates all stored chunks for a file into a single buffer.
+ * Returns null if no chunks exist yet.
+ */
+export async function assembleChunksToBuffer(
+  runUuid: string,
+  filename: string,
+): Promise<Buffer | null> {
+  const keys = await listChunkKeys(runUuid, filename);
+  if (keys.length === 0) {
+    return null;
+  }
+  const bufs = await Promise.all(keys.map((k) => fetchS3Object(k)));
+  return Buffer.concat(bufs.filter((b): b is Buffer => b !== null));
+}
+
+/**
  * Returns a BufferAdapter loaded with this run's DLF files from S3,
  * or null if no DLF files exist for this run.
+ *
+ * When isActive=true, assembles data directly from individual chunks.
+ * When isActive=false, reads the assembled dlf files.
  */
 export async function getRunDlfAdapter(
   runUuid: string,
+  isActive = false,
 ): Promise<BufferAdapter | null> {
+  if (isActive) {
+    const [meta, polled, event] = await Promise.all([
+      assembleChunksToBuffer(runUuid, "meta.dlf"),
+      assembleChunksToBuffer(runUuid, "polled.dlf"),
+      assembleChunksToBuffer(runUuid, "event.dlf"),
+    ]);
+    if (!meta && !polled && !event) {
+      return null;
+    }
+
+    return new BufferAdapter(meta, polled, event);
+  }
+
   const [meta, polled, event] = await Promise.all([
     fetchS3Object(dlfS3Key(runUuid, "meta.dlf")),
     fetchS3Object(dlfS3Key(runUuid, "polled.dlf")),
     fetchS3Object(dlfS3Key(runUuid, "event.dlf")),
   ]);
-
   if (!meta && !polled && !event) {
     return null;
   }

@@ -13,7 +13,10 @@ Run::Run(fs::FS& fs, const char* fsDir,
          const std::vector<std::unique_ptr<dlf::datastream::AbstractStream>>&
              streams,
          std::chrono::microseconds tickInterval, const Encodable& meta)
-    : fs_(fs), streams_(streams), tickInterval_(tickInterval) {
+    : fs_(fs),
+      streams_(streams),
+      tickInterval_(tickInterval),
+      startMillis_(millis()) {
   assert(tickInterval.count() > 0);
 
   dlf::util::uuidGen(uuid_);

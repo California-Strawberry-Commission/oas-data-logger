@@ -36,6 +36,8 @@ class UploaderComponent : public Component {
     int partialRunUploadIntervalSecs = 0;
     // Enable the new chunked upload path.
     bool enableChunkedUpload = false;
+    // Read timeout per chunk POST.
+    int chunkUploadTimeoutMs = 10000;
   };
 
   /**
@@ -79,11 +81,13 @@ class UploaderComponent : public Component {
    * @param isActive Whether the run is still actively being recorded.
    * @param finalize Whether to send the finalize request after uploading
    * chunks.
+   * @param durationS Duration of the run so far.
    * @param maxChunkSize Maximum bytes per chunk.
    * @return true on success (or if there was nothing new to upload).
    */
   bool uploadRunChunked(fs::File runDir, const char* runUuid,
-                        bool isActive = false, bool finalize = true,
+                        bool isActive = false, bool finalize = false,
+                        float durationS = 0.0f,
                         size_t maxChunkSize = 256 * 1024);
 
   /**
@@ -113,7 +117,8 @@ class UploaderComponent : public Component {
 
   // Chunked upload helpers
   bool sendChunk(HTTPClient& http, const char* runUuid, uint32_t chunkNumber,
-                 fs::File& file, size_t chunkBytes);
+                 fs::File& file, size_t chunkBytes, bool isActive,
+                 float durationS = 0.0f);
   bool sendFinalizeRequest(const char* finalizeUrl, const char* runUuid,
                            const char* const* filenames, size_t numFiles,
                            bool isActive);

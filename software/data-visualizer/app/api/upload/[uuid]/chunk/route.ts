@@ -1,4 +1,5 @@
-import { dlfChunkS3Key } from "@/lib/dlf-s3";
+import { BufferAdapter, dlfChunkS3Key } from "@/lib/dlf-s3";
+import prisma from "@/lib/prisma";
 import { s3Client } from "@/lib/s3";
 import { isValidUuid } from "@/lib/utils";
 import { verifyDeviceSignature } from "@/lib/verify-device";
@@ -17,6 +18,10 @@ const ACCEPTED_FILES = new Set<string>(["meta.dlf", "event.dlf", "polled.dlf"]);
  * Required headers:
  *   x-filename: file name, such as "polled.dlf"
  *   x-chunk-number: one-based chunk number (integer)
+ *
+ * Optional headers:
+ *   x-is-active: if "true", triggers a DB upsert to keep the run record current
+ *   x-duration-s: elapsed seconds as a decimal string
  *
  * Body: raw binary (Content-Type: application/octet-stream)
  */
@@ -97,6 +102,55 @@ export async function POST(
   console.log(
     `[api/upload/chunk] Stored chunk ${chunkNumber} for ${uuid}/${filename} (${body.byteLength} bytes)`,
   );
+
+  // Keep the DB run record current.
+  // On meta.dlf chunk #1 the run record is created if it doesn't exist yet.
+  // All other chunks update isActive (and optionally durationS) if the run exists.
+  const isActive = request.headers.get("x-is-active") === "true";
+  const durationSHeader = request.headers.get("x-duration-s");
+  const durationS =
+    durationSHeader !== null ? parseFloat(durationSHeader) : undefined;
+
+  await prisma.device.upsert({
+    where: { id: deviceId },
+    update: {},
+    create: { id: deviceId },
+  });
+
+  if (filename === "meta.dlf" && chunkNumber === 1) {
+    try {
+      const metaAdapter = new BufferAdapter(Buffer.from(body), null, null);
+      const meta = await metaAdapter.getMetaDlf();
+      await prisma.run.upsert({
+        where: { uuid },
+        update: {
+          isActive,
+          ...(durationS !== undefined && { durationS }),
+        },
+        create: {
+          uuid,
+          deviceId,
+          epochTimeS: BigInt(meta.epochTimeS),
+          tickBaseUs: BigInt(meta.tickBaseUs),
+          durationS: durationS ?? 0,
+          metadata: {},
+          isActive,
+        },
+      });
+      console.log(`[api/upload/chunk] Upserted run record for ${uuid}`);
+    } catch (err) {
+      console.error(`[api/upload/chunk] Failed to upsert run ${uuid}:`, err);
+    }
+  } else {
+    // Note: we use updateMany here because it won't do anything if the run doesn't exist yet
+    await prisma.run.updateMany({
+      where: { uuid, deviceId },
+      data: {
+        isActive,
+        ...(durationS !== undefined && { durationS }),
+      },
+    });
+  }
 
   return NextResponse.json({ message: "Chunk received" }, { status: 202 });
 }

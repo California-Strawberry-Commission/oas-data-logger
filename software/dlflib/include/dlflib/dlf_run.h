@@ -28,6 +28,10 @@ class Run {
 
   const char* uuid() const { return uuid_; }
 
+  float elapsedSecs() const {
+    return static_cast<float>(millis() - startMillis_) / 1000.0f;
+  }
+
   /**
    * Force a manual flush of log files.
    */
@@ -53,6 +57,7 @@ class Run {
   void createLogfile(dlf_stream_type_e t);
 
   char uuid_[37];
+  uint32_t startMillis_;
   fs::FS& fs_;
   char runDir_[128];
   char lockfilePath_[128];

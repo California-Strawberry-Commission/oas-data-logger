@@ -21,14 +21,16 @@ export const GET = withAuth(
     }
 
     try {
-      const run = await getRunForUser(user, uuid, { select: { id: true } });
+      const run = await getRunForUser(user, uuid, {
+        select: { id: true, isActive: true },
+      });
       if (!run) {
         // Either run doesn't exist, or user does not have access to it
         return NextResponse.json({ error: "Run not found" }, { status: 404 });
       }
 
       // Fetch DLF files from S3 and read data
-      const adapter = await getRunDlfAdapter(uuid);
+      const adapter = await getRunDlfAdapter(uuid, run.isActive);
       if (!adapter) {
         return NextResponse.json([]);
       }
