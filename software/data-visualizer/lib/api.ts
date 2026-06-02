@@ -59,6 +59,8 @@ export function useDevices() {
     queryFn: fetchDevices,
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
+    refetchInterval: 60 * 1000,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: false,
   });
 }
@@ -70,6 +72,8 @@ export function useDeviceRuns(deviceId: string) {
     enabled: !!deviceId,
     staleTime: 60 * 1000,
     gcTime: 15 * 60 * 1000,
+    refetchInterval: 60 * 1000,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: false,
   });
 }
@@ -82,6 +86,8 @@ export function useMultipleDeviceRuns(deviceIds: string[]) {
       enabled: !!deviceId,
       staleTime: 60 * 1000,
       gcTime: 15 * 60 * 1000,
+      refetchInterval: 60 * 1000,
+      refetchIntervalInBackground: false,
       refetchOnWindowFocus: false,
     })),
     combine: (results) => ({
@@ -103,24 +109,36 @@ export function useRuns(runUuids: string[]) {
     enabled: runUuids.length > 0,
     staleTime: 60 * 1000,
     gcTime: 15 * 60 * 1000,
+    refetchInterval: 60 * 1000,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: false,
   });
 }
 
-export function useRunStreams(runUuid: string, streamIds: string[]) {
+export function useRunStreams(
+  runUuid: string,
+  streamIds: string[],
+  isLive = false,
+) {
   // Note: streamIds must be stable and order-stable for a stable queryKey
   const streamKey = streamIds.join(",");
   return useQuery({
     queryKey: ["runStreams", runUuid, streamKey],
     queryFn: () => fetchRunStreams(runUuid, streamIds),
     enabled: !!runUuid && streamIds.length > 0,
-    staleTime: 60 * 1000,
+    staleTime: isLive ? 0 : 60 * 1000,
     gcTime: 15 * 60 * 1000,
+    refetchInterval: isLive ? 30 * 1000 : false,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: false,
   });
 }
 
-export function useRunStreamsMany(runUuids: string[], streamIds: string[]) {
+export function useRunStreamsMany(
+  runUuids: string[],
+  streamIds: string[],
+  isLive = false,
+) {
   // Note: streamIds must be stable and order-stable for a stable queryKey
   const streamKey = streamIds.join(",");
   return useQueries({
@@ -128,8 +146,10 @@ export function useRunStreamsMany(runUuids: string[], streamIds: string[]) {
       queryKey: ["runStreams", runUuid, streamKey],
       queryFn: () => fetchRunStreams(runUuid, streamIds),
       enabled: runUuids.length > 0 && !!runUuid,
-      staleTime: 60 * 1000,
+      staleTime: isLive ? 0 : 60 * 1000,
       gcTime: 15 * 60 * 1000,
+      refetchInterval: isLive ? 30 * 1000 : false,
+      refetchIntervalInBackground: false,
       refetchOnWindowFocus: false,
     })),
     combine: (results) => {

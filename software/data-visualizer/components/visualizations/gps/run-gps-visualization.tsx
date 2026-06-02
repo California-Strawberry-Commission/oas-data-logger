@@ -136,14 +136,20 @@ export default function RunGpsVisualization({
     [filteredRuns],
   );
 
+  const isLive = filteredRuns.some((r) => r.run.isActive);
+
   // Fetch GPS streams for all runs
-  const { anyLoading, firstError, dataByUuid } = useRunStreamsMany(runUuids, [
-    STREAM_ID_SATELLITES,
-    STREAM_ID_LATITUDE,
-    STREAM_ID_LONGITUDE,
-    STREAM_ID_ALTITUDE,
-    STREAM_ID_WIFI_RSSI,
-  ]);
+  const { anyLoading, firstError, dataByUuid } = useRunStreamsMany(
+    runUuids,
+    [
+      STREAM_ID_SATELLITES,
+      STREAM_ID_LATITUDE,
+      STREAM_ID_LONGITUDE,
+      STREAM_ID_ALTITUDE,
+      STREAM_ID_WIFI_RSSI,
+    ],
+    isLive,
+  );
 
   const filteredPointsByRun = useMemo(
     () =>

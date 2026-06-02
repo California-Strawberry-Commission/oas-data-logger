@@ -54,6 +54,8 @@ export default function SessionGpsVisualization({
   const allRuns = useMemo(() => sessions.flatMap((s) => s.runs), [sessions]);
   const allRunUuids = useMemo(() => allRuns.map((r) => r.uuid), [allRuns]);
 
+  const isLive = allRuns.some((r) => r.isActive);
+
   // Fetch GPS streams for all runs
   const { anyLoading, firstError, dataByUuid } = useRunStreamsMany(
     allRunUuids,
@@ -64,6 +66,7 @@ export default function SessionGpsVisualization({
       STREAM_ID_ALTITUDE,
       STREAM_ID_WIFI_RSSI,
     ],
+    isLive,
   );
 
   const filteredPointsByRun = useMemo(
