@@ -36,6 +36,8 @@ class UploaderComponent : public Component {
     int partialRunUploadIntervalSecs = 0;
     // Enable the new chunked upload path.
     bool enableChunkedUpload = false;
+    // Read timeout per chunk POST.
+    int chunkUploadTimeoutMs = 10000;
   };
 
   /**

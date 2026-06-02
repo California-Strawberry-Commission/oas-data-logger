@@ -641,6 +641,7 @@ bool UploaderComponent::uploadRunChunked(fs::File runDir, const char* runUuid,
   // scope
   HTTPClientGuard httpClientGuard{httpClient};
   httpClient.setReuse(true);  // keep the TLS session alive between requests
+  httpClient.setTimeout(options_.chunkUploadTimeoutMs);
   if (!httpClient.begin(*wifiClient, chunkUrl)) {
     DLFLIB_LOG_ERROR(
         "[UploaderComponent][uploadRunChunked] HTTPClient::begin failed");
