@@ -368,8 +368,11 @@ void UploaderComponent::syncTask(void* arg) {
 
       bool uploadSuccess =
           uploaderComponent->options_.enableChunkedUpload
-              ? uploaderComponent->uploadRunChunked(runDir, runDir.name())
-              : uploaderComponent->uploadRun(runDir, runDir.name());
+              ? uploaderComponent->uploadRunChunked(runDir, runDir.name(),
+                                                    /*isActive=*/false,
+                                                    /*finalize=*/true)
+              : uploaderComponent->uploadRun(runDir, runDir.name(),
+                                             /*isActive=*/false);
       if (!uploadSuccess) {
         DLFLIB_LOG_ERROR("[UploaderComponent][syncTask] Upload failed");
         runDir.close();
@@ -495,8 +498,9 @@ void UploaderComponent::partialRunUploadTask(void* arg) {
 
       bool uploadSuccess =
           uploaderComponent->options_.enableChunkedUpload
-              ? uploaderComponent->uploadRunChunked(runDir, runDir.name(),
-                                                    /*isActive=*/true)
+              ? uploaderComponent->uploadRunChunked(
+                    runDir, runDir.name(), /*isActive=*/true,
+                    /*finalize=*/false, run->elapsedSecs())
               : uploaderComponent->uploadRun(runDir, runDir.name(),
                                              /*isActive=*/true);
       if (uploadSuccess) {
@@ -599,7 +603,7 @@ bool UploaderComponent::deleteRunDir(fs::File runDir, const char* runDirPath) {
 
 bool UploaderComponent::uploadRunChunked(fs::File runDir, const char* runUuid,
                                          bool isActive, bool finalize,
-                                         size_t maxChunkSize) {
+                                         float durationS, size_t maxChunkSize) {
   if (!runDir) {
     DLFLIB_LOG_ERROR("[UploaderComponent][uploadRunChunked] No file to upload");
     return false;
@@ -715,7 +719,8 @@ bool UploaderComponent::uploadRunChunked(fs::File runDir, const char* runUuid,
       const size_t remaining = fileSize - nextByteOffset;
       const size_t chunkBytes =
           (remaining < maxChunkSize) ? remaining : maxChunkSize;
-      if (!sendChunk(httpClient, runUuid, nextChunkNum, file, chunkBytes)) {
+      if (!sendChunk(httpClient, runUuid, nextChunkNum, file, chunkBytes,
+                     isActive, durationS)) {
         file.close();
         DLFLIB_LOG_ERROR(
             "[UploaderComponent][uploadRunChunked] Chunk %u (byte %u) failed "
@@ -769,11 +774,18 @@ bool UploaderComponent::uploadRunChunked(fs::File runDir, const char* runUuid,
 
 bool UploaderComponent::sendChunk(HTTPClient& httpClient, const char* runUuid,
                                   uint32_t chunkNumber, fs::File& file,
-                                  size_t chunkBytes) {
+                                  size_t chunkBytes, bool isActive,
+                                  float durationS) {
   signer_.writeAuthHeaders(httpClient, runUuid);
   httpClient.addHeader("x-filename", file.name());
   httpClient.addHeader("x-chunk-number", String(chunkNumber));
   httpClient.addHeader("Content-Type", "application/octet-stream");
+  if (isActive) {
+    httpClient.addHeader("x-is-active", "true");
+    if (durationS > 0.0f) {
+      httpClient.addHeader("x-duration-s", String(durationS, 1));
+    }
+  }
 
   int code = httpClient.sendRequest("POST", &file, chunkBytes);
   if (code < 200 || code >= 300) {
