@@ -1,6 +1,13 @@
 import { s3Client } from "@/lib/s3";
-import { GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectsCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 import { Adapter } from "dlflib-js";
+
+export const DLF_FILES = ["meta.dlf", "polled.dlf", "event.dlf"] as const;
 
 /**
  * Adapter that reads DLF files from in-memory buffers fetched from S3.
@@ -95,6 +102,56 @@ export async function assembleChunksToBuffer(
   }
   const bufs = await Promise.all(keys.map((k) => fetchS3Object(k)));
   return Buffer.concat(bufs.filter((b): b is Buffer => b !== null));
+}
+
+/**
+ * Collapses all existing chunks for each DLF file into a single chunk object
+ * (chunk 1), then deletes the now-redundant individual chunks.
+ *
+ * Note that after merging, new chunks from the device continue accumulating at
+ * their original chunk numbers, so lexicographic ordering remains correct.
+ */
+export async function mergeChunks(
+  runUuid: string,
+  filename: string,
+): Promise<void> {
+  const bucket = process.env.S3_BUCKET_NAME!;
+  const chunkKeys = await listChunkKeys(runUuid, filename);
+  if (chunkKeys.length <= 1) {
+    return;
+  }
+
+  // Fetch all S3 objects and merge into a single buffer
+  const buffers = await Promise.all(chunkKeys.map((key) => fetchS3Object(key)));
+  const mergedBuffer = Buffer.concat(
+    buffers.filter((buf): buf is Buffer => buf !== null),
+  );
+
+  // Write the S3 object as chunk 1 (overwrites existing object)
+  const mergedKey = dlfChunkS3Key(runUuid, filename, 1);
+  await s3Client.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: mergedKey,
+      Body: mergedBuffer,
+      ContentType: "application/octet-stream",
+    }),
+  );
+
+  // Delete all other chunks
+  const keysToDelete = chunkKeys.filter((key) => key !== mergedKey);
+  // There is a limit of 1000 objects per request, so we need to batch each request
+  for (let i = 0; i < keysToDelete.length; i += 1000) {
+    await s3Client.send(
+      new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: {
+          Objects: keysToDelete.slice(i, i + 1000).map((Key) => ({ Key })),
+          Quiet: true,
+        },
+      }),
+    );
+  }
 }
 
 /**

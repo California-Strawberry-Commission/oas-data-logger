@@ -1,26 +1,18 @@
-import { dlfS3Key, listChunkKeys } from "@/lib/dlf-s3";
+import {
+  BufferAdapter,
+  DLF_FILES,
+  assembleChunksToBuffer,
+  dlfS3Key,
+  listChunkKeys,
+} from "@/lib/dlf-s3";
 import prisma from "@/lib/prisma";
 import { s3Client } from "@/lib/s3";
 import { isValidUuid } from "@/lib/utils";
 import { verifyDeviceSignature } from "@/lib/verify-device";
-import {
-  DeleteObjectsCommand,
-  GetObjectCommand,
-  PutObjectCommand,
-} from "@aws-sdk/client-s3";
-import { FSAdapter } from "dlflib-js";
-import { appendFileSync, createReadStream, mkdirSync, rmSync } from "fs";
+import { DeleteObjectsCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { NextRequest, NextResponse, after } from "next/server";
-import { resolve } from "path";
 
 export const dynamic = "force-dynamic";
-
-const UPLOAD_DIR = "/tmp/oas/uploads";
-const ACCEPTED_FILES = new Set<string>(["meta.dlf", "event.dlf", "polled.dlf"]);
-
-function getRunUploadDir(runUuid: string) {
-  return resolve(UPLOAD_DIR, runUuid);
-}
 
 async function withRetry<T>(
   fn: () => Promise<T>,
@@ -35,6 +27,7 @@ async function withRetry<T>(
       return await fn();
     } catch (err) {
       lastErr = err;
+      // Delay until the next attempt
       if (attempt < maxAttempts) {
         await new Promise((res) => setTimeout(res, delayMs));
       }
@@ -43,12 +36,16 @@ async function withRetry<T>(
   throw lastErr;
 }
 
+/**
+ * Compute run duration in seconds by finding the max tick across all polled and
+ * event samples. Returns 0 if no data is present or files are unreadable.
+ */
 async function computeRunDurationS(
   polledSamples: any[],
   eventSamples: any[],
   tickBaseUs: bigint,
 ): Promise<number> {
-  let maxTick: bigint = 0n;
+  let maxTick: bigint = 0n; // sample.tick is bigint, so use bigint for maxTick to avoid precision loss
   for (const sample of polledSamples) {
     if (sample.tick > maxTick) {
       maxTick = sample.tick;
@@ -59,24 +56,9 @@ async function computeRunDurationS(
       maxTick = sample.tick;
     }
   }
-  return Number((maxTick * tickBaseUs) / 1_000_000n);
-}
 
-/**
- * Download all chunks for a file from S3 and write them sequentially to a
- * local file by appending each chunk's bytes.
- */
-async function assembleChunks(
-  chunkKeys: string[],
-  destPath: string,
-): Promise<void> {
-  for (const key of chunkKeys) {
-    const res = await s3Client.send(
-      new GetObjectCommand({ Bucket: process.env.S3_BUCKET_NAME!, Key: key }),
-    );
-    const bytes = await res.Body!.transformToByteArray();
-    appendFileSync(destPath, Buffer.from(bytes));
-  }
+  // Perform calculation with bigint to avoid precision loss
+  return Number((maxTick * tickBaseUs) / 1_000_000n);
 }
 
 /**
@@ -84,13 +66,12 @@ async function assembleChunks(
  *
  * Triggers assembly of previously uploaded chunks and DB record creation.
  *
- * Body (JSON):
- *   {
- *     "isActive": boolean,
- *     "files": ["meta.dlf", "polled.dlf", "event.dlf"]  // files to finalize
- *   }
+ * Headers:
+ *   x-is-active: "true" if the run is still recording, omit or any other value for false.
  *
  * Returns 202 immediately; assembly + S3 upload + DB write happen in background.
+ * All three DLF files (meta.dlf, polled.dlf, event.dlf) are assembled from their
+ * chunks. Files with no chunks are silently skipped.
  */
 export async function POST(
   request: NextRequest,
@@ -125,43 +106,7 @@ export async function POST(
     );
   }
 
-  // Parse and validate request body
-  let body: { isActive?: unknown; files?: unknown };
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
-
-  const isActiveRaw = body.isActive;
-  let isActive = false;
-  if (isActiveRaw !== undefined) {
-    if (typeof isActiveRaw !== "boolean") {
-      return NextResponse.json(
-        { error: "isActive must be a boolean" },
-        { status: 400 },
-      );
-    }
-    isActive = isActiveRaw;
-  }
-
-  if (!Array.isArray(body.files) || body.files.length === 0) {
-    return NextResponse.json(
-      { error: "files must be a non-empty array of filenames" },
-      { status: 400 },
-    );
-  }
-
-  const files: string[] = [];
-  for (const f of body.files) {
-    if (typeof f !== "string" || !ACCEPTED_FILES.has(f)) {
-      return NextResponse.json(
-        { error: `Unacceptable filename: ${f}` },
-        { status: 400 },
-      );
-    }
-    files.push(f);
-  }
+  const isActive = request.headers.get("x-is-active") === "true";
 
   // Check if this run already exists and upload is from the same device
   const existingRun = await prisma.run.findUnique({
@@ -178,45 +123,39 @@ export async function POST(
     );
   }
 
-  // If the run doesn't exist yet, then meta.dlf is required
-  if (!runExists && !files.includes("meta.dlf")) {
-    return NextResponse.json(
-      { error: "Cannot create a new run without meta.dlf" },
-      { status: 400 },
-    );
-  }
-
   console.log(
-    `[api/upload/finalize] Accepted finalize for run: ${uuid}, deviceId: ${deviceId}, isActive: ${isActive}, files: [${files.join(", ")}]`,
+    `[api/upload/finalize] Accepted finalize for run: ${uuid}, deviceId: ${deviceId}, isActive: ${isActive}`,
   );
 
   after(async () => {
-    const uploadDir = getRunUploadDir(uuid);
     try {
-      mkdirSync(uploadDir, { recursive: true });
-
-      // Assemble each DLF file from chunks
-      const assembledFiles: string[] = [];
-      for (const filename of files) {
-        const chunkKeys = await listChunkKeys(uuid, filename);
-        if (chunkKeys.length === 0) {
+      // Assemble all DLF files from chunks into memory, skipping files with no chunks
+      const fileBuffers = new Map<string, Buffer>();
+      for (const filename of DLF_FILES) {
+        const buf = await assembleChunksToBuffer(uuid, filename);
+        if (!buf) {
           console.warn(
             `[api/upload/finalize] No chunks found for ${uuid}/${filename}, skipping`,
           );
           continue;
         }
-
-        const destPath = resolve(uploadDir, filename);
         console.log(
-          `[api/upload/finalize] Assembling ${chunkKeys.length} chunks for ${uuid}/${filename}`,
+          `[api/upload/finalize] Assembled chunks for ${uuid}/${filename} (${buf.byteLength} bytes)`,
         );
-        await assembleChunks(chunkKeys, destPath);
-        assembledFiles.push(filename);
+        fileBuffers.set(filename, buf);
       }
 
-      if (assembledFiles.length === 0) {
+      if (fileBuffers.size === 0) {
         console.error(
           `[api/upload/finalize] No files assembled for run ${uuid}`,
+        );
+        return;
+      }
+
+      // If the run doesn't exist yet, then meta.dlf is required for the epoch time and tick base
+      if (!runExists && !fileBuffers.has("meta.dlf")) {
+        console.error(
+          `[api/upload/finalize] meta.dlf required to create run ${uuid}`,
         );
         return;
       }
@@ -228,8 +167,13 @@ export async function POST(
         create: { id: deviceId },
       });
 
+      const adapter = new BufferAdapter(
+        fileBuffers.get("meta.dlf") ?? null,
+        fileBuffers.get("polled.dlf") ?? null,
+        fileBuffers.get("event.dlf") ?? null,
+      );
+
       // Create or update run record
-      const adapter = new FSAdapter(uploadDir);
       if (!runExists) {
         const [meta, polledSamples, eventSamples] = await Promise.all([
           adapter.getMetaDlf(),
@@ -259,10 +203,7 @@ export async function POST(
         const updateData: Parameters<typeof prisma.run.update>[0]["data"] = {
           isActive,
         };
-        if (
-          assembledFiles.includes("polled.dlf") ||
-          assembledFiles.includes("event.dlf")
-        ) {
+        if (fileBuffers.has("polled.dlf") || fileBuffers.has("event.dlf")) {
           const [polledSamples, eventSamples] = await Promise.all([
             adapter.getPolledData().catch(() => []),
             adapter.getEventData().catch(() => []),
@@ -285,9 +226,8 @@ export async function POST(
       // Upload assembled files to S3
       const bucket = process.env.S3_BUCKET_NAME!;
       await Promise.all(
-        assembledFiles.map((filename) => {
+        [...fileBuffers.entries()].map(([filename, buf]) => {
           const key = dlfS3Key(uuid, filename);
-          const filePath = resolve(uploadDir, filename);
           console.log(
             `[api/upload/finalize] Uploading assembled file to S3: ${key}`,
           );
@@ -296,7 +236,7 @@ export async function POST(
               new PutObjectCommand({
                 Bucket: bucket,
                 Key: key,
-                Body: createReadStream(filePath),
+                Body: buf,
                 ContentType: "application/octet-stream",
               }),
             ),
@@ -304,19 +244,22 @@ export async function POST(
         }),
       );
 
-      // In order to support visualization of active runs (and thus partial run uploads), only
-      // delete chunk objects from S3 when finalized with isActive=false.
-      // Intermediate finalizes leave chunks in place so that future partial uploads can continue
-      // accumulating and re-assembling.
+      // Only delete chunks when the run is complete. Keep chunks for active runs
+      // so future partial uploads can continue accumulating.
       if (!isActive) {
-        for (const filename of assembledFiles) {
+        console.log(
+          `[api/upload/finalize] Run complete. Deleting all chunks for run ${uuid}`,
+        );
+        for (const filename of fileBuffers.keys()) {
           const chunkKeys = await listChunkKeys(uuid, filename);
           for (let i = 0; i < chunkKeys.length; i += 1000) {
-            const batch = chunkKeys.slice(i, i + 1000);
             await s3Client.send(
               new DeleteObjectsCommand({
                 Bucket: bucket,
-                Delete: { Objects: batch.map((Key) => ({ Key })) },
+                Delete: {
+                  Objects: chunkKeys.slice(i, i + 1000).map((Key) => ({ Key })),
+                  Quiet: true,
+                },
               }),
             );
           }
@@ -331,10 +274,6 @@ export async function POST(
         `[api/upload/finalize] Background processing failed for run ${uuid}:`,
         err,
       );
-    } finally {
-      try {
-        rmSync(uploadDir, { recursive: true, force: true });
-      } catch {}
     }
   });
 

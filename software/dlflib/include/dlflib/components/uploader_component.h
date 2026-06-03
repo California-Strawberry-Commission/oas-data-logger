@@ -120,7 +120,6 @@ class UploaderComponent : public Component {
                  fs::File& file, size_t chunkBytes, bool isActive,
                  float durationS = 0.0f);
   bool sendFinalizeRequest(const char* finalizeUrl, const char* runUuid,
-                           const char* const* filenames, size_t numFiles,
                            bool isActive);
   bool loadUploadProgress(const char* progressFilePath,
                           uint32_t& metaNextChunkNum,

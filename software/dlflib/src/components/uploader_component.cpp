@@ -759,8 +759,7 @@ bool UploaderComponent::uploadRunChunked(fs::File runDir, const char* runUuid,
   }
 
   // Send finalize request
-  if (!sendFinalizeRequest(finalizeUrl, runUuid, uploadedFilenames,
-                           numFilesUploaded, isActive)) {
+  if (!sendFinalizeRequest(finalizeUrl, runUuid, isActive)) {
     DLFLIB_LOG_ERROR(
         "[UploaderComponent][uploadRunChunked] Finalize request failed for %s",
         runUuid);
@@ -798,24 +797,7 @@ bool UploaderComponent::sendChunk(HTTPClient& httpClient, const char* runUuid,
 
 bool UploaderComponent::sendFinalizeRequest(const char* finalizeUrl,
                                             const char* runUuid,
-                                            const char* const* filenames,
-                                            size_t numFiles, bool isActive) {
-  // Build JSON body
-  // Example: {"isActive":false,"files":["meta.dlf","polled.dlf"]}
-  char body[256];
-  int pos = snprintf(body, sizeof(body), "{\"isActive\":%s,\"files\":[",
-                     isActive ? "true" : "false");
-  bool firstFile = true;
-  for (size_t fileIdx = 0; fileIdx < numFiles; ++fileIdx) {
-    if (filenames[fileIdx] == nullptr) {
-      continue;
-    }
-    pos += snprintf(body + pos, sizeof(body) - pos, "%s\"%s\"",
-                    firstFile ? "" : ",", filenames[fileIdx]);
-    firstFile = false;
-  }
-  snprintf(body + pos, sizeof(body) - pos, "]}");
-
+                                            bool isActive) {
   WiFiClient* wifiClient = getWiFiClient(strncmp(finalizeUrl, "https", 5) == 0);
   HTTPClient httpClient;
   HTTPClientGuard httpClientGuard{httpClient};
@@ -826,9 +808,9 @@ bool UploaderComponent::sendFinalizeRequest(const char* finalizeUrl,
   }
 
   signer_.writeAuthHeaders(httpClient, runUuid);
-  httpClient.addHeader("Content-Type", "application/json");
+  httpClient.addHeader("x-is-active", isActive ? "true" : "false");
 
-  int code = httpClient.POST(body);
+  int code = httpClient.POST("");
   if (code < 200 || code >= 300) {
     DLFLIB_LOG_ERROR(
         "[UploaderComponent][sendFinalizeRequest] Server returned %d", code);
