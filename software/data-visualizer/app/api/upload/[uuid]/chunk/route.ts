@@ -1,14 +1,20 @@
-import { BufferAdapter, dlfChunkS3Key } from "@/lib/dlf-s3";
+import {
+  BufferAdapter,
+  DLF_FILES,
+  dlfChunkS3Key,
+  mergeChunks,
+} from "@/lib/dlf-s3";
 import prisma from "@/lib/prisma";
 import { s3Client } from "@/lib/s3";
 import { isValidUuid } from "@/lib/utils";
 import { verifyDeviceSignature } from "@/lib/verify-device";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-const ACCEPTED_FILES = new Set<string>(["meta.dlf", "event.dlf", "polled.dlf"]);
+const ACCEPTED_FILES = new Set<string>(DLF_FILES);
+const MERGE_CHUNK_INTERVAL = 10;
 
 /**
  * POST /api/upload/[uuid]/chunk
@@ -102,6 +108,23 @@ export async function POST(
   console.log(
     `[api/upload/chunk] Stored chunk ${chunkNumber} for ${uuid}/${filename} (${body.byteLength} bytes)`,
   );
+
+  // Compact all existing chunks for the dlf file
+  if (chunkNumber % MERGE_CHUNK_INTERVAL === 0) {
+    after(async () => {
+      try {
+        await mergeChunks(uuid, filename);
+        console.log(
+          `[api/upload/chunk] Background merge complete for run ${uuid}`,
+        );
+      } catch (err) {
+        console.error(
+          `[api/upload/chunk] Background merge failed for run ${uuid}:`,
+          err,
+        );
+      }
+    });
+  }
 
   // Keep the DB run record current.
   // On meta.dlf chunk #1 the run record is created if it doesn't exist yet.

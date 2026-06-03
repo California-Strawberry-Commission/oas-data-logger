@@ -1,24 +1,14 @@
-import { dlfS3Key } from "@/lib/dlf-s3";
+import { BufferAdapter, DLF_FILES, dlfS3Key } from "@/lib/dlf-s3";
 import prisma from "@/lib/prisma";
 import { s3Client } from "@/lib/s3";
 import { isValidUuid } from "@/lib/utils";
 import { verifyDeviceSignature } from "@/lib/verify-device";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { FSAdapter } from "dlflib-js";
-import { createReadStream, mkdirSync, rmSync, writeFileSync } from "fs";
 import { NextRequest, NextResponse, after } from "next/server";
-import { resolve } from "path";
 
 export const dynamic = "force-dynamic";
 
-// Vercel Serverless Functions only allow writes to /tmp
-const UPLOAD_DIR = "/tmp/oas/uploads";
-
-const ACCEPTED_FILES = new Set<string>(["meta.dlf", "event.dlf", "polled.dlf"]);
-
-function getRunUploadDir(runUuid: string) {
-  return resolve(UPLOAD_DIR, runUuid);
-}
+const ACCEPTED_FILES = new Set<string>(DLF_FILES);
 
 async function withRetry<T>(
   fn: () => Promise<T>,
@@ -33,8 +23,8 @@ async function withRetry<T>(
       return await fn();
     } catch (err) {
       lastErr = err;
+      // Delay until the next attempt
       if (attempt < maxAttempts) {
-        // Delay until the next attempt
         await new Promise((res) => setTimeout(res, delayMs));
       }
     }
@@ -143,30 +133,17 @@ export async function POST(
     }
   }
 
-  // Write accepted files to local dir
-  const uploadDir = getRunUploadDir(uuid);
-  let uploadedFiles: Set<string>;
-  try {
-    mkdirSync(uploadDir, { recursive: true });
-    uploadedFiles = new Set<string>();
-    for (const file of formData.getAll("files")) {
-      if (!(file instanceof File) || !ACCEPTED_FILES.has(file.name)) {
-        continue;
-      }
-      writeFileSync(
-        resolve(uploadDir, file.name),
-        Buffer.from(await file.arrayBuffer()),
-      );
-      uploadedFiles.add(file.name);
+  // Read accepted files into memory
+  const fileBuffers = new Map<string, Buffer>();
+  for (const file of formData.getAll("files")) {
+    if (!(file instanceof File) || !ACCEPTED_FILES.has(file.name)) {
+      continue;
     }
-  } catch (err) {
-    rmSync(uploadDir, { recursive: true, force: true });
-    throw err;
+    fileBuffers.set(file.name, Buffer.from(await file.arrayBuffer()));
   }
 
-  // New runs require meta.dlf to read epoch time and tick base
-  if (!runExists && !uploadedFiles.has("meta.dlf")) {
-    rmSync(uploadDir, { recursive: true, force: true });
+  // If the run doesn't exist yet, then meta.dlf is required for the epoch time and tick base
+  if (!runExists && !fileBuffers.has("meta.dlf")) {
     return NextResponse.json(
       { error: "Cannot create a new run without meta.dlf" },
       { status: 400 },
@@ -174,7 +151,7 @@ export async function POST(
   }
 
   console.log(
-    `[api/upload] Accepted upload for run: ${uuid}, deviceId: ${deviceId}, isActive: ${isActive}, files: [${[...uploadedFiles].join(", ")}]`,
+    `[api/upload] Accepted upload for run: ${uuid}, deviceId: ${deviceId}, isActive: ${isActive}, files: [${[...fileBuffers.keys()].join(", ")}]`,
   );
 
   // S3 uploads and DB writes happen after the response is sent
@@ -187,8 +164,13 @@ export async function POST(
         create: { id: deviceId },
       });
 
-      // Create or update run
-      const adapter = new FSAdapter(uploadDir);
+      const adapter = new BufferAdapter(
+        fileBuffers.get("meta.dlf") ?? null,
+        fileBuffers.get("polled.dlf") ?? null,
+        fileBuffers.get("event.dlf") ?? null,
+      );
+
+      // Create or update run record
       if (!runExists) {
         const [metaHeader, polledSamples, eventSamples] = await Promise.all([
           adapter.getMetaDlf(),
@@ -218,7 +200,7 @@ export async function POST(
         const updateData: Parameters<typeof prisma.run.update>[0]["data"] = {
           isActive,
         };
-        if (uploadedFiles.has("polled.dlf") || uploadedFiles.has("event.dlf")) {
+        if (fileBuffers.has("polled.dlf") || fileBuffers.has("event.dlf")) {
           const [polledSamples, eventSamples] = await Promise.all([
             adapter.getPolledData().catch(() => []),
             adapter.getEventData().catch(() => []),
@@ -241,16 +223,15 @@ export async function POST(
       // Upload DLF files to S3
       const bucket = process.env.S3_BUCKET_NAME!;
       await Promise.all(
-        [...uploadedFiles].map((filename) => {
+        [...fileBuffers.entries()].map(([filename, buf]) => {
           const key = dlfS3Key(uuid, filename);
-          const filePath = resolve(uploadDir, filename);
           console.log(`[api/upload] Uploading to S3: ${key}`);
           return withRetry(() =>
             s3Client.send(
               new PutObjectCommand({
                 Bucket: bucket,
                 Key: key,
-                Body: createReadStream(filePath),
+                Body: buf,
                 ContentType: "application/octet-stream",
               }),
             ),
@@ -266,10 +247,6 @@ export async function POST(
         `[api/upload] Background processing failed for run ${uuid}:`,
         err,
       );
-    } finally {
-      try {
-        rmSync(uploadDir, { recursive: true, force: true });
-      } catch {}
     }
   });
 
