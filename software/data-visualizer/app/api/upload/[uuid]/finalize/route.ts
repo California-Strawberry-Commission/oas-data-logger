@@ -14,8 +14,6 @@ import { NextRequest, NextResponse, after } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-const ACCEPTED_FILES = new Set<string>(DLF_FILES);
-
 async function withRetry<T>(
   fn: () => Promise<T>,
   {
@@ -68,13 +66,12 @@ async function computeRunDurationS(
  *
  * Triggers assembly of previously uploaded chunks and DB record creation.
  *
- * Body (JSON):
- *   {
- *     "isActive": boolean,
- *     "files": ["meta.dlf", "polled.dlf", "event.dlf"]  // files to finalize
- *   }
+ * Headers:
+ *   x-is-active: "true" if the run is still recording, omit or any other value for false.
  *
  * Returns 202 immediately; assembly + S3 upload + DB write happen in background.
+ * All three DLF files (meta.dlf, polled.dlf, event.dlf) are assembled from their
+ * chunks. Files with no chunks are silently skipped.
  */
 export async function POST(
   request: NextRequest,
@@ -109,43 +106,7 @@ export async function POST(
     );
   }
 
-  // Parse and validate request body
-  let body: { isActive?: unknown; files?: unknown };
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
-
-  const isActiveRaw = body.isActive;
-  let isActive = false;
-  if (isActiveRaw !== undefined) {
-    if (typeof isActiveRaw !== "boolean") {
-      return NextResponse.json(
-        { error: "isActive must be a boolean" },
-        { status: 400 },
-      );
-    }
-    isActive = isActiveRaw;
-  }
-
-  if (!Array.isArray(body.files) || body.files.length === 0) {
-    return NextResponse.json(
-      { error: "files must be a non-empty array of filenames" },
-      { status: 400 },
-    );
-  }
-
-  const files: string[] = [];
-  for (const f of body.files) {
-    if (typeof f !== "string" || !ACCEPTED_FILES.has(f)) {
-      return NextResponse.json(
-        { error: `Unacceptable filename: ${f}` },
-        { status: 400 },
-      );
-    }
-    files.push(f);
-  }
+  const isActive = request.headers.get("x-is-active") === "true";
 
   // Check if this run already exists and upload is from the same device
   const existingRun = await prisma.run.findUnique({
@@ -162,23 +123,15 @@ export async function POST(
     );
   }
 
-  // If the run doesn't exist yet, then meta.dlf is required for the epoch time and tick base
-  if (!runExists && !files.includes("meta.dlf")) {
-    return NextResponse.json(
-      { error: "Cannot create a new run without meta.dlf" },
-      { status: 400 },
-    );
-  }
-
   console.log(
-    `[api/upload/finalize] Accepted finalize for run: ${uuid}, deviceId: ${deviceId}, isActive: ${isActive}, files: [${files.join(", ")}]`,
+    `[api/upload/finalize] Accepted finalize for run: ${uuid}, deviceId: ${deviceId}, isActive: ${isActive}`,
   );
 
   after(async () => {
     try {
-      // Assemble each DLF file from chunks into memory
+      // Assemble all DLF files from chunks into memory, skipping files with no chunks
       const fileBuffers = new Map<string, Buffer>();
-      for (const filename of files) {
+      for (const filename of DLF_FILES) {
         const buf = await assembleChunksToBuffer(uuid, filename);
         if (!buf) {
           console.warn(
@@ -195,6 +148,14 @@ export async function POST(
       if (fileBuffers.size === 0) {
         console.error(
           `[api/upload/finalize] No files assembled for run ${uuid}`,
+        );
+        return;
+      }
+
+      // If the run doesn't exist yet, then meta.dlf is required for the epoch time and tick base
+      if (!runExists && !fileBuffers.has("meta.dlf")) {
+        console.error(
+          `[api/upload/finalize] meta.dlf required to create run ${uuid}`,
         );
         return;
       }
