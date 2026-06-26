@@ -6,15 +6,19 @@ import {
   findClosestIndex,
   type MapPoint,
 } from "@/components/visualizations/gps/gps-processing";
+import { POI_LUCIDE_ICON } from "@/components/visualizations/gps/pois/poi-icon";
+import type { Poi, PoiIcon } from "@/lib/api";
 import { colorForRssi, formatElapsed } from "@/lib/utils";
-import { LatLngExpression } from "leaflet";
+import L, { LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Pause, Play } from "lucide-react";
 import posthog from "posthog-js";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import {
   CircleMarker,
   MapContainer,
+  Marker,
   Pane,
   Polyline,
   Popup,
@@ -81,16 +85,65 @@ function MapCenterController({ center }: { center: LatLngExpression }) {
   return null;
 }
 
+/**
+ * When enabled, set crosshair cursor and capture the next click as a POI location.
+ */
+function PoiPlacementController({
+  enabled,
+  onPlace,
+}: {
+  enabled: boolean;
+  onPlace: (lat: number, lng: number) => void;
+}) {
+  const map = useMap();
+  useEffect(() => {
+    if (!enabled) {
+      map.getContainer().style.cursor = "";
+      return;
+    }
+    map.getContainer().style.cursor = "crosshair";
+    const handler = (e: L.LeafletMouseEvent) => {
+      onPlace(e.latlng.lat, e.latlng.lng);
+    };
+    map.on("click", handler);
+    return () => {
+      map.off("click", handler);
+      map.getContainer().style.cursor = "";
+    };
+  }, [enabled, map, onPlace]);
+  return null;
+}
+
+function createPoiDivIcon(icon: PoiIcon): L.DivIcon {
+  const Icon = POI_LUCIDE_ICON[icon];
+  const svg = renderToStaticMarkup(
+    <Icon size={22} strokeWidth={2} color="#1e293b" />,
+  );
+  return L.divIcon({
+    className: "",
+    html: `<div style="line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6))">${svg}</div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -14],
+  });
+}
+
 export default function Map({
   tracks,
   playbackDurationS = 10,
   selectedElapsedS, // for controlled use
   onSelectedElapsedChange, // for controlled use
+  pois,
+  placingPoi,
+  onPoiPlaced,
 }: {
   tracks: Track[];
   playbackDurationS?: number;
   selectedElapsedS?: number;
   onSelectedElapsedChange?: (elapsedS: number) => void;
+  pois?: Poi[];
+  placingPoi?: boolean;
+  onPoiPlaced?: (lat: number, lng: number) => void;
 }) {
   const [showRssiOverlay, setShowRssiOverlay] = useState(false);
   // Decimate points (per-track) to improve performance
@@ -342,6 +395,31 @@ export default function Map({
               ))}
             </Pane>
           )}
+
+          {/* POI markers */}
+          <Pane name="poi-markers" style={{ zIndex: 550 }}>
+            {(pois ?? []).map((poi) => (
+              <Marker
+                key={poi.id}
+                position={[poi.lat, poi.lng]}
+                icon={createPoiDivIcon(poi.icon)}
+              >
+                <Popup>
+                  <div className="text-sm">
+                    <div className="font-semibold">{poi.name}</div>
+                    {poi.description && (
+                      <div className="mt-1">{poi.description}</div>
+                    )}
+                  </div>
+                </Popup>
+              </Marker>
+            ))}
+          </Pane>
+
+          <PoiPlacementController
+            enabled={placingPoi ?? false}
+            onPlace={onPoiPlaced ?? (() => {})}
+          />
 
           {/* One marker per run at the current elapsed position */}
           <Pane name="markers" style={{ zIndex: 600 }}>
