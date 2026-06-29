@@ -30,7 +30,7 @@ function PoiRow({
   onDelete: () => void;
   indented?: boolean;
 }) {
-  const Icon = POI_LUCIDE_ICON[poi.icon];
+  const Icon = POI_LUCIDE_ICON[poi.icon] ?? POI_LUCIDE_ICON["pin"];
   return (
     <div
       className={cn(

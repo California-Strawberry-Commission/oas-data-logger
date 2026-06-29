@@ -217,7 +217,7 @@ export function useDeleteDeviceRun(deviceId: string) {
 
 //#region Points of interest
 
-export type PoiIcon = "pin" | "flag" | "star" | "warning" | "checkpoint";
+export type PoiIcon = "pin" | "star" | "alert" | "check" | "x";
 export type Poi = {
   id: string;
   lat: number;

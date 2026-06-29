@@ -2,6 +2,7 @@
 
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import Combobox from "@/components/ui/combobox";
 import {
   Dialog,
   DialogContent,
@@ -10,10 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  POI_COLOR_PRESETS,
-  POI_LUCIDE_ICON,
-} from "@/components/visualizations/gps/pois/poi-icon";
+import { POI_LUCIDE_ICON } from "@/components/visualizations/gps/pois/poi-icon";
 import {
   useCreatePoi,
   useCreatePoiGroup,
@@ -22,7 +20,7 @@ import {
   type PoiGroup,
   type PoiIcon,
 } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, SELECTION_COLORS } from "@/lib/utils";
 import { AlertCircleIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -46,7 +44,7 @@ export default function EditPoiDialog({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [icon, setIcon] = useState<PoiIcon>("pin");
-  const [color, setColor] = useState(POI_COLOR_PRESETS[0]);
+  const [color, setColor] = useState(SELECTION_COLORS[0]);
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
@@ -80,7 +78,7 @@ export default function EditPoiDialog({
       setName("");
       setDescription("");
       setIcon("pin");
-      setColor(POI_COLOR_PRESETS[0]);
+      setColor(SELECTION_COLORS[0]);
       setLat(initialLat !== undefined ? String(initialLat.toFixed(6)) : "");
       setLng(initialLng !== undefined ? String(initialLng.toFixed(6)) : "");
       setSelectedGroupId("");
@@ -100,16 +98,24 @@ export default function EditPoiDialog({
 
     let groupId: string | null = selectedGroupId || null;
 
-    // Create new group if a name was typed
-    if (newGroupName.trim()) {
-      try {
-        const created = await createPoiGroup.mutateAsync({
-          name: newGroupName.trim(),
-        });
-        groupId = created.id;
-      } catch {
-        setError("Failed to create group");
-        return;
+    // If a new group name was typed, create a new group (or reuse existing if name matches)
+    const trimmedGroupName = newGroupName.trim();
+    if (trimmedGroupName) {
+      const matchingGroup = groups.find(
+        (g) => g.name.toLowerCase() === trimmedGroupName.toLowerCase(),
+      );
+      if (matchingGroup) {
+        groupId = matchingGroup.id;
+      } else {
+        try {
+          const created = await createPoiGroup.mutateAsync({
+            name: trimmedGroupName,
+          });
+          groupId = created.id;
+        } catch {
+          setError("Failed to create group");
+          return;
+        }
       }
     }
 
@@ -154,13 +160,36 @@ export default function EditPoiDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="poi-lat">Latitude</Label>
+              <Input
+                id="poi-lat"
+                value={lat}
+                onChange={(e) => setLat(e.target.value)}
+                placeholder="0.000000"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="poi-lng">Longitude</Label>
+              <Input
+                id="poi-lng"
+                value={lng}
+                onChange={(e) => setLng(e.target.value)}
+                placeholder="0.000000"
+                required
+              />
+            </div>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="poi-name">Name</Label>
             <Input
               id="poi-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Waypoint name"
+              placeholder="Name (required)"
               required
             />
           </div>
@@ -171,7 +200,7 @@ export default function EditPoiDialog({
               id="poi-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional description"
+              placeholder="Description (optional)"
             />
           </div>
 
@@ -204,7 +233,7 @@ export default function EditPoiDialog({
           <div className="space-y-2">
             <Label>Color</Label>
             <div className="flex gap-2 flex-wrap">
-              {POI_COLOR_PRESETS.map((preset) => (
+              {SELECTION_COLORS.map((preset) => (
                 <button
                   key={preset}
                   type="button"
@@ -221,44 +250,17 @@ export default function EditPoiDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="poi-lat">Latitude</Label>
-              <Input
-                id="poi-lat"
-                value={lat}
-                onChange={(e) => setLat(e.target.value)}
-                placeholder="0.000000"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="poi-lng">Longitude</Label>
-              <Input
-                id="poi-lng"
-                value={lng}
-                onChange={(e) => setLng(e.target.value)}
-                placeholder="0.000000"
-                required
-              />
-            </div>
-          </div>
-
           <div className="space-y-2">
-            <Label htmlFor="poi-group">Group</Label>
-            <select
-              id="poi-group"
+            <Label>Group</Label>
+            <Combobox
+              items={[
+                { value: "", label: "None" },
+                ...groups.map((g) => ({ value: g.id, label: g.name })),
+              ]}
               value={selectedGroupId}
-              onChange={(e) => setSelectedGroupId(e.target.value)}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            >
-              <option value="">None</option>
-              {groups.map((group) => (
-                <option key={group.id} value={group.id}>
-                  {group.name}
-                </option>
-              ))}
-            </select>
+              onValueChange={setSelectedGroupId}
+              searchPlaceholder="Search groups..."
+            />
             <Input
               value={newGroupName}
               onChange={(e) => setNewGroupName(e.target.value)}

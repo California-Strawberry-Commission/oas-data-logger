@@ -115,7 +115,7 @@ function PoiPlacementController({
 }
 
 function createPoiDivIcon(icon: PoiIcon, color: string): L.DivIcon {
-  const Icon = POI_LUCIDE_ICON[icon];
+  const Icon = POI_LUCIDE_ICON[icon] ?? POI_LUCIDE_ICON["pin"];
   const svg = renderToStaticMarkup(
     <Icon size={16} strokeWidth={2} color={color} />,
   );
