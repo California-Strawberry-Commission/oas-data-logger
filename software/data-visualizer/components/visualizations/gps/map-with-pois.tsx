@@ -12,6 +12,7 @@ import {
   type PoiGroup,
 } from "@/lib/api";
 import dynamic from "next/dynamic";
+import posthog from "posthog-js";
 import { useMemo, useState } from "react";
 import type { Track } from "./map";
 import { LoadingMap } from "./run-gps-visualization";
@@ -98,6 +99,7 @@ export default function MapWithPois({
           placingPoi={placingPoi}
           flyTo={focusedLatLng}
           onPoiPlaced={(lat, lng) => {
+            posthog.capture("poi:placement_completed");
             setPendingLatLng({ lat, lng });
             setPlacingPoi(false);
             setEditingPoi(undefined);
@@ -109,30 +111,57 @@ export default function MapWithPois({
           groups={poiGroups}
           hiddenPoiIds={hiddenPoiIds}
           hiddenGroupIds={hiddenGroupIds}
-          onTogglePoiVisibility={(id) =>
-            setHiddenPoiIds((s) => toggleSet(s, id))
-          }
-          onToggleGroupVisibility={(id) =>
-            setHiddenGroupIds((s) => toggleSet(s, id))
-          }
-          onStartPlacePoi={() => setPlacingPoi(true)}
-          onFocusPoi={(poi) => setFocusedLatLng({ lat: poi.lat, lng: poi.lng })}
+          onTogglePoiVisibility={(id) => {
+            posthog.capture("poi:visibility_changed", {
+              visible: hiddenPoiIds.has(id),
+            });
+            setHiddenPoiIds((s) => toggleSet(s, id));
+          }}
+          onToggleGroupVisibility={(id) => {
+            posthog.capture("poi:group_visibility_changed", {
+              visible: hiddenGroupIds.has(id),
+            });
+            setHiddenGroupIds((s) => toggleSet(s, id));
+          }}
+          onStartPlacePoi={() => {
+            posthog.capture("poi:placement_started");
+            setPlacingPoi(true);
+          }}
+          onFocusPoi={(poi) => {
+            posthog.capture("poi:focused");
+            setFocusedLatLng({ lat: poi.lat, lng: poi.lng });
+          }}
           onEditPoi={(poi) => {
+            posthog.capture("poi:edit_started");
             setEditingPoi(poi);
             setPendingLatLng(null);
             setEditPoiDialogOpen(true);
           }}
           onEditGroup={(group) => {
+            posthog.capture("poi:group_edit_started");
             setEditingGroup(group);
             setEditGroupDialogOpen(true);
           }}
-          onDeletePoi={(id) => deletePoi.mutate(id)}
-          onDeleteGroup={(id) => deletePoiGroup.mutate(id)}
+          onDeletePoi={(id) => {
+            posthog.capture("poi:deleted");
+            deletePoi.mutate(id);
+          }}
+          onDeleteGroup={(id) => {
+            posthog.capture("poi:group_deleted");
+            deletePoiGroup.mutate(id);
+          }}
         />
       </div>
       <EditPoiDialog
         open={editPoiDialogOpen}
-        onOpenChange={setEditPoiDialogOpen}
+        onOpenChange={(open, saved) => {
+          if (!open && !saved) {
+            posthog.capture(
+              editingPoi !== undefined ? "poi:edit_abandoned" : "poi:create_abandoned",
+            );
+          }
+          setEditPoiDialogOpen(open);
+        }}
         poi={editingPoi}
         initialLat={pendingLatLng?.lat}
         initialLng={pendingLatLng?.lng}
@@ -140,7 +169,12 @@ export default function MapWithPois({
       />
       <EditGroupDialog
         open={editGroupDialogOpen}
-        onOpenChange={setEditGroupDialogOpen}
+        onOpenChange={(open, saved) => {
+          if (!open && !saved) {
+            posthog.capture("poi:group_edit_abandoned");
+          }
+          setEditGroupDialogOpen(open);
+        }}
         group={editingGroup}
       />
     </>

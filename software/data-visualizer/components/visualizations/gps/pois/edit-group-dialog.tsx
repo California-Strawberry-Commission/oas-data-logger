@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useUpdatePoiGroup, type PoiGroup } from "@/lib/api";
 import { AlertCircleIcon } from "lucide-react";
+import posthog from "posthog-js";
 import { useEffect, useState } from "react";
 
 export default function EditGroupDialog({
@@ -20,7 +21,7 @@ export default function EditGroupDialog({
   group,
 }: {
   open: boolean;
-  onOpenChange: (open: boolean) => void;
+  onOpenChange: (open: boolean, saved?: boolean) => void;
   group: PoiGroup | null;
 }) {
   const [name, setName] = useState("");
@@ -46,14 +47,15 @@ export default function EditGroupDialog({
     setError("");
     try {
       await updateGroup.mutateAsync({ id: group.id, input: { name } });
-      onOpenChange(false);
+      posthog.capture("poi:group_updated");
+      onOpenChange(false, true);
     } catch {
       setError("Failed to rename group");
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(open) => onOpenChange(open)}>
       <DialogContent className="sm:max-w-90" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>Rename Group</DialogTitle>
