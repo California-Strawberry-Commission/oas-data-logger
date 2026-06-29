@@ -10,7 +10,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { POI_LUCIDE_ICON } from "@/components/visualizations/gps/pois/poi-icon";
+import {
+  POI_COLOR_PRESETS,
+  POI_LUCIDE_ICON,
+} from "@/components/visualizations/gps/pois/poi-icon";
 import {
   useCreatePoi,
   useCreatePoiGroup,
@@ -43,6 +46,7 @@ export default function EditPoiDialog({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [icon, setIcon] = useState<PoiIcon>("pin");
+  const [color, setColor] = useState(POI_COLOR_PRESETS[0]);
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
@@ -68,6 +72,7 @@ export default function EditPoiDialog({
       setName(poi.name);
       setDescription(poi.description);
       setIcon(poi.icon);
+      setColor(poi.color);
       setLat(String(poi.lat));
       setLng(String(poi.lng));
       setSelectedGroupId(poi.groupId ?? "");
@@ -75,6 +80,7 @@ export default function EditPoiDialog({
       setName("");
       setDescription("");
       setIcon("pin");
+      setColor(POI_COLOR_PRESETS[0]);
       setLat(initialLat !== undefined ? String(initialLat.toFixed(6)) : "");
       setLng(initialLng !== undefined ? String(initialLng.toFixed(6)) : "");
       setSelectedGroupId("");
@@ -111,14 +117,23 @@ export default function EditPoiDialog({
       if (isEdit) {
         await updatePoi.mutateAsync({
           id: poi.id,
-          input: { lat: latNum, lng: lngNum, icon, name, description, groupId },
+          input: {
+            lat: latNum,
+            lng: lngNum,
+            name,
+            icon,
+            color,
+            description,
+            groupId,
+          },
         });
       } else {
         await createPoi.mutateAsync({
           lat: latNum,
           lng: lngNum,
-          icon,
           name,
+          icon,
+          color,
           description,
           groupId,
         });
@@ -182,6 +197,26 @@ export default function EditPoiDialog({
                 >
                   <IconComponent className="h-4 w-4" />
                 </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Color</Label>
+            <div className="flex gap-2 flex-wrap">
+              {POI_COLOR_PRESETS.map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => setColor(preset)}
+                  className={cn(
+                    "h-7 w-7 rounded-full border-2 transition-transform",
+                    color === preset
+                      ? "border-foreground scale-110"
+                      : "border-transparent",
+                  )}
+                  style={{ backgroundColor: preset }}
+                />
               ))}
             </div>
           </div>

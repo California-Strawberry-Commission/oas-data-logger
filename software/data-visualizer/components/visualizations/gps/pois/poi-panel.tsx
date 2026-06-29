@@ -1,11 +1,5 @@
 "use client";
 
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { POI_LUCIDE_ICON } from "@/components/visualizations/gps/pois/poi-icon";
 import type { Poi, PoiGroup } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -15,7 +9,6 @@ import {
   Eye,
   EyeOff,
   MapPin,
-  MoreHorizontal,
   Pencil,
   Plus,
   Trash,
@@ -45,7 +38,7 @@ function PoiRow({
         indented && "pl-7",
       )}
     >
-      <Icon size={14} strokeWidth={2} />
+      <Icon size={14} strokeWidth={2} color={poi.color} />
       <span
         className={cn(
           "flex-1 truncate",
@@ -131,7 +124,7 @@ export function PoiPanel({
   }
 
   return (
-    <div className="absolute left-2 top-2 z-1000 rounded bg-white/90 shadow text-xs min-w-48 max-w-64">
+    <div className="absolute right-2 top-2 z-1000 rounded bg-white/90 shadow text-xs w-48">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 font-semibold">
         <div className="flex items-center gap-1.5">
@@ -161,6 +154,7 @@ export function PoiPanel({
         </div>
       </div>
 
+      {/* Expanded content */}
       {isOpen && (
         <div className="border-t pb-1">
           {/* Grouped POIs */}
@@ -266,7 +260,8 @@ export function PoiPanel({
           {/* Empty state */}
           {pois.length === 0 && groups.length === 0 && (
             <div className="px-3 py-2 text-muted-foreground">
-              Click <Plus className="inline h-3 w-3" /> to add a point
+              Click <Plus className="inline h-3 w-3" /> then anywhere on the map
+              to add a point
             </div>
           )}
         </div>

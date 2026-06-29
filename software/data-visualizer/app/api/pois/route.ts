@@ -16,8 +16,9 @@ export const GET = withAuth(async (_request: NextRequest, user: User) => {
         id: true,
         lat: true,
         lng: true,
-        icon: true,
         name: true,
+        icon: true,
+        color: true,
         description: true,
         groupId: true,
       },
@@ -37,11 +38,13 @@ export const GET = withAuth(async (_request: NextRequest, user: User) => {
  * POST /api/pois
  *
  * Creates a new POI owned by the calling user.
+ *
  * Body: {
  *   lat: number,
  *   lng: number,
- *   icon: string,
  *   name: string,
+ *   icon?: string,
+ *   color?: string,
  *   description?: string,
  *   groupId?: string
  * }
@@ -55,11 +58,12 @@ export const POST = withAuth(async (request: NextRequest, user: User) => {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { lat, lng, icon, name, description, groupId } = body as {
+  const { lat, lng, name, icon, color, description, groupId } = body as {
     lat: unknown;
     lng: unknown;
-    icon: unknown;
     name: unknown;
+    icon?: unknown;
+    color?: unknown;
     description?: unknown;
     groupId?: unknown;
   };
@@ -73,14 +77,24 @@ export const POST = withAuth(async (request: NextRequest, user: User) => {
   if (typeof name !== "string" || name.trim() === "") {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
-
   if (icon !== undefined && typeof icon !== "string") {
     return NextResponse.json(
       { error: "icon must be a string" },
       { status: 400 },
     );
   }
-
+  if (color !== undefined && typeof color !== "string") {
+    return NextResponse.json(
+      { error: "color must be a string" },
+      { status: 400 },
+    );
+  }
+  if (description !== undefined && typeof description !== "string") {
+    return NextResponse.json(
+      { error: "description must be a string" },
+      { status: 400 },
+    );
+  }
   if (groupId !== undefined && groupId !== null) {
     if (typeof groupId !== "string") {
       return NextResponse.json(
@@ -102,18 +116,20 @@ export const POST = withAuth(async (request: NextRequest, user: User) => {
       data: {
         lat,
         lng,
-        icon: typeof icon === "string" ? icon : "pin",
         name: name.trim(),
-        description: typeof description === "string" ? description : "",
+        icon: icon ?? "pin",
+        color: color ?? "#000000",
+        description: description ?? "",
         userId: user.id,
-        groupId: typeof groupId === "string" ? groupId : null,
+        groupId: groupId ?? null,
       },
       select: {
         id: true,
         lat: true,
         lng: true,
-        icon: true,
         name: true,
+        icon: true,
+        color: true,
         description: true,
         groupId: true,
       },

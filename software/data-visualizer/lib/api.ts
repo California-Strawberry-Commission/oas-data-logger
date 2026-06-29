@@ -222,8 +222,9 @@ export type Poi = {
   id: string;
   lat: number;
   lng: number;
-  icon: PoiIcon;
   name: string;
+  icon: PoiIcon;
+  color: string;
   description: string;
   groupId: string | null;
 };
@@ -231,8 +232,9 @@ export type PoiGroup = { id: string; name: string };
 export type CreatePoiInput = {
   lat: number;
   lng: number;
-  icon: PoiIcon;
   name: string;
+  icon?: PoiIcon;
+  color?: string;
   description?: string;
   groupId?: string | null;
 };

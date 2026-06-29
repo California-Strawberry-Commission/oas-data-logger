@@ -111,8 +111,9 @@ model Poi {
   id          String @id @default(cuid(2))
   lat         Float
   lng         Float
-  icon        String @default("pin")
   name        String
+  icon        String @default("pin")
+  color       String @default("#000000")
   description String @default("")
 
   createdAt DateTime @default(now())

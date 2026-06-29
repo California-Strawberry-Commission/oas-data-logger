@@ -6,6 +6,16 @@ import { NextRequest, NextResponse } from "next/server";
  * PATCH /api/pois/[id]
  *
  * Updates a POI's fields. Pass groupId: null to remove from a group.
+ *
+ * Body: {
+ *   lat?: number,
+ *   lng?: number,
+ *   name?: string,
+ *   icon?: string,
+ *   color?: string,
+ *   description?: string,
+ *   groupId?: string
+ * }
  */
 export const PATCH = withAuth(
   async (request: NextRequest, user: User, context) => {
@@ -26,11 +36,12 @@ export const PATCH = withAuth(
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    const { lat, lng, icon, name, description, groupId } = body as {
+    const { lat, lng, name, icon, color, description, groupId } = body as {
       lat?: unknown;
       lng?: unknown;
-      icon?: unknown;
       name?: unknown;
+      icon?: unknown;
+      color?: unknown;
       description?: unknown;
       groupId?: unknown;
     };
@@ -62,7 +73,18 @@ export const PATCH = withAuth(
         { status: 400 },
       );
     }
-
+    if (color !== undefined && typeof color !== "string") {
+      return NextResponse.json(
+        { error: "color must be a string" },
+        { status: 400 },
+      );
+    }
+    if (description !== undefined && typeof description !== "string") {
+      return NextResponse.json(
+        { error: "description must be a string" },
+        { status: 400 },
+      );
+    }
     if (groupId !== undefined && groupId !== null) {
       if (typeof groupId !== "string") {
         return NextResponse.json(
@@ -82,21 +104,21 @@ export const PATCH = withAuth(
       const updated = await prisma.poi.update({
         where: { id },
         data: {
-          ...(lat !== undefined && { lat: lat as number }),
-          ...(lng !== undefined && { lng: lng as number }),
-          ...(icon !== undefined && { icon: icon as string }),
-          ...(name !== undefined && { name: (name as string).trim() }),
-          ...(description !== undefined && {
-            description: description as string,
-          }),
-          ...(groupId !== undefined && { groupId: groupId as string | null }),
+          ...(lat !== undefined && { lat }),
+          ...(lng !== undefined && { lng }),
+          ...(name !== undefined && { name: name.trim() }),
+          ...(icon !== undefined && { icon }),
+          ...(color !== undefined && { color }),
+          ...(description !== undefined && { description }),
+          ...(groupId !== undefined && { groupId }),
         },
         select: {
           id: true,
           lat: true,
           lng: true,
-          icon: true,
           name: true,
+          icon: true,
+          color: true,
           description: true,
           groupId: true,
         },

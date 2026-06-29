@@ -114,17 +114,17 @@ function PoiPlacementController({
   return null;
 }
 
-function createPoiDivIcon(icon: PoiIcon): L.DivIcon {
+function createPoiDivIcon(icon: PoiIcon, color: string): L.DivIcon {
   const Icon = POI_LUCIDE_ICON[icon];
   const svg = renderToStaticMarkup(
-    <Icon size={22} strokeWidth={2} color="#1e293b" />,
+    <Icon size={16} strokeWidth={2} color={color} />,
   );
   return L.divIcon({
     className: "",
-    html: `<div style="line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6))">${svg}</div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
-    popupAnchor: [0, -14],
+    html: `<div style="width:26px;height:26px;background:white;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,0.35)">${svg}</div>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+    popupAnchor: [0, -16],
   });
 }
 
@@ -402,7 +402,7 @@ export default function Map({
               <Marker
                 key={poi.id}
                 position={[poi.lat, poi.lng]}
-                icon={createPoiDivIcon(poi.icon)}
+                icon={createPoiDivIcon(poi.icon, poi.color)}
               >
                 <Popup>
                   <div className="text-sm">
@@ -448,7 +448,7 @@ export default function Map({
 
         {/* WiFi RSSI toggle + legend */}
         {hasRssiData && (
-          <div className="absolute right-2 top-2 z-1000 rounded bg-white/90 px-3 py-2 text-xs shadow">
+          <div className="absolute right-2 bottom-2 z-1000 rounded bg-white/90 px-3 py-2 text-xs shadow">
             <label className="flex cursor-pointer items-center gap-1.5 font-semibold">
               <input
                 type="checkbox"
