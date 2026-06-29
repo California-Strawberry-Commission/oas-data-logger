@@ -56,7 +56,7 @@ function UpdateUserForm({
   const initialState: UpdateUserFormState = { success: false };
   const [formState, formAction] = useActionState(
     updateUserAction,
-    initialState
+    initialState,
   );
   const [hasSubmitted, setHasSubmitted] = useState(false);
 
@@ -119,7 +119,7 @@ function UpdateUserForm({
           )}
           {devices.map((device) => {
             const checked = user.userDevices.some(
-              (ud) => ud.deviceId === device.id
+              (ud) => ud.deviceId === device.id,
             );
             return (
               <label
@@ -230,10 +230,9 @@ export default function UserList({
 
       <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
         {selectedUser && (
-          <DialogContent className="sm:max-w-120">
+          <DialogContent className="sm:max-w-120" aria-describedby={undefined}>
             <DialogHeader>
               <DialogTitle>Edit user</DialogTitle>
-              <DialogDescription></DialogDescription>
             </DialogHeader>
 
             <UpdateUserForm

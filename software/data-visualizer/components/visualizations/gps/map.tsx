@@ -6,15 +6,19 @@ import {
   findClosestIndex,
   type MapPoint,
 } from "@/components/visualizations/gps/gps-processing";
+import { POI_LUCIDE_ICON } from "@/components/visualizations/gps/pois/poi-icon";
+import type { Poi, PoiIcon } from "@/lib/api";
 import { colorForRssi, formatElapsed } from "@/lib/utils";
-import { LatLngExpression } from "leaflet";
+import L, { LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Pause, Play } from "lucide-react";
 import posthog from "posthog-js";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import {
   CircleMarker,
   MapContainer,
+  Marker,
   Pane,
   Polyline,
   Popup,
@@ -71,7 +75,7 @@ export function decimateByDistance(
  *
  * This is needed because MapContainer's `center` prop is only used for initialization. Note that
  * this component must be rendered as a child of MapContainer in order to access its map context
- * via useMap.
+ * via `useMap`.
  */
 function MapCenterController({ center }: { center: LatLngExpression }) {
   const map = useMap();
@@ -81,16 +85,91 @@ function MapCenterController({ center }: { center: LatLngExpression }) {
   return null;
 }
 
+/**
+ * Animate the map to the target coordinates.
+ *
+ * Note that this component must be rendered as a child of MapContainer in order to access its
+ * map context via `useMap`.
+ */
+function FlyToController({
+  target,
+}: {
+  target: { lat: number; lng: number } | null;
+}) {
+  const map = useMap();
+  useEffect(() => {
+    if (!target) {
+      return;
+    }
+    map.flyTo([target.lat, target.lng]);
+  }, [map, target]);
+  return null;
+}
+
+/**
+ * When enabled, set crosshair cursor and capture the next click as a POI location.
+ *
+ * Note that this component must be rendered as a child of MapContainer in order to access its
+ * map context via `useMap`.
+ */
+function PoiPlacementController({
+  enabled,
+  onPlace,
+}: {
+  enabled: boolean;
+  onPlace: (lat: number, lng: number) => void;
+}) {
+  const map = useMap();
+  useEffect(() => {
+    if (!enabled) {
+      map.getContainer().style.cursor = "";
+      return;
+    }
+    map.getContainer().style.cursor = "crosshair";
+    const handler = (e: L.LeafletMouseEvent) => {
+      onPlace(e.latlng.lat, e.latlng.lng);
+    };
+    map.on("click", handler);
+    return () => {
+      map.off("click", handler);
+      map.getContainer().style.cursor = "";
+    };
+  }, [enabled, map, onPlace]);
+  return null;
+}
+
+function createPoiDivIcon(icon: PoiIcon, color: string): L.DivIcon {
+  const Icon = POI_LUCIDE_ICON[icon] ?? POI_LUCIDE_ICON["pin"];
+  const svg = renderToStaticMarkup(
+    <Icon size={16} strokeWidth={2} color={color} />,
+  );
+  return L.divIcon({
+    className: "",
+    html: `<div style="width:26px;height:26px;background:white;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,0.35)">${svg}</div>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+    popupAnchor: [0, -16],
+  });
+}
+
 export default function Map({
   tracks,
   playbackDurationS = 10,
   selectedElapsedS, // for controlled use
   onSelectedElapsedChange, // for controlled use
+  pois,
+  placingPoi,
+  onPoiPlaced,
+  flyTo,
 }: {
   tracks: Track[];
   playbackDurationS?: number;
   selectedElapsedS?: number;
   onSelectedElapsedChange?: (elapsedS: number) => void;
+  pois?: Poi[];
+  placingPoi?: boolean;
+  onPoiPlaced?: (lat: number, lng: number) => void;
+  flyTo?: { lat: number; lng: number } | null;
 }) {
   const [showRssiOverlay, setShowRssiOverlay] = useState(false);
   // Decimate points (per-track) to improve performance
@@ -309,6 +388,7 @@ export default function Map({
           className="h-full w-full flex-1"
         >
           <MapCenterController center={center} />
+          <FlyToController target={flyTo ?? null} />
           <TileLayer
             attribution="Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community"
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
@@ -343,6 +423,31 @@ export default function Map({
             </Pane>
           )}
 
+          {/* POI markers */}
+          <Pane name="poi-markers" style={{ zIndex: 550 }}>
+            {(pois ?? []).map((poi) => (
+              <Marker
+                key={poi.id}
+                position={[poi.lat, poi.lng]}
+                icon={createPoiDivIcon(poi.icon, poi.color)}
+              >
+                <Popup>
+                  <div className="text-sm">
+                    <div className="font-semibold">{poi.name}</div>
+                    {poi.description && (
+                      <div className="mt-1">{poi.description}</div>
+                    )}
+                  </div>
+                </Popup>
+              </Marker>
+            ))}
+          </Pane>
+
+          <PoiPlacementController
+            enabled={placingPoi ?? false}
+            onPlace={onPoiPlaced ?? (() => {})}
+          />
+
           {/* One marker per run at the current elapsed position */}
           <Pane name="markers" style={{ zIndex: 600 }}>
             {currentPoints.map(({ id, point, timestampS, color }) => (
@@ -370,7 +475,7 @@ export default function Map({
 
         {/* WiFi RSSI toggle + legend */}
         {hasRssiData && (
-          <div className="absolute right-2 top-2 z-1000 rounded bg-white/90 px-3 py-2 text-xs shadow">
+          <div className="absolute right-2 bottom-2 z-1000 rounded bg-white/90 px-3 py-2 text-xs shadow">
             <label className="flex cursor-pointer items-center gap-1.5 font-semibold">
               <input
                 type="checkbox"

@@ -12,7 +12,7 @@ export function isValidUuid(value: string): boolean {
   return UUID_RE.test(value);
 }
 
-const SELECTION_COLORS = [
+export const SELECTION_COLORS = [
   "#2563eb", // blue
   "#dc2626", // red
   "#16a34a", // green

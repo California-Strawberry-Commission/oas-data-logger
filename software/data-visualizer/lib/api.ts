@@ -5,6 +5,51 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 
+//#region General request helpers
+
+async function getJSON<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+async function postJSON<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+async function patchJSON<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+async function deleteResource(url: string): Promise<void> {
+  const res = await fetch(url, { method: "DELETE" });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+}
+
+//#endregion
+
+//#region Devices and runs
+
 export type Device = { id: string; name?: string };
 export type Run = {
   uuid: string;
@@ -20,33 +65,15 @@ export type RunDataSample = {
   data: unknown;
 };
 
-async function getJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`);
-  }
-  return res.json();
-}
+const fetchDevices = () => getJSON<Device[]>("/api/devices");
 
-async function deleteRun(runUuid: string): Promise<void> {
-  const res = await fetch(`/api/runs/${encodeURIComponent(runUuid)}`, {
-    method: "DELETE",
-  });
-
-  if (!res.ok) {
-    throw new Error(`Failed to delete run (${res.status})`);
-  }
-}
-
-export const fetchDevices = () => getJSON<Device[]>("/api/devices");
-
-export const fetchDeviceRuns = (deviceId: string) =>
+const fetchDeviceRuns = (deviceId: string) =>
   getJSON<Run[]>(`/api/devices/${encodeURIComponent(deviceId)}/runs`);
 
-export const fetchRuns = (runUuids: string[]) =>
+const fetchRuns = (runUuids: string[]) =>
   getJSON<Run[]>(`/api/runs?uuids=${encodeURIComponent(runUuids.join(","))}`);
 
-export const fetchRunStreams = (runUuid: string, streamIds: string[]) =>
+const fetchRunStreams = (runUuid: string, streamIds: string[]) =>
   getJSON<RunDataSample[]>(
     `/api/runs/${encodeURIComponent(runUuid)}/streams?stream_ids=${encodeURIComponent(
       streamIds.join(","),
@@ -178,9 +205,117 @@ export function useDeleteDeviceRun(deviceId: string) {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: deleteRun,
+    mutationFn: (id: string) =>
+      deleteResource(`/api/runs/${encodeURIComponent(id)}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["deviceRuns", deviceId] });
     },
   });
 }
+
+//#endregion
+
+//#region Points of interest
+
+export type PoiIcon = "pin" | "star" | "alert" | "check" | "x";
+export type Poi = {
+  id: string;
+  lat: number;
+  lng: number;
+  name: string;
+  icon: PoiIcon;
+  color: string;
+  description: string;
+  groupId: string | null;
+};
+export type PoiGroup = { id: string; name: string };
+export type CreatePoiInput = {
+  lat: number;
+  lng: number;
+  name: string;
+  icon?: PoiIcon;
+  color?: string;
+  description?: string;
+  groupId?: string | null;
+};
+export type UpdatePoiInput = Partial<CreatePoiInput>;
+export type CreatePoiGroupInput = { name: string };
+export type UpdatePoiGroupInput = Partial<CreatePoiGroupInput>;
+
+export function usePois() {
+  return useQuery({
+    queryKey: ["pois"],
+    queryFn: () => getJSON<Poi[]>("/api/pois"),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function usePoiGroups() {
+  return useQuery({
+    queryKey: ["poiGroups"],
+    queryFn: () => getJSON<PoiGroup[]>("/api/poi-groups"),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useCreatePoi() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreatePoiInput) => postJSON<Poi>("/api/pois", input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pois"] }),
+  });
+}
+
+export function useUpdatePoi() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdatePoiInput }) =>
+      patchJSON<Poi>(`/api/pois/${encodeURIComponent(id)}`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pois"] }),
+  });
+}
+
+export function useDeletePoi() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      deleteResource(`/api/pois/${encodeURIComponent(id)}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pois"] }),
+  });
+}
+
+export function useCreatePoiGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreatePoiGroupInput) =>
+      postJSON<PoiGroup>("/api/poi-groups", input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["poiGroups"] }),
+  });
+}
+
+export function useUpdatePoiGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdatePoiGroupInput }) =>
+      patchJSON<PoiGroup>(`/api/poi-groups/${encodeURIComponent(id)}`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["poiGroups"] }),
+  });
+}
+
+export function useDeletePoiGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      deleteResource(`/api/poi-groups/${encodeURIComponent(id)}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["poiGroups"] });
+      qc.invalidateQueries({ queryKey: ["pois"] });
+    },
+  });
+}
+
+//#endregion

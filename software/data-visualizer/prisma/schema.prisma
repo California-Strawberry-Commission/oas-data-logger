@@ -31,6 +31,8 @@ model User {
   updatedAt DateTime @updatedAt
 
   userDevices UserDevice[]
+  pois        Poi[]
+  poiGroups   PoiGroup[]
 }
 
 model Device {
@@ -99,6 +101,40 @@ model Run {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ------------------------------------------------------------
+// Points of interest
+// ------------------------------------------------------------
+
+model Poi {
+  id          String @id @default(cuid(2))
+  lat         Float
+  lng         Float
+  name        String
+  icon        String @default("pin")
+  color       String @default("#000000")
+  description String @default("")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId  String // relation field
+  group   PoiGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  groupId String? // relation field
+}
+
+model PoiGroup {
+  id   String @id @default(cuid(2))
+  name String
+  pois Poi[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String // relation field
 }
 
 // ------------------------------------------------------------

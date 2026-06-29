@@ -52,10 +52,12 @@ export default function LoginModal() {
 
   return (
     <Dialog open>
-      <DialogContent className="sm:max-w-[400px] [&>button:last-child]:hidden">
+      <DialogContent
+        className="sm:max-w-[400px] [&>button:last-child]:hidden"
+        aria-describedby={undefined}
+      >
         <DialogHeader>
           <DialogTitle>Login</DialogTitle>
-          <DialogDescription></DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleLogin} className="space-y-4 mt-2">

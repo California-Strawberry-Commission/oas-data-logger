@@ -1,0 +1,148 @@
+"use client";
+
+import EditGroupDialog from "@/components/visualizations/gps/pois/edit-group-dialog";
+import EditPoiDialog from "@/components/visualizations/gps/pois/edit-poi-dialog";
+import { PoiPanel } from "@/components/visualizations/gps/pois/poi-panel";
+import {
+  useDeletePoi,
+  useDeletePoiGroup,
+  usePoiGroups,
+  usePois,
+  type Poi,
+  type PoiGroup,
+} from "@/lib/api";
+import dynamic from "next/dynamic";
+import { useMemo, useState } from "react";
+import type { Track } from "./map";
+import { LoadingMap } from "./run-gps-visualization";
+
+// Lazy load Map
+const MapComponent = dynamic(() => import("./map"), {
+  ssr: false,
+  loading: () => <LoadingMap />,
+});
+
+function toggleSet(s: Set<string>, id: string): Set<string> {
+  const next = new Set(s);
+  if (next.has(id)) {
+    next.delete(id);
+  } else {
+    next.add(id);
+  }
+  return next;
+}
+
+export default function MapWithPois({
+  tracks,
+  playbackDurationS,
+  selectedElapsedS,
+  onSelectedElapsedChange,
+}: {
+  tracks: Track[];
+  playbackDurationS?: number;
+  selectedElapsedS?: number;
+  onSelectedElapsedChange?: (elapsedS: number) => void;
+}) {
+  // hiddenPoiIds and hiddenGroupIds are set via PoiPanel, and used to determine which
+  // POIs to show in the map.
+  const [hiddenPoiIds, setHiddenPoiIds] = useState<Set<string>>(new Set());
+  const [hiddenGroupIds, setHiddenGroupIds] = useState<Set<string>>(new Set());
+  // placingPoi is true when actively selecting a position on the Map. When a position
+  // is selected, pendingLatLng will be set to the lat/lng.
+  const [placingPoi, setPlacingPoi] = useState(false);
+  const [pendingLatLng, setPendingLatLng] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  // Focused POI
+  const [focusedLatLng, setFocusedLatLng] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  // Edit dialog states
+  const [editPoiDialogOpen, setEditPoiDialogOpen] = useState(false);
+  const [editingPoi, setEditingPoi] = useState<Poi | undefined>();
+  const [editGroupDialogOpen, setEditGroupDialogOpen] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<PoiGroup | null>(null);
+
+  const { data: pois = [] } = usePois();
+  const { data: poiGroups = [] } = usePoiGroups();
+  const deletePoi = useDeletePoi();
+  const deletePoiGroup = useDeletePoiGroup();
+
+  // POIs are only be visible on the map if they are not individually hidden,
+  // nor in a hidden group.
+  const visiblePois = useMemo(
+    () =>
+      pois.filter((p) => {
+        if (hiddenPoiIds.has(p.id)) {
+          return false;
+        }
+        if (p.groupId !== null && hiddenGroupIds.has(p.groupId)) {
+          return false;
+        }
+        return true;
+      }),
+    [pois, hiddenPoiIds, hiddenGroupIds],
+  );
+
+  return (
+    <>
+      <div className="relative w-full h-full">
+        <MapComponent
+          tracks={tracks}
+          playbackDurationS={playbackDurationS}
+          selectedElapsedS={selectedElapsedS}
+          onSelectedElapsedChange={onSelectedElapsedChange}
+          pois={visiblePois}
+          placingPoi={placingPoi}
+          flyTo={focusedLatLng}
+          onPoiPlaced={(lat, lng) => {
+            setPendingLatLng({ lat, lng });
+            setPlacingPoi(false);
+            setEditingPoi(undefined);
+            setEditPoiDialogOpen(true);
+          }}
+        />
+        <PoiPanel
+          pois={pois}
+          groups={poiGroups}
+          hiddenPoiIds={hiddenPoiIds}
+          hiddenGroupIds={hiddenGroupIds}
+          onTogglePoiVisibility={(id) =>
+            setHiddenPoiIds((s) => toggleSet(s, id))
+          }
+          onToggleGroupVisibility={(id) =>
+            setHiddenGroupIds((s) => toggleSet(s, id))
+          }
+          onStartPlacePoi={() => setPlacingPoi(true)}
+          onFocusPoi={(poi) => setFocusedLatLng({ lat: poi.lat, lng: poi.lng })}
+          onEditPoi={(poi) => {
+            setEditingPoi(poi);
+            setPendingLatLng(null);
+            setEditPoiDialogOpen(true);
+          }}
+          onEditGroup={(group) => {
+            setEditingGroup(group);
+            setEditGroupDialogOpen(true);
+          }}
+          onDeletePoi={(id) => deletePoi.mutate(id)}
+          onDeleteGroup={(id) => deletePoiGroup.mutate(id)}
+        />
+      </div>
+      <EditPoiDialog
+        open={editPoiDialogOpen}
+        onOpenChange={setEditPoiDialogOpen}
+        poi={editingPoi}
+        initialLat={pendingLatLng?.lat}
+        initialLng={pendingLatLng?.lng}
+        groups={poiGroups}
+      />
+      <EditGroupDialog
+        open={editGroupDialogOpen}
+        onOpenChange={setEditGroupDialogOpen}
+        group={editingGroup}
+      />
+    </>
+  );
+}

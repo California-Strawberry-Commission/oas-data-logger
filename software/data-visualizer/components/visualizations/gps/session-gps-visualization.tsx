@@ -13,6 +13,7 @@ import {
   toSpeedMphSamples,
 } from "@/components/visualizations/gps/gps-processing";
 import type { Track } from "@/components/visualizations/gps/map";
+import MapWithPois from "@/components/visualizations/gps/map-with-pois";
 import {
   computeFilteredPointsByRun,
   ErrorMap,
@@ -27,14 +28,7 @@ import TimeSeriesChart, {
 } from "@/components/visualizations/gps/time-series-chart";
 import { useRunStreamsMany, type Device, type Run } from "@/lib/api";
 import { formatElapsed, formatTimeOfDay } from "@/lib/utils";
-import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
-
-// Lazy load Map
-const MapComponent = dynamic(() => import("./map"), {
-  ssr: false,
-  loading: () => <LoadingMap />,
-});
 
 export type Session = {
   sessionKey: string;
@@ -270,9 +264,9 @@ export default function SessionGpsVisualization({
         </div>
       )}
       <div className="w-full h-150 border rounded-md overflow-hidden">
-        <MapComponent
+        <MapWithPois
           tracks={tracks}
-          selectedElapsedS={selectedElapsedS ?? 0}
+          selectedElapsedS={selectedElapsedS ?? undefined}
           onSelectedElapsedChange={setSelectedElapsedS}
         />
       </div>
