@@ -22,6 +22,7 @@ import {
 } from "@/lib/api";
 import { cn, SELECTION_COLORS } from "@/lib/utils";
 import { AlertCircleIcon } from "lucide-react";
+import posthog from "posthog-js";
 import { useEffect, useState } from "react";
 
 export default function EditPoiDialog({
@@ -33,7 +34,7 @@ export default function EditPoiDialog({
   groups,
 }: {
   open: boolean;
-  onOpenChange: (open: boolean) => void;
+  onOpenChange: (open: boolean, saved?: boolean) => void;
   poi?: Poi;
   initialLat?: number;
   initialLng?: number;
@@ -133,6 +134,7 @@ export default function EditPoiDialog({
             groupId,
           },
         });
+        posthog.capture("poi:updated");
       } else {
         await createPoi.mutateAsync({
           lat: latNum,
@@ -143,15 +145,20 @@ export default function EditPoiDialog({
           description,
           groupId,
         });
+        posthog.capture("poi:created", {
+          icon,
+          has_description: description.trim() !== "",
+          has_group: groupId !== null,
+        });
       }
-      onOpenChange(false);
+      onOpenChange(false, true);
     } catch {
       setError("Failed to save point of interest");
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(open) => onOpenChange(open)}>
       <DialogContent className="sm:max-w-105" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>
