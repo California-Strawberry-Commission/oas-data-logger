@@ -54,6 +54,11 @@ export default function MapWithPois({
     lat: number;
     lng: number;
   } | null>(null);
+  // Focused POI
+  const [focusedLatLng, setFocusedLatLng] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
   // Edit dialog states
   const [editPoiDialogOpen, setEditPoiDialogOpen] = useState(false);
   const [editingPoi, setEditingPoi] = useState<Poi | undefined>();
@@ -91,6 +96,7 @@ export default function MapWithPois({
           onSelectedElapsedChange={onSelectedElapsedChange}
           pois={visiblePois}
           placingPoi={placingPoi}
+          flyTo={focusedLatLng}
           onPoiPlaced={(lat, lng) => {
             setPendingLatLng({ lat, lng });
             setPlacingPoi(false);
@@ -110,6 +116,7 @@ export default function MapWithPois({
             setHiddenGroupIds((s) => toggleSet(s, id))
           }
           onStartPlacePoi={() => setPlacingPoi(true)}
+          onFocusPoi={(poi) => setFocusedLatLng({ lat: poi.lat, lng: poi.lng })}
           onEditPoi={(poi) => {
             setEditingPoi(poi);
             setPendingLatLng(null);

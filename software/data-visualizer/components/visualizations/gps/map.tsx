@@ -75,7 +75,7 @@ export function decimateByDistance(
  *
  * This is needed because MapContainer's `center` prop is only used for initialization. Note that
  * this component must be rendered as a child of MapContainer in order to access its map context
- * via useMap.
+ * via `useMap`.
  */
 function MapCenterController({ center }: { center: LatLngExpression }) {
   const map = useMap();
@@ -86,7 +86,31 @@ function MapCenterController({ center }: { center: LatLngExpression }) {
 }
 
 /**
+ * Animate the map to the target coordinates.
+ *
+ * Note that this component must be rendered as a child of MapContainer in order to access its
+ * map context via `useMap`.
+ */
+function FlyToController({
+  target,
+}: {
+  target: { lat: number; lng: number } | null;
+}) {
+  const map = useMap();
+  useEffect(() => {
+    if (!target) {
+      return;
+    }
+    map.flyTo([target.lat, target.lng]);
+  }, [map, target]);
+  return null;
+}
+
+/**
  * When enabled, set crosshair cursor and capture the next click as a POI location.
+ *
+ * Note that this component must be rendered as a child of MapContainer in order to access its
+ * map context via `useMap`.
  */
 function PoiPlacementController({
   enabled,
@@ -136,6 +160,7 @@ export default function Map({
   pois,
   placingPoi,
   onPoiPlaced,
+  flyTo,
 }: {
   tracks: Track[];
   playbackDurationS?: number;
@@ -144,6 +169,7 @@ export default function Map({
   pois?: Poi[];
   placingPoi?: boolean;
   onPoiPlaced?: (lat: number, lng: number) => void;
+  flyTo?: { lat: number; lng: number } | null;
 }) {
   const [showRssiOverlay, setShowRssiOverlay] = useState(false);
   // Decimate points (per-track) to improve performance
@@ -362,6 +388,7 @@ export default function Map({
           className="h-full w-full flex-1"
         >
           <MapCenterController center={center} />
+          <FlyToController target={flyTo ?? null} />
           <TileLayer
             attribution="Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community"
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"

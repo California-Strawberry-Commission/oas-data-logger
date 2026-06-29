@@ -18,6 +18,7 @@ import { useState } from "react";
 function PoiRow({
   poi,
   hidden,
+  onFocus,
   onToggle,
   onEdit,
   onDelete,
@@ -25,6 +26,7 @@ function PoiRow({
 }: {
   poi: Poi;
   hidden: boolean;
+  onFocus: () => void;
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -38,15 +40,23 @@ function PoiRow({
         indented && "pl-7",
       )}
     >
-      <Icon size={14} strokeWidth={2} color={poi.color} />
-      <span
+      <button
+        type="button"
+        title="Center map"
+        onClick={onFocus}
         className={cn(
-          "flex-1 truncate",
+          "flex min-w-0 flex-1 items-center gap-1 text-left",
           hidden && "text-muted-foreground line-through",
         )}
       >
-        {poi.name}
-      </span>
+        <Icon
+          size={14}
+          strokeWidth={2}
+          color={poi.color}
+          className="shrink-0"
+        />
+        <span className="truncate">{poi.name}</span>
+      </button>
       <button
         type="button"
         title={hidden ? "Show" : "Hide"}
@@ -87,6 +97,7 @@ export function PoiPanel({
   onTogglePoiVisibility,
   onToggleGroupVisibility,
   onStartPlacePoi,
+  onFocusPoi,
   onEditPoi,
   onEditGroup,
   onDeletePoi,
@@ -99,6 +110,7 @@ export function PoiPanel({
   onTogglePoiVisibility: (id: string) => void;
   onToggleGroupVisibility: (id: string) => void;
   onStartPlacePoi: () => void;
+  onFocusPoi: (poi: Poi) => void;
   onEditPoi: (poi: Poi) => void;
   onEditGroup: (group: PoiGroup) => void;
   onDeletePoi: (id: string) => void;
@@ -228,6 +240,7 @@ export function PoiPanel({
                       key={poi.id}
                       poi={poi}
                       hidden={hiddenPoiIds.has(poi.id)}
+                      onFocus={() => onFocusPoi(poi)}
                       onToggle={() => onTogglePoiVisibility(poi.id)}
                       onEdit={() => onEditPoi(poi)}
                       onDelete={() => onDeletePoi(poi.id)}
@@ -249,6 +262,7 @@ export function PoiPanel({
                   key={poi.id}
                   poi={poi}
                   hidden={hiddenPoiIds.has(poi.id)}
+                  onFocus={() => onFocusPoi(poi)}
                   onToggle={() => onTogglePoiVisibility(poi.id)}
                   onEdit={() => onEditPoi(poi)}
                   onDelete={() => onDeletePoi(poi.id)}

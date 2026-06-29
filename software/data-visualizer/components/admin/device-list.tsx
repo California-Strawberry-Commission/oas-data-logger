@@ -157,10 +157,9 @@ export default function DeviceList({ devices }: { devices: Device[] }) {
 
       <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
         {selectedDevice && (
-          <DialogContent className="sm:max-w-120">
+          <DialogContent className="sm:max-w-120" aria-describedby={undefined}>
             <DialogHeader>
               <DialogTitle>Edit device</DialogTitle>
-              <DialogDescription></DialogDescription>
             </DialogHeader>
 
             <UpdateDeviceForm device={selectedDevice} onClose={handleClose} />
