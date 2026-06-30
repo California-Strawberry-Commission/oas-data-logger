@@ -527,7 +527,12 @@ export default function Map({
                     ? "bg-gray-800 text-white"
                     : "hover:bg-gray-100"
                 }`}
-                onClick={() => setMapLayer(id)}
+                onClick={() => {
+                  posthog.capture("visualization:map_layer_changed", {
+                    layer: id,
+                  });
+                  setMapLayer(id);
+                }}
               >
                 {layer.label}
               </button>
