@@ -33,6 +33,37 @@ export type Track = {
   color?: string;
 };
 
+type MapLayer = "esri-rgb" | "nimbo-rgb" | "nimbo-ndvi" | "nimbo-nir";
+
+const MAP_LAYERS: Record<
+  MapLayer,
+  { label: string; url: string; attribution: string; tms?: boolean }
+> = {
+  "esri-rgb": {
+    label: "ESRI RGB",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    attribution: '&copy; <a href="https://www.esri.com">Powered by Esri</a>',
+  },
+  "nimbo-rgb": {
+    label: "Nimbo RGB",
+    url: "/api/map-tiles/nimbo/5/{z}/{x}/{y}",
+    attribution: '&copy; <a href="https://nimbo.earth">Powered by Nimbo</a>',
+    tms: true,
+  },
+  "nimbo-ndvi": {
+    label: "NDVI",
+    url: "/api/map-tiles/nimbo/3/{z}/{x}/{y}",
+    attribution: '&copy; <a href="https://nimbo.earth">Powered by Nimbo</a>',
+    tms: true,
+  },
+  "nimbo-nir": {
+    label: "NIR",
+    url: "/api/map-tiles/nimbo/2/{z}/{x}/{y}",
+    attribution: '&copy; <a href="https://nimbo.earth">Powered by Nimbo</a>',
+    tms: true,
+  },
+};
+
 /**
  * Reduce the number of GPS points by keeping only points that are at least
  * `minDistMeters` apart from the previously kept point. This is intended to
@@ -171,6 +202,7 @@ export default function Map({
   onPoiPlaced?: (lat: number, lng: number) => void;
   flyTo?: { lat: number; lng: number } | null;
 }) {
+  const [mapLayer, setMapLayer] = useState<MapLayer>("esri-rgb");
   const [showRssiOverlay, setShowRssiOverlay] = useState(false);
   // Decimate points (per-track) to improve performance
   const renderedTracks: Track[] = useMemo(() => {
@@ -374,6 +406,8 @@ export default function Map({
     return null;
   }
 
+  const activeLayer = MAP_LAYERS[mapLayer];
+
   return (
     <div className="flex h-full w-full flex-col">
       {/* Map + overlay container */}
@@ -381,7 +415,7 @@ export default function Map({
         <MapContainer
           preferCanvas={false}
           center={center}
-          zoom={18}
+          zoom={15}
           scrollWheelZoom={true}
           touchZoom={true}
           doubleClickZoom={true}
@@ -390,9 +424,12 @@ export default function Map({
           <MapCenterController center={center} />
           <FlyToController target={flyTo ?? null} />
           <TileLayer
-            attribution="Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community"
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-            maxZoom={22}
+            key={mapLayer}
+            attribution={activeLayer.attribution}
+            url={activeLayer.url}
+            tms={activeLayer.tms}
+            minZoom={12}
+            maxZoom={18}
           />
 
           {/* One polyline per run */}
@@ -473,40 +510,65 @@ export default function Map({
           </Pane>
         </MapContainer>
 
-        {/* WiFi RSSI toggle + legend */}
-        {hasRssiData && (
-          <div className="absolute right-2 bottom-2 z-1000 rounded bg-white/90 px-3 py-2 text-xs shadow">
-            <label className="flex cursor-pointer items-center gap-1.5 font-semibold">
-              <input
-                type="checkbox"
-                checked={showRssiOverlay}
-                onChange={(e) => {
-                  posthog.capture("visualization:wifi_rssi_overlay_toggled", {
-                    action: e.target.checked ? "show" : "hide",
-                  });
-                  setShowRssiOverlay(e.target.checked);
-                }}
-                className="h-3.5 w-3.5"
-              />
-              WiFi signal strength
-            </label>
-            {showRssiOverlay && (
-              <div className="mt-2">
-                <div
-                  className="h-3 w-full rounded"
-                  style={{
-                    background:
-                      "linear-gradient(to right, hsl(0,100%,45%), hsl(60,100%,45%), hsl(120,100%,45%))",
-                  }}
-                />
-                <div className="mt-0.5 flex justify-between">
-                  <span>Weak</span>
-                  <span>Strong</span>
-                </div>
-              </div>
-            )}
+        {/* Bottom-left overlays */}
+        <div className="absolute bottom-2 left-2 z-1000 flex flex-row items-end gap-2">
+          {/* Layer picker */}
+          <div className="flex divide-x divide-gray-300 overflow-hidden rounded bg-white/90 text-xs shadow">
+            {(
+              Object.entries(MAP_LAYERS) as [
+                MapLayer,
+                (typeof MAP_LAYERS)[MapLayer],
+              ][]
+            ).map(([id, layer]) => (
+              <button
+                key={id}
+                className={`px-2 py-1.5 font-medium transition-colors ${
+                  mapLayer === id
+                    ? "bg-gray-800 text-white"
+                    : "hover:bg-gray-100"
+                }`}
+                onClick={() => setMapLayer(id)}
+              >
+                {layer.label}
+              </button>
+            ))}
           </div>
-        )}
+
+          {/* WiFi RSSI toggle + legend */}
+          {hasRssiData && (
+            <div className="rounded bg-white/90 px-2 py-1.5 text-xs shadow">
+              <label className="flex cursor-pointer items-center gap-1.5 font-semibold">
+                <input
+                  type="checkbox"
+                  checked={showRssiOverlay}
+                  onChange={(e) => {
+                    posthog.capture("visualization:wifi_rssi_overlay_toggled", {
+                      action: e.target.checked ? "show" : "hide",
+                    });
+                    setShowRssiOverlay(e.target.checked);
+                  }}
+                  className="h-3 w-3"
+                />
+                WiFi signal strength
+              </label>
+              {showRssiOverlay && (
+                <div className="mt-2">
+                  <div
+                    className="h-3 w-full rounded"
+                    style={{
+                      background:
+                        "linear-gradient(to right, hsl(0,100%,45%), hsl(60,100%,45%), hsl(120,100%,45%))",
+                    }}
+                  />
+                  <div className="mt-0.5 flex justify-between">
+                    <span>Weak</span>
+                    <span>Strong</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Controls */}
