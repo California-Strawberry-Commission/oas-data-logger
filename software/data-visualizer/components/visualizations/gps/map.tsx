@@ -31,6 +31,7 @@ export type Track = {
   epochTimeS: number;
   points: MapPoint[];
   color?: string;
+  isLive?: boolean;
 };
 
 type MapLayer = "esri-rgb" | "nimbo-rgb" | "nimbo-ndvi" | "nimbo-nir";
@@ -183,6 +184,18 @@ function createPoiDivIcon(icon: PoiIcon, color: string): L.DivIcon {
   });
 }
 
+const pingIcon = L.divIcon({
+  className: "",
+  html: `
+    <span class="relative flex h-3 w-3">
+      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white"></span>
+      <span class="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+    </span>
+  `,
+  iconSize: [12, 12],
+  iconAnchor: [6, 6],
+});
+
 export default function Map({
   tracks,
   playbackDurationS = 10,
@@ -217,6 +230,7 @@ export default function Map({
           epochTimeS: track.epochTimeS,
           points: decimated,
           color: track.color,
+          isLive: track.isLive,
         };
       })
       .filter((t) => t.points.length > 0);
@@ -337,6 +351,7 @@ export default function Map({
       id: track.id,
       positions: track.points.map((point) => point.position),
       color: track.color,
+      isLive: track.isLive,
     }));
   }, [renderedTracks]);
 
@@ -387,6 +402,7 @@ export default function Map({
               point: point,
               timestampS: track.epochTimeS + point.elapsedS,
               color: track.color,
+              isLive: track.isLive,
             }
           : null;
       })
@@ -398,6 +414,7 @@ export default function Map({
           point: MapPoint;
           timestampS: number;
           color: string | undefined;
+          isLive: boolean | undefined;
         } => x !== null,
       );
   }, [renderedTracks, currentElapsedS]);
@@ -439,6 +456,7 @@ export default function Map({
                 key={polyline.id}
                 positions={polyline.positions}
                 color={polyline.color}
+                dashArray={polyline.isLive ? "10, 10" : undefined}
               />
             ))}
           </Pane>
@@ -507,6 +525,19 @@ export default function Map({
                 </Popup>
               </CircleMarker>
             ))}
+          </Pane>
+          {/* Pulsing effect markers for live tracks, rendered below the actual markers */}
+          <Pane name="live-markers" style={{ zIndex: 599 }}>
+            {currentPoints
+              .filter(({ isLive }) => isLive)
+              .map(({ id, point }) => (
+                <Marker
+                  key={id}
+                  position={point.position}
+                  icon={pingIcon}
+                  interactive={false}
+                />
+              ))}
           </Pane>
         </MapContainer>
 
