@@ -49,7 +49,14 @@ export default function SessionSummaryCard({
   const runWord = summary.runCount === 1 ? "run" : "runs";
 
   return (
-    <Card className="min-w-44">
+    <Card
+      className={`min-w-44 relative ${summary.isActive ? "border-red-500" : ""}`}
+    >
+      {summary.isActive && (
+        <span className="absolute -top-2.5 left-3 rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-semibold leading-none text-white">
+          LIVE
+        </span>
+      )}
       <CardHeader>
         <CardTitle>
           {summary.color && (
@@ -60,11 +67,6 @@ export default function SessionSummaryCard({
             />
           )}
           <span className="text-sm font-medium">{startTime}</span>
-          {summary.isActive && (
-            <span className="ml-2 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-200">
-              Live
-            </span>
-          )}
         </CardTitle>
         {summary.deviceName && (
           <CardDescription>{summary.deviceName}</CardDescription>

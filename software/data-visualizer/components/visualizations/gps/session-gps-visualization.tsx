@@ -90,6 +90,7 @@ export default function SessionGpsVisualization({
             epochTimeS: run.epochTimeS,
             points,
             color: session.color,
+            isLive: run.isActive,
           });
         }
       }

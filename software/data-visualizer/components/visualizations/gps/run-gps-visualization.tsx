@@ -162,6 +162,7 @@ export default function RunGpsVisualization({
         epochTimeS: r.run.epochTimeS,
         points: filteredPointsByRun[r.run.uuid] ?? [],
         color: r.color,
+        isLive: r.run.isActive,
       }))
       .filter((t) => t.points.length > 0);
   }, [filteredRuns, filteredPointsByRun]);
