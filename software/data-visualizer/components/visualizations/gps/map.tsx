@@ -217,6 +217,7 @@ export default function Map({
 }) {
   const [mapLayer, setMapLayer] = useState<MapLayer>("esri-rgb");
   const [showRssiOverlay, setShowRssiOverlay] = useState(false);
+
   // Decimate points (per-track) to improve performance
   const renderedTracks: Track[] = useMemo(() => {
     return tracks
@@ -248,10 +249,10 @@ export default function Map({
     return Math.max(0, Math.floor(max));
   }, [renderedTracks]);
 
-  // Current position of the scrubber
+  // Current position of the scrubber. We allow both uncontrolled (internally managed state)
+  // and controlled (passed into this component via props).
   const [uncontrolledElapsedS, setUncontrolledElapsedS] = useState<number>(0);
   const currentElapsedS = selectedElapsedS ?? uncontrolledElapsedS;
-
   const setCurrentElapsedS = (elapsedS: number) => {
     const clamped = Math.max(0, Math.min(maxElapsedS, Math.round(elapsedS)));
     if (onSelectedElapsedChange) {
@@ -261,11 +262,37 @@ export default function Map({
     }
   };
 
-  // Reset scrubber when tracks change
+  // Live-follow mode (always show the latest point of live tracks). Note that live-follow mode
+  // overrides scrubber behavior.
+  const [liveFollow, setLiveFollow] = useState(false);
+  const hasLiveTrack = renderedTracks.some((track) => track.isLive);
+  const following = liveFollow && hasLiveTrack;
+
+  // Identifies the current set of selected runs. We use this to ensure that we do not reset the
+  // scrubber state if the selected runs don't change (which happens if new data comes in for a
+  // live track).
+  const trackIdsKey = useMemo(
+    () => renderedTracks.map((track) => track.id).join("|"),
+    [renderedTracks],
+  );
+
+  // Reset scrubber when the selected runs change, and default into live-follow mode whenever any
+  // newly-selected run is live.
   useEffect(() => {
+    setLiveFollow(hasLiveTrack);
     setCurrentElapsedS(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [renderedTracks, maxElapsedS]);
+  }, [trackIdsKey]);
+
+  // If we are in live-follow mode and all live tracks end, set the scrubber at the final position.
+  const prevHasLiveTrackRef = useRef(hasLiveTrack);
+  useEffect(() => {
+    if (prevHasLiveTrackRef.current && !hasLiveTrack && liveFollow) {
+      setCurrentElapsedS(maxElapsedS);
+    }
+    prevHasLiveTrackRef.current = hasLiveTrack;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasLiveTrack, liveFollow, maxElapsedS]);
 
   // Whether the scrubber playback animation is active
   const [isPlaying, setIsPlaying] = useState(false);
@@ -276,13 +303,14 @@ export default function Map({
   // elapsedS of run data that animation should start at
   const playStartElapsedSRef = useRef<number>(0);
 
-  // Stop playback if range changes mid-play
+  // Stop playback if the selected runs change mid-play
   useEffect(() => {
     playStartElapsedSRef.current = 0;
     if (isPlaying) {
       setIsPlaying(false);
     }
-  }, [maxElapsedS]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackIdsKey]);
 
   // Scrubber playback animation
   useEffect(() => {
@@ -342,8 +370,13 @@ export default function Map({
     };
   }, [isPlaying, maxElapsedS, playbackDurationS]);
 
-  // Map center is the first point of first track
-  const center = renderedTracks[0]?.points[0]?.position;
+  // Map center is the first point of first track. We memoize by trackIdsKey so it keeps a
+  // stable reference across live-data refreshes of the same run selection.
+  const center = useMemo(
+    () => renderedTracks[0]?.points[0]?.position,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [trackIdsKey],
+  );
 
   // Per-track polylines
   const polylines = useMemo(() => {
@@ -386,38 +419,28 @@ export default function Map({
     );
   }, [renderedTracks, showRssiOverlay]);
 
-  // Per-track current point markers
+  // Per-track current point markers.
+  // In scrub mode, show the positions associated with the selected time for each track.
+  // In live-follow mode, only show the latest points of live tracks.
   const currentPoints = useMemo(() => {
     return renderedTracks
+      .filter((track) => !following || track.isLive)
       .map((track) => {
-        const idx = findClosestIndex(track.points, currentElapsedS);
-        if (idx < 0) {
-          return null;
-        }
-
-        const point = track.points[idx];
+        const point = following
+          ? track.points[track.points.length - 1]
+          : track.points[findClosestIndex(track.points, currentElapsedS)];
         return point
           ? {
               id: track.id,
-              point: point,
+              point,
               timestampS: track.epochTimeS + point.elapsedS,
               color: track.color,
               isLive: track.isLive,
             }
           : null;
       })
-      .filter(
-        (
-          x,
-        ): x is {
-          id: string;
-          point: MapPoint;
-          timestampS: number;
-          color: string | undefined;
-          isLive: boolean | undefined;
-        } => x !== null,
-      );
-  }, [renderedTracks, currentElapsedS]);
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+  }, [renderedTracks, currentElapsedS, following]);
 
   if (!center || renderedTracks.length === 0) {
     return null;
@@ -616,55 +639,82 @@ export default function Map({
           min={0}
           max={maxElapsedS}
           step={1}
-          value={Math.max(
-            0,
-            Math.min(maxElapsedS, Math.round(currentElapsedS)),
-          )}
+          value={
+            following
+              ? maxElapsedS
+              : Math.max(0, Math.min(maxElapsedS, Math.round(currentElapsedS)))
+          }
           onChange={(e) => {
-            // Stop playback when manually scrubbing
             setIsPlaying(false);
+            // Dragging disables live-follow mode and goes into scrub mode
+            setLiveFollow(false);
             setCurrentElapsedS(Number(e.target.value));
           }}
         />
         <div className="grid grid-cols-3 items-center text-xs">
           <span className="text-left tabular-nums">{formatElapsed(0)}</span>
           <span className="text-center font-semibold tabular-nums">
-            {formatElapsed(Math.round(currentElapsedS))}
+            {following ? "LIVE" : formatElapsed(Math.round(currentElapsedS))}
           </span>
           <span className="text-right tabular-nums">
             {formatElapsed(maxElapsedS)}
           </span>
         </div>
 
-        {/* Scrubber playback button */}
+        {/* Scrubber playback button + live mode affordances */}
         <div className="m-2 flex items-center justify-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              const nextPlaying = !isPlaying;
-              posthog.capture("visualization:map_playback_toggled", {
-                action: nextPlaying ? "play" : "pause",
-              });
-              // If at end, restart from beginning when hitting play
-              if (!isPlaying && currentElapsedS >= maxElapsedS) {
-                setCurrentElapsedS(0);
-              }
-              setIsPlaying((v) => !v);
-            }}
-          >
-            {isPlaying ? (
-              <>
-                <Pause className="h-4 w-4" />
-                Pause
-              </>
-            ) : (
-              <>
-                <Play className="h-4 w-4" />
-                Play
-              </>
-            )}
-          </Button>
+          {following ? (
+            <div className="flex items-center gap-1.5 font-semibold text-red-600">
+              <span className="h-2 w-2 rounded-full bg-red-600 animate-pulse" />
+              LIVE
+            </div>
+          ) : (
+            <>
+              {/* Scrubber playback button */}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  const nextPlaying = !isPlaying;
+                  posthog.capture("visualization:map_playback_toggled", {
+                    action: nextPlaying ? "play" : "pause",
+                  });
+                  // If at end, restart from beginning when hitting play
+                  if (!isPlaying && currentElapsedS >= maxElapsedS) {
+                    setCurrentElapsedS(0);
+                  }
+                  setIsPlaying((v) => !v);
+                }}
+              >
+                {isPlaying ? (
+                  <>
+                    <Pause className="h-4 w-4" />
+                    Pause
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4" />
+                    Play
+                  </>
+                )}
+              </Button>
+              {/* Live mode button */}
+              {hasLiveTrack && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    posthog.capture("visualization:map_go_live_clicked");
+                    setIsPlaying(false);
+                    setLiveFollow(true);
+                  }}
+                >
+                  <span className="h-2 w-2 rounded-full bg-red-600" />
+                  Go live
+                </Button>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>
