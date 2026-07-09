@@ -18,7 +18,7 @@ import { Trash2 } from "lucide-react";
 import posthog from "posthog-js";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-const MAX_ROWS = 4;
+const MAX_ROWS = 6;
 
 function createRow(): RunSelectionRow {
   return { rowId: crypto.randomUUID(), device: null, run: null };
