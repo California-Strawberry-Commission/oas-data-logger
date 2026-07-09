@@ -384,7 +384,6 @@ export default function Map({
       id: track.id,
       positions: track.points.map((point) => point.position),
       color: track.color,
-      isLive: track.isLive,
     }));
   }, [renderedTracks]);
 
@@ -479,7 +478,6 @@ export default function Map({
                 key={polyline.id}
                 positions={polyline.positions}
                 color={polyline.color}
-                dashArray={polyline.isLive ? "10, 10" : undefined}
               />
             ))}
           </Pane>

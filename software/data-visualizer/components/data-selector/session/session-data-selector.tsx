@@ -7,7 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import posthog from "posthog-js";
 import { useEffect, useRef, useState } from "react";
 
-const MAX_ROWS = 4;
+const MAX_ROWS = 6;
 
 function createRow(): SessionSelectionRow {
   return { rowId: crypto.randomUUID(), device: null, sessionKey: "" };
