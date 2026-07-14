@@ -91,6 +91,7 @@ export default function SessionGpsVisualization({
             points,
             color: session.color,
             isLive: run.isActive,
+            icon: run.icon,
           });
         }
       }

@@ -58,12 +58,14 @@ export type Run = {
   durationS: number;
   tickBaseUs: number;
   isActive: boolean;
+  icon: string | null;
 };
 export type RunDataSample = {
   streamId: string;
   tick: number;
   data: unknown;
 };
+export type UpdateRunInput = { icon?: string | null };
 
 const fetchDevices = () => getJSON<Device[]>("/api/devices");
 
@@ -201,6 +203,21 @@ export function useRunStreamsMany(
   });
 }
 
+export function useUpdateRun() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ uuid, input }: { uuid: string; input: UpdateRunInput }) =>
+      patchJSON<Run>(`/api/runs/${encodeURIComponent(uuid)}`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({
+        predicate: (q) =>
+          q.queryKey[0] === "runs" || q.queryKey[0] === "deviceRuns",
+      });
+    },
+  });
+}
+
 export function useDeleteDeviceRun(deviceId: string) {
   const qc = useQueryClient();
 
@@ -217,13 +234,12 @@ export function useDeleteDeviceRun(deviceId: string) {
 
 //#region Points of interest
 
-export type PoiIcon = "pin" | "star" | "alert" | "check" | "x";
 export type Poi = {
   id: string;
   lat: number;
   lng: number;
   name: string;
-  icon: PoiIcon;
+  icon: string;
   color: string;
   description: string;
   groupId: string | null;
@@ -233,7 +249,7 @@ export type CreatePoiInput = {
   lat: number;
   lng: number;
   name: string;
-  icon?: PoiIcon;
+  icon?: string;
   color?: string;
   description?: string;
   groupId?: string | null;

@@ -14,7 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
  *   icon?: string,
  *   color?: string,
  *   description?: string,
- *   groupId?: string
+ *   groupId?: string | null
  * }
  */
 export const PATCH = withAuth(

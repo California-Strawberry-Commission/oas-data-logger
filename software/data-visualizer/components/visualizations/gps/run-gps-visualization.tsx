@@ -163,6 +163,7 @@ export default function RunGpsVisualization({
         points: filteredPointsByRun[r.run.uuid] ?? [],
         color: r.color,
         isLive: r.run.isActive,
+        icon: r.run.icon,
       }))
       .filter((t) => t.points.length > 0);
   }, [filteredRuns, filteredPointsByRun]);
