@@ -43,6 +43,7 @@ export const GET = withAuth(async (request: NextRequest, user: User) => {
         durationS: true,
         metadata: true,
         isActive: true,
+        icon: true,
       },
     });
 
@@ -54,6 +55,7 @@ export const GET = withAuth(async (request: NextRequest, user: User) => {
       durationS: run.durationS,
       metadata: run.metadata,
       isActive: run.isActive,
+      icon: run.icon,
     }));
 
     return NextResponse.json(result);

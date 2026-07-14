@@ -58,6 +58,7 @@ export type Run = {
   durationS: number;
   tickBaseUs: number;
   isActive: boolean;
+  icon: string | null;
 };
 export type RunDataSample = {
   streamId: string;
@@ -217,13 +218,12 @@ export function useDeleteDeviceRun(deviceId: string) {
 
 //#region Points of interest
 
-export type PoiIcon = "pin" | "star" | "alert" | "check" | "x";
 export type Poi = {
   id: string;
   lat: number;
   lng: number;
   name: string;
-  icon: PoiIcon;
+  icon: string;
   color: string;
   description: string;
   groupId: string | null;
@@ -233,7 +233,7 @@ export type CreatePoiInput = {
   lat: number;
   lng: number;
   name: string;
-  icon?: PoiIcon;
+  icon?: string;
   color?: string;
   description?: string;
   groupId?: string | null;

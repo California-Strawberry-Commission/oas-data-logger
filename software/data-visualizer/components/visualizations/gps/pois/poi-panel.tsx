@@ -1,6 +1,6 @@
 "use client";
 
-import { POI_LUCIDE_ICON } from "@/components/visualizations/gps/pois/poi-icon";
+import { POI_LUCIDE_ICON } from "@/components/visualizations/gps/map-icons";
 import type { Poi, PoiGroup } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {

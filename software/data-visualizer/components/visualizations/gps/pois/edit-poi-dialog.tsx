@@ -11,14 +11,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { POI_LUCIDE_ICON } from "@/components/visualizations/gps/pois/poi-icon";
+import { POI_LUCIDE_ICON } from "@/components/visualizations/gps/map-icons";
 import {
   useCreatePoi,
   useCreatePoiGroup,
   useUpdatePoi,
   type Poi,
   type PoiGroup,
-  type PoiIcon,
 } from "@/lib/api";
 import { cn, SELECTION_COLORS } from "@/lib/utils";
 import { AlertCircleIcon } from "lucide-react";
@@ -44,7 +43,7 @@ export default function EditPoiDialog({
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [icon, setIcon] = useState<PoiIcon>("pin");
+  const [icon, setIcon] = useState("pin");
   const [color, setColor] = useState(SELECTION_COLORS[0]);
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
@@ -214,19 +213,14 @@ export default function EditPoiDialog({
           <div className="space-y-2">
             <Label>Icon</Label>
             <div className="flex gap-2">
-              {(
-                Object.entries(POI_LUCIDE_ICON) as [
-                  PoiIcon,
-                  (typeof POI_LUCIDE_ICON)[PoiIcon],
-                ][]
-              ).map(([value, IconComponent]) => (
+              {Object.entries(POI_LUCIDE_ICON).map(([key, IconComponent]) => (
                 <button
-                  key={value}
+                  key={key}
                   type="button"
-                  onClick={() => setIcon(value)}
+                  onClick={() => setIcon(key)}
                   className={cn(
                     "flex h-9 w-9 items-center justify-center rounded-md border transition-colors",
-                    icon === value
+                    icon === key
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-input bg-background hover:bg-accent hover:text-accent-foreground",
                   )}

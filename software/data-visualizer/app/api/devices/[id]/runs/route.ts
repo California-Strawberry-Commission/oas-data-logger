@@ -25,6 +25,7 @@ export const GET = withAuth(
           durationS: true,
           metadata: true,
           isActive: true,
+          icon: true,
         },
       });
 
@@ -36,6 +37,7 @@ export const GET = withAuth(
         durationS: run.durationS,
         metadata: run.metadata,
         isActive: run.isActive,
+        icon: run.icon,
       }));
 
       return NextResponse.json(result);

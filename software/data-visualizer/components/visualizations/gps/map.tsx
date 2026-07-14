@@ -6,8 +6,11 @@ import {
   findClosestIndex,
   type MapPoint,
 } from "@/components/visualizations/gps/gps-processing";
-import { POI_LUCIDE_ICON } from "@/components/visualizations/gps/pois/poi-icon";
-import type { Poi, PoiIcon } from "@/lib/api";
+import {
+  POI_LUCIDE_ICON,
+  TRACK_LUCIDE_ICON,
+} from "@/components/visualizations/gps/map-icons";
+import type { Poi } from "@/lib/api";
 import { colorForRssi, formatElapsed } from "@/lib/utils";
 import L, { LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -32,6 +35,7 @@ export type Track = {
   points: MapPoint[];
   color?: string;
   isLive?: boolean;
+  icon?: string | null;
 };
 
 type MapLayer = "esri-rgb" | "nimbo-rgb" | "nimbo-ndvi" | "nimbo-nir";
@@ -170,31 +174,56 @@ function PoiPlacementController({
   return null;
 }
 
-function createPoiDivIcon(icon: PoiIcon, color: string): L.DivIcon {
-  const Icon = POI_LUCIDE_ICON[icon] ?? POI_LUCIDE_ICON["pin"];
+function createPoiDivIcon(
+  iconKey: string,
+  color: string,
+  size: number = 26,
+): L.DivIcon {
+  const Icon = POI_LUCIDE_ICON[iconKey] ?? POI_LUCIDE_ICON["pin"];
+  const iconSize = Math.round(size * (16 / 26));
+  const anchor = size / 2;
   const svg = renderToStaticMarkup(
-    <Icon size={16} strokeWidth={2} color={color} />,
+    <Icon size={iconSize} strokeWidth={2} color={color} />,
   );
   return L.divIcon({
     className: "",
-    html: `<div style="width:26px;height:26px;background:white;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,0.35)">${svg}</div>`,
-    iconSize: [26, 26],
-    iconAnchor: [13, 13],
-    popupAnchor: [0, -16],
+    html: `<div style="width:${size}px;height:${size}px;background:white;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,0.35)">${svg}</div>`,
+    iconSize: [size, size],
+    iconAnchor: [anchor, anchor],
+    popupAnchor: [0, -anchor],
   });
 }
 
-const pingIcon = L.divIcon({
-  className: "",
-  html: `
-    <span class="relative flex h-3 w-3">
-      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white"></span>
-      <span class="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
-    </span>
-  `,
-  iconSize: [12, 12],
-  iconAnchor: [6, 6],
-});
+function createTrackDivIcon(
+  iconKey: string | null | undefined,
+  color: string,
+  size: number = 26,
+  pulse: boolean = false,
+): L.DivIcon {
+  const Icon = iconKey ? TRACK_LUCIDE_ICON[iconKey] : null;
+  const iconSize = Math.round(size * (16 / 26));
+  const anchor = size / 2;
+  const svg = Icon
+    ? renderToStaticMarkup(
+        <Icon size={iconSize} strokeWidth={2} color="white" />,
+      )
+    : "";
+  const pulseHtml = pulse
+    ? `<span class="animate-ping absolute inline-flex rounded-full" style="width:${size}px;height:${size}px;background:white"></span>`
+    : "";
+  return L.divIcon({
+    className: "",
+    html: `
+      <div style="position:relative;width:${size}px;height:${size}px">
+        ${pulseHtml}
+        <div style="position:relative;width:${size}px;height:${size}px;background:${color};border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,0.35);border:2px solid white">${svg}</div>
+      </div>
+    `,
+    iconSize: [size, size],
+    iconAnchor: [anchor, anchor],
+    popupAnchor: [0, -anchor],
+  });
+}
 
 export default function Map({
   tracks,
@@ -232,6 +261,7 @@ export default function Map({
           points: decimated,
           color: track.color,
           isLive: track.isLive,
+          icon: track.icon,
         };
       })
       .filter((t) => t.points.length > 0);
@@ -435,6 +465,7 @@ export default function Map({
               timestampS: track.epochTimeS + point.elapsedS,
               color: track.color,
               isLive: track.isLive,
+              icon: track.icon,
             }
           : null;
       })
@@ -526,39 +557,29 @@ export default function Map({
 
           {/* One marker per run at the current elapsed position */}
           <Pane name="markers" style={{ zIndex: 600 }}>
-            {currentPoints.map(({ id, point, timestampS, color }) => (
-              <CircleMarker
-                key={id}
-                center={point.position}
-                radius={6}
-                color="white"
-                fillColor={color}
-                fillOpacity={1}
-                weight={2}
-              >
-                <Popup>
-                  <div className="max-w-[220px] break-words text-sm">
-                    <div className="font-semibold">Run</div>
-                    <div>{id}</div>
-                    <div className="mt-2 font-semibold">Time</div>
-                    <div>{`${new Date(timestampS * 1000).toLocaleString()}`}</div>
-                  </div>
-                </Popup>
-              </CircleMarker>
-            ))}
-          </Pane>
-          {/* Pulsing effect markers for live tracks, rendered below the actual markers */}
-          <Pane name="live-markers" style={{ zIndex: 599 }}>
-            {currentPoints
-              .filter(({ isLive }) => isLive)
-              .map(({ id, point }) => (
+            {currentPoints.map(
+              ({ id, point, timestampS, color, icon, isLive }) => (
                 <Marker
                   key={id}
                   position={point.position}
-                  icon={pingIcon}
-                  interactive={false}
-                />
-              ))}
+                  icon={createTrackDivIcon(
+                    icon,
+                    color ?? "#000000",
+                    icon ? 26 : 14,
+                    isLive,
+                  )}
+                >
+                  <Popup>
+                    <div className="max-w-[220px] break-words text-sm">
+                      <div className="font-semibold">Run</div>
+                      <div>{id}</div>
+                      <div className="mt-2 font-semibold">Time</div>
+                      <div>{`${new Date(timestampS * 1000).toLocaleString()}`}</div>
+                    </div>
+                  </Popup>
+                </Marker>
+              ),
+            )}
           </Pane>
         </MapContainer>
 

@@ -1,16 +1,25 @@
-import type { PoiIcon } from "@/lib/api";
 import {
   Check,
   MapPin,
+  PersonStanding,
   Star,
+  Tractor,
   TriangleAlert,
   X,
   type LucideProps,
 } from "lucide-react";
 import type React from "react";
 
+export const TRACK_LUCIDE_ICON: Record<
+  string,
+  React.ComponentType<LucideProps>
+> = {
+  tractor: Tractor,
+  person: PersonStanding,
+};
+
 export const POI_LUCIDE_ICON: Record<
-  PoiIcon,
+  string,
   React.ComponentType<LucideProps>
 > = {
   pin: MapPin,

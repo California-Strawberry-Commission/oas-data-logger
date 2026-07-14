@@ -98,6 +98,7 @@ model Run {
   durationS  Int     @default(0)
   metadata   Json
   isActive   Boolean @default(false)
+  icon       String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
