@@ -65,6 +65,7 @@ export type RunDataSample = {
   tick: number;
   data: unknown;
 };
+export type UpdateRunInput = { icon?: string | null };
 
 const fetchDevices = () => getJSON<Device[]>("/api/devices");
 
@@ -198,6 +199,21 @@ export function useRunStreamsMany(
         firstError,
         dataByUuid,
       };
+    },
+  });
+}
+
+export function useUpdateRun() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ uuid, input }: { uuid: string; input: UpdateRunInput }) =>
+      patchJSON<Run>(`/api/runs/${encodeURIComponent(uuid)}`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({
+        predicate: (q) =>
+          q.queryKey[0] === "runs" || q.queryKey[0] === "deviceRuns",
+      });
     },
   });
 }

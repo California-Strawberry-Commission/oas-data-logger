@@ -10,6 +10,7 @@ import {
   POI_LUCIDE_ICON,
   TRACK_LUCIDE_ICON,
 } from "@/components/visualizations/gps/map-icons";
+import RunMarkerPopup from "@/components/visualizations/gps/run-marker-popup";
 import type { Poi } from "@/lib/api";
 import { colorForRssi, formatElapsed } from "@/lib/utils";
 import L, { LatLngExpression } from "leaflet";
@@ -570,12 +571,11 @@ export default function Map({
                   )}
                 >
                   <Popup>
-                    <div className="max-w-[220px] break-words text-sm">
-                      <div className="font-semibold">Run</div>
-                      <div>{id}</div>
-                      <div className="mt-2 font-semibold">Time</div>
-                      <div>{`${new Date(timestampS * 1000).toLocaleString()}`}</div>
-                    </div>
+                    <RunMarkerPopup
+                      runUuid={id}
+                      timestampS={timestampS}
+                      icon={icon}
+                    />
                   </Popup>
                 </Marker>
               ),
