@@ -2,15 +2,15 @@
 
 import { Button } from "@/components/ui/button";
 import {
-  distanceMeters,
+  decimateByDistance,
   findClosestIndex,
   type MapPoint,
 } from "@/components/visualizations/gps/gps-processing";
 import {
   POI_LUCIDE_ICON,
   TRACK_LUCIDE_ICON,
-} from "@/components/visualizations/gps/map-icons";
-import RunMarkerPopup from "@/components/visualizations/gps/run-marker-popup";
+} from "@/components/visualizations/gps/map/map-icons";
+import RunMarkerPopup from "@/components/visualizations/gps/map/run-marker-popup";
 import type { Poi } from "@/lib/api";
 import { colorForRssi, formatElapsed } from "@/lib/utils";
 import L, { LatLngExpression } from "leaflet";
@@ -69,43 +69,6 @@ const MAP_LAYERS: Record<
     tms: true,
   },
 };
-
-/**
- * Reduce the number of GPS points by keeping only points that are at least
- * `minDistMeters` apart from the previously kept point. This is intended to
- * be used to improve performance for map rendering.
- *
- * @param points - GPS points in traversal order.
- * @param minDistMeters - Minimum distance required to keep a point.
- * @returns Decimated GPS points.
- */
-export function decimateByDistance(
-  points: MapPoint[],
-  minDistMeters: number = 3,
-): MapPoint[] {
-  if (points.length === 0) {
-    return [];
-  }
-
-  const result: MapPoint[] = [points[0]];
-  let lastKept = points[0];
-  for (let i = 1; i < points.length; i++) {
-    if (
-      distanceMeters(lastKept.position, points[i].position) >= minDistMeters
-    ) {
-      result.push(points[i]);
-      lastKept = points[i];
-    }
-  }
-
-  // Always keep the last point
-  const lastPoint = points[points.length - 1];
-  if (result[result.length - 1] !== lastPoint) {
-    result.push(lastPoint);
-  }
-
-  return result;
-}
 
 /**
  * Pans the map when `center` changes.

@@ -12,8 +12,8 @@ import {
   toDwellMinsSamples,
   toSpeedMphSamples,
 } from "@/components/visualizations/gps/gps-processing";
-import type { Track } from "@/components/visualizations/gps/map";
-import MapWithPois from "@/components/visualizations/gps/map-with-pois";
+import type { Track } from "@/components/visualizations/gps/map/map";
+import MapWithPois from "@/components/visualizations/gps/map/map-with-pois";
 import {
   computeFilteredPointsByRun,
   ErrorMap,
@@ -22,7 +22,7 @@ import {
 } from "@/components/visualizations/gps/run-gps-visualization";
 import SessionSummaryCard, {
   type SessionSummary,
-} from "@/components/visualizations/gps/session-summary-card";
+} from "@/components/visualizations/gps/summary/session-summary-card";
 import TimeSeriesChart, {
   type TimeSeries,
 } from "@/components/visualizations/gps/time-series-chart";
