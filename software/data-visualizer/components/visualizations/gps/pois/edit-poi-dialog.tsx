@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { POI_LUCIDE_ICON } from "@/components/visualizations/gps/map-icons";
+import { POI_LUCIDE_ICON } from "@/components/visualizations/gps/map/map-icons";
 import {
   useCreatePoi,
   useCreatePoiGroup,

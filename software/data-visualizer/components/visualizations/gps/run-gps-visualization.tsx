@@ -16,11 +16,11 @@ import {
   toSpeedMphSamples,
   type MapPoint,
 } from "@/components/visualizations/gps/gps-processing";
-import type { Track } from "@/components/visualizations/gps/map";
-import MapWithPois from "@/components/visualizations/gps/map-with-pois";
+import type { Track } from "@/components/visualizations/gps/map/map";
+import MapWithPois from "@/components/visualizations/gps/map/map-with-pois";
 import RunSummaryCard, {
   type RunSummary,
-} from "@/components/visualizations/gps/run-summary-card";
+} from "@/components/visualizations/gps/summary/run-summary-card";
 import TimeSeriesChart, {
   type TimeSeries,
 } from "@/components/visualizations/gps/time-series-chart";

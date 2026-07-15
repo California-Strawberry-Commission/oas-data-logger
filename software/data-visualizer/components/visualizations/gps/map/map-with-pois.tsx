@@ -1,8 +1,10 @@
 "use client";
 
+import type { Track } from "@/components/visualizations/gps/map/map";
 import EditGroupDialog from "@/components/visualizations/gps/pois/edit-group-dialog";
 import EditPoiDialog from "@/components/visualizations/gps/pois/edit-poi-dialog";
 import { PoiPanel } from "@/components/visualizations/gps/pois/poi-panel";
+import { LoadingMap } from "@/components/visualizations/gps/run-gps-visualization";
 import {
   useDeletePoi,
   useDeletePoiGroup,
@@ -14,14 +16,15 @@ import {
 import dynamic from "next/dynamic";
 import posthog from "posthog-js";
 import { useMemo, useState } from "react";
-import type { Track } from "./map";
-import { LoadingMap } from "./run-gps-visualization";
 
 // Lazy load Map
-const MapComponent = dynamic(() => import("./map"), {
-  ssr: false,
-  loading: () => <LoadingMap />,
-});
+const MapComponent = dynamic(
+  () => import("@/components/visualizations/gps/map/map"),
+  {
+    ssr: false,
+    loading: () => <LoadingMap />,
+  },
+);
 
 function toggleSet(s: Set<string>, id: string): Set<string> {
   const next = new Set(s);
@@ -157,7 +160,9 @@ export default function MapWithPois({
         onOpenChange={(open, saved) => {
           if (!open && !saved) {
             posthog.capture(
-              editingPoi !== undefined ? "poi:edit_abandoned" : "poi:create_abandoned",
+              editingPoi !== undefined
+                ? "poi:edit_abandoned"
+                : "poi:create_abandoned",
             );
           }
           setEditPoiDialogOpen(open);
