@@ -41,11 +41,14 @@ export default function MapWithPois({
   playbackDurationS,
   selectedElapsedS,
   onSelectedElapsedChange,
+  fullscreenOverlay,
 }: {
   tracks: Track[];
   playbackDurationS?: number;
   selectedElapsedS?: number;
   onSelectedElapsedChange?: (elapsedS: number) => void;
+  // Content shown overlaid on map while in full screen mode
+  fullscreenOverlay?: React.ReactNode;
 }) {
   // hiddenPoiIds and hiddenGroupIds are set via PoiPanel, and used to determine which
   // POIs to show in the map.
@@ -82,10 +85,7 @@ export default function MapWithPois({
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () =>
-      document.removeEventListener(
-        "fullscreenchange",
-        handleFullscreenChange,
-      );
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
   const toggleFullscreen = () => {
@@ -186,6 +186,11 @@ export default function MapWithPois({
             deletePoiGroup.mutate(id);
           }}
         />
+        {isFullscreen && fullscreenOverlay && (
+          <div className="absolute top-2 left-2 z-1000">
+            {fullscreenOverlay}
+          </div>
+        )}
       </div>
       <EditPoiDialog
         open={editPoiDialogOpen}

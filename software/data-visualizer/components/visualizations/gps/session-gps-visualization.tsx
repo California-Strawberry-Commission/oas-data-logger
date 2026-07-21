@@ -253,23 +253,27 @@ export default function SessionGpsVisualization({
   const isSingleSession = sessions.length === 1;
   const firstSessionEpochS = sessions[0]?.runs[0]?.epochTimeS ?? 0;
 
+  const summaryCards = sessionSummaries.map((s) => (
+    <SessionSummaryCard key={`${s.sessionKey}-${s.color}`} summary={s} />
+  ));
+
+  const fullscreenSummaryCards = (
+    <div className="flex max-h-[calc(100vh-1rem)] w-64 flex-col gap-4 overflow-y-auto p-4">
+      {summaryCards}
+    </div>
+  );
+
   return (
     <>
-      {sessionSummaries.length > 0 && (
-        <div className="flex flex-wrap gap-4">
-          {sessionSummaries.map((s) => (
-            <SessionSummaryCard
-              key={`${s.sessionKey}-${s.color}`}
-              summary={s}
-            />
-          ))}
-        </div>
+      {summaryCards.length > 0 && (
+        <div className="flex flex-wrap gap-4">{summaryCards}</div>
       )}
       <div className="w-full h-150 border rounded-md overflow-hidden">
         <MapWithPois
           tracks={tracks}
           selectedElapsedS={selectedElapsedS ?? undefined}
           onSelectedElapsedChange={setSelectedElapsedS}
+          fullscreenOverlay={fullscreenSummaryCards}
         />
       </div>
       <Card className="w-full h-60">
