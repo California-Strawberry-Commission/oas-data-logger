@@ -15,7 +15,7 @@ import {
 } from "@/lib/api";
 import dynamic from "next/dynamic";
 import posthog from "posthog-js";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 // Lazy load Map
 const MapComponent = dynamic(
@@ -68,6 +68,33 @@ export default function MapWithPois({
   const [editingPoi, setEditingPoi] = useState<Poi | undefined>();
   const [editGroupDialogOpen, setEditGroupDialogOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<PoiGroup | null>(null);
+  // Full screen mode
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const fullscreen = document.fullscreenElement === wrapperRef.current;
+      posthog.capture("visualization:map_fullscreen_toggled", {
+        enabled: fullscreen,
+      });
+      setIsFullscreen(fullscreen);
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () =>
+      document.removeEventListener(
+        "fullscreenchange",
+        handleFullscreenChange,
+      );
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      wrapperRef.current?.requestFullscreen();
+    }
+  };
 
   const { data: pois = [] } = usePois();
   const { data: poiGroups = [] } = usePoiGroups();
@@ -92,7 +119,10 @@ export default function MapWithPois({
 
   return (
     <>
-      <div className="relative w-full h-full">
+      <div
+        ref={wrapperRef}
+        className={`relative w-full h-full ${isFullscreen ? "bg-white" : ""}`}
+      >
         <MapComponent
           tracks={tracks}
           playbackDurationS={playbackDurationS}
@@ -101,6 +131,8 @@ export default function MapWithPois({
           pois={visiblePois}
           placingPoi={placingPoi}
           flyTo={focusedLatLng}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={toggleFullscreen}
           onPoiPlaced={(lat, lng) => {
             posthog.capture("poi:placement_completed");
             setPendingLatLng({ lat, lng });

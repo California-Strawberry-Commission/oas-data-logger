@@ -15,7 +15,7 @@ import type { Poi } from "@/lib/api";
 import { colorForRssi, formatElapsed } from "@/lib/utils";
 import L, { LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { Pause, Play } from "lucide-react";
+import { Maximize2, Minimize2, Pause, Play } from "lucide-react";
 import posthog from "posthog-js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -103,6 +103,25 @@ function FlyToController({
     }
     map.flyTo([target.lat, target.lng]);
   }, [map, target]);
+  return null;
+}
+
+/**
+ * Forces Leaflet to recompute its size when the map's container is resized by CSS (such as
+ * upon entering/exiting full screen), since Leaflet doesn't detect this on its own.
+ *
+ * Note that this component must be rendered as a child of MapContainer in order to access its
+ * map context via `useMap`.
+ */
+function ResizeInvalidateController({
+  isFullscreen,
+}: {
+  isFullscreen?: boolean;
+}) {
+  const map = useMap();
+  useEffect(() => {
+    map.invalidateSize();
+  }, [map, isFullscreen]);
   return null;
 }
 
@@ -198,6 +217,8 @@ export default function Map({
   placingPoi,
   onPoiPlaced,
   flyTo,
+  isFullscreen,
+  onToggleFullscreen,
 }: {
   tracks: Track[];
   playbackDurationS?: number;
@@ -207,6 +228,8 @@ export default function Map({
   placingPoi?: boolean;
   onPoiPlaced?: (lat: number, lng: number) => void;
   flyTo?: { lat: number; lng: number } | null;
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
 }) {
   const [mapLayer, setMapLayer] = useState<MapLayer>("esri-rgb");
   const [showRssiOverlay, setShowRssiOverlay] = useState(false);
@@ -457,6 +480,7 @@ export default function Map({
         >
           <MapCenterController center={center} />
           <FlyToController target={flyTo ?? null} />
+          <ResizeInvalidateController isFullscreen={isFullscreen} />
           <TileLayer
             key={mapLayer}
             attribution={activeLayer.attribution}
@@ -609,6 +633,20 @@ export default function Map({
               )}
             </div>
           )}
+        </div>
+
+        {/* Bottom-right overlays */}
+        <div className="absolute bottom-2 right-2 z-1000 hidden md:block">
+          <button
+            onClick={onToggleFullscreen}
+            className="flex h-8 w-8 items-center justify-center rounded bg-white/90 shadow transition-colors hover:bg-gray-100"
+          >
+            {isFullscreen ? (
+              <Minimize2 className="h-4 w-4" />
+            ) : (
+              <Maximize2 className="h-4 w-4" />
+            )}
+          </button>
         </div>
       </div>
 
