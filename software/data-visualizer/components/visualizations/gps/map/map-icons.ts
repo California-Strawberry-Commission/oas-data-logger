@@ -3,8 +3,10 @@ import {
   MapPin,
   PersonStanding,
   Star,
+  Toilet,
   Tractor,
   TriangleAlert,
+  Utensils,
   X,
   type LucideProps,
 } from "lucide-react";
@@ -27,4 +29,6 @@ export const POI_LUCIDE_ICON: Record<
   alert: TriangleAlert,
   check: Check,
   x: X,
+  utensils: Utensils,
+  toilet: Toilet,
 };
