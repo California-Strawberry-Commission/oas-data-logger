@@ -291,20 +291,27 @@ export default function RunGpsVisualization({
 
   const isSingleRun = filteredRuns.length === 1;
 
+  const summaryCards = runSummaries.map((runSummary) => (
+    <RunSummaryCard key={runSummary.run.uuid} summary={runSummary} />
+  ));
+
+  const fullscreenSummaryCards = (
+    <div className="flex max-h-[calc(100vh-2rem)] w-64 flex-col gap-4 overflow-y-auto p-4">
+      {summaryCards}
+    </div>
+  );
+
   return (
     <>
-      {runSummaries.length > 0 && (
-        <div className="flex flex-wrap gap-4">
-          {runSummaries.map((runSummary) => (
-            <RunSummaryCard key={runSummary.run.uuid} summary={runSummary} />
-          ))}
-        </div>
+      {summaryCards.length > 0 && (
+        <div className="flex flex-wrap gap-4">{summaryCards}</div>
       )}
       <div className="w-full h-150 border rounded-md overflow-hidden">
         <MapWithPois
           tracks={tracks}
           selectedElapsedS={selectedElapsedS ?? undefined}
           onSelectedElapsedChange={setSelectedElapsedS}
+          fullscreenOverlay={fullscreenSummaryCards}
         />
       </div>
       <Card className="w-full h-60">
