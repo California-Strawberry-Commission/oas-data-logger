@@ -187,7 +187,7 @@ export default function MapWithPois({
           }}
         />
         {isFullscreen && fullscreenOverlay && (
-          <div className="absolute top-2 left-2 z-1000">
+          <div className="absolute inset-y-0 z-1000 flex items-center">
             {fullscreenOverlay}
           </div>
         )}

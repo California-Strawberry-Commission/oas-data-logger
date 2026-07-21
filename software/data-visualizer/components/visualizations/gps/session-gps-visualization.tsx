@@ -258,7 +258,7 @@ export default function SessionGpsVisualization({
   ));
 
   const fullscreenSummaryCards = (
-    <div className="flex max-h-[calc(100vh-1rem)] w-64 flex-col gap-4 overflow-y-auto p-4">
+    <div className="flex max-h-[calc(100vh-2rem)] w-64 flex-col gap-4 overflow-y-auto p-4">
       {summaryCards}
     </div>
   );
