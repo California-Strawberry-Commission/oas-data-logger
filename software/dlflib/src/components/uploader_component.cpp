@@ -858,9 +858,8 @@ bool UploaderComponent::saveUploadProgress(const char* progressFilePath,
                                            uint32_t eventNextByteOffset) {
   fs::File progressFile = fs_.open(progressFilePath, "w", true);
   if (!progressFile) {
-    DLFLIB_LOG_WARNING(
-        "[UploaderComponent][saveUploadProgress] Cannot write %s",
-        progressFilePath);
+    DLFLIB_LOG_ERROR("[UploaderComponent][saveUploadProgress] Cannot write %s",
+                     progressFilePath);
     return false;
   }
 
