@@ -576,7 +576,7 @@ void handleRunningState() {
     lastGpsPrintMillis = now;
 
     // Try to get GPS data with mutex protection
-    if (xSemaphoreTake(gpsDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    if (xSemaphoreTake(gpsDataMutex, portMAX_DELAY) == pdTRUE) {
       EZLOG_DEBUG("[GPS] Lat: %.6f, Lng: %.6f, Alt: %.1fm, Sats: %d",
                   gpsData.lat, gpsData.lng, gpsData.alt, gpsData.satellites);
       EZLOG_DEBUG("[DIAG] RunHandle: %d, Uptime: %lu ms", runHandle, now);

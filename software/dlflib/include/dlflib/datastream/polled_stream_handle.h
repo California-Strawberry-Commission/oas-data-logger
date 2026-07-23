@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include "dlflib/datastream/abstract_stream_handle.h"
 #include "dlflib/datastream/polled_stream.h"
@@ -21,6 +22,7 @@ class PolledStreamHandle : public AbstractStreamHandle {
  private:
   dlf_tick_t sampleIntervalTicks_;
   dlf_tick_t samplePhaseTicks_;
+  std::vector<uint8_t> dataBuffer_;
 };
 
 }  // namespace dlf::datastream

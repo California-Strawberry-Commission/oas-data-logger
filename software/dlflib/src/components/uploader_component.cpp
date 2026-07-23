@@ -456,6 +456,10 @@ void UploaderComponent::partialRunUploadTask(void* arg) {
       "[UploaderComponent][partialRunUploadTask] Partial upload interval: %d",
       intervalSecs);
   while (true) {
+    // Block until desired interval has passed since the last loop. This also
+    // delays the first upload attempt by one interval after task start.
+    vTaskDelayUntil(&lastWakeTime, period);
+
     // Wait for wifi to be connected
     xEventGroupWaitBits(uploaderComponent->wifiEvent_, WLAN_READY, pdFALSE,
                         pdTRUE, portMAX_DELAY);
@@ -513,9 +517,6 @@ void UploaderComponent::partialRunUploadTask(void* arg) {
 
       runDir.close();
     }
-
-    // Block until desired interval has passed since the last loop
-    vTaskDelayUntil(&lastWakeTime, period);
   }
 }
 
