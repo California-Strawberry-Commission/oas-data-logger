@@ -60,7 +60,7 @@ size_t EventStreamHandle::encodeInto(StreamBufferHandle_t buf,
   }
 
   if (stream->mutex()) {
-    if (xSemaphoreTake(stream->mutex(), (TickType_t)10) != pdTRUE) {
+    if (xSemaphoreTake(stream->mutex(), portMAX_DELAY) != pdTRUE) {
       return 0;
     }
   }
@@ -69,13 +69,15 @@ size_t EventStreamHandle::encodeInto(StreamBufferHandle_t buf,
   // changes again
   hash_ = currentHash();
 
+  // Write event stream sample header
   dlf_event_stream_sample_t h;
   h.stream = idx;
   h.sample_tick = tick;
-  xStreamBufferSend(buf, &h, sizeof(h), 0);
+  xStreamBufferSend(buf, &h, sizeof(h), portMAX_DELAY);
 
-  size_t written =
-      xStreamBufferSend(buf, stream->dataSource(), stream->dataSize(), 0);
+  // Write event stream sample data
+  size_t written = xStreamBufferSend(buf, stream->dataSource(),
+                                     stream->dataSize(), portMAX_DELAY);
 
   if (stream->mutex()) {
     xSemaphoreGive(stream->mutex());

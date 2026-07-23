@@ -620,7 +620,7 @@ void handleWaitTimeState() {
   // mutex into locals
   bool timeValid = false;
   time_t epoch = 0;
-  if (xSemaphoreTake(gpsDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+  if (xSemaphoreTake(gpsDataMutex, portMAX_DELAY) == pdTRUE) {
     timeValid = gpsTimeValid;
     epoch = gpsEpoch;
     xSemaphoreGive(gpsDataMutex);
@@ -663,7 +663,7 @@ void handleRunningState() {
     lastGpsPrintMillis = now;
 
     // Try to get GPS data with mutex protection
-    if (xSemaphoreTake(gpsDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    if (xSemaphoreTake(gpsDataMutex, portMAX_DELAY) == pdTRUE) {
       EZLOG_DEBUG("[GPS] Lat: %.6f, Lng: %.6f, Alt: %.1fm, Sats: %d, Fix: %d",
                   gpsData.lat, gpsData.lng, gpsData.alt, gpsData.satellites,
                   gpsFixType);
