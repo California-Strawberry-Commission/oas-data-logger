@@ -3,13 +3,14 @@
     "version": "1.0.0",
     "description": "An integrated ESP32 DAQ (Data AQuisition) system",
     "keywords": "esp32, daq, web, logger, data",
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/DominicChm/DAQ-2023.git"
-    },
     "authors": [
         {
             "name": "Dominic C"
+        },
+        {
+            "name": "Genki Kondo",
+            "email": "genki@kogentech.com",
+            "maintainer": true
         }
     ],
     "license": "MIT",
