@@ -109,24 +109,24 @@ describe("groupRunsIntoSessions", () => {
   });
 
   it("puts a single run into a single session", () => {
-    expect(groupRunsIntoSessions([run(0, 100)])).toEqual([[run(0, 100)]]);
+    expect(groupRunsIntoSessions([run(0, 1000)])).toEqual([[run(0, 1000)]]);
   });
 
-  it("merges runs whose end-to-start gap is below the threshold", () => {
+  it("merges runs whose end-to-start gap is below gapThresholdS", () => {
     const a = run(0, 1000);
-    const b = run(1000 + 7 * 3600, 500); // gap is 7h, which is below 8h default threshold
+    const b = run(1000 + 5 * 3600, 500); // gap is below the threshold
     expect(groupRunsIntoSessions([a, b])).toEqual([[a, b]]);
   });
 
-  it("splits runs whose end-to-start gap meets the threshold", () => {
+  it("splits runs whose end-to-start gap equals gapThresholdS", () => {
     const a = run(0, 1000);
-    const b = run(1000 + 8 * 3600, 500); // gap is exactly the 8h default threshold
+    const b = run(1000 + 6 * 3600, 500); // gap is exactly the threshold
     expect(groupRunsIntoSessions([a, b])).toEqual([[a], [b]]);
   });
 
-  it("splits runs whose end-to-start gap exceeds the threshold", () => {
+  it("splits runs whose end-to-start gap exceeds gapThresholdS", () => {
     const a = run(0, 1000);
-    const b = run(1000 + 9 * 3600, 500); // gap is 9h, which is above the 8h default threshold
+    const b = run(1000 + 7 * 3600, 500); // gap is above the threshold
     expect(groupRunsIntoSessions([a, b])).toEqual([[a], [b]]);
   });
 
@@ -136,26 +136,82 @@ describe("groupRunsIntoSessions", () => {
     expect(groupRunsIntoSessions([b, a])).toEqual([[a, b]]);
   });
 
+  it("measures gaps from the latest end of any prior run in the session", () => {
+    const a = run(0, 10 * 3600);
+    const b = run(1000, 200); // contained within a
+    const c = run(10 * 3600 + 1000, 200); // 1000s after a ends, long after b ends
+    expect(groupRunsIntoSessions([a, b, c])).toEqual([[a, b, c]]);
+  });
+
   it("groups multiple runs into the correct sessions", () => {
-    const a = run(0, 100);
-    const b = run(200, 100);
-    const c = run(8 * 3600 + 400, 100);
-    const d = run(8 * 3600 + 600, 100);
+    const a = run(0, 200);
+    const b = run(300, 200);
+    const c = run(6 * 3600 + 600, 200);
+    const d = run(6 * 3600 + 900, 200);
     expect(groupRunsIntoSessions([a, b, c, d])).toEqual([
       [a, b],
       [c, d],
     ]);
   });
 
-  it("respects a custom gapThresholdS", () => {
-    const a = run(0, 100);
-    const b = run(200, 100);
-    expect(groupRunsIntoSessions([a, b], 50)).toEqual([[a], [b]]);
-    expect(groupRunsIntoSessions([a, b], 200)).toEqual([[a, b]]);
+  it("ignores runs shorter than minRunDurationS", () => {
+    const a = run(0, 179);
+    const b = run(1000, 180);
+    expect(groupRunsIntoSessions([a, b])).toEqual([[b]]);
+    expect(groupRunsIntoSessions([a])).toEqual([]);
+  });
+
+  it("always includes active runs, even if short", () => {
+    const a = { ...run(0, 10), isActive: true };
+    const b = { ...run(1000, 10), isActive: false };
+    expect(groupRunsIntoSessions([a, b])).toEqual([[a]]);
+  });
+
+  it("does not let ignored runs bridge sessions", () => {
+    const a = run(0, 200);
+    const short = run(4 * 3600, 60);
+    const b = run(8 * 3600, 200);
+    expect(groupRunsIntoSessions([a, short, b])).toEqual([[a], [b]]);
+  });
+
+  it("splits a session exceeding maxSessionDurationSs at the largest gap", () => {
+    // Runs every 4h with gaps below 6h, spanning > maxSessionDurationS
+    const a = run(0, 3600);
+    const b = run(4 * 3600, 3600); // gap 3h
+    const c = run(9 * 3600, 3600); // gap 4h (largest)
+    const d = run(12 * 3600, 3600); // gap 2h
+    const e = run(16 * 3600, 10 * 3600); // gap 3h, ends at 26h
+    expect(groupRunsIntoSessions([a, b, c, d, e])).toEqual([
+      [a, b],
+      [c, d, e],
+    ]);
+  });
+
+  it("repeatedly splits until every session is within maxSessionDurationS", () => {
+    // 15 runs of 1h, 4h apart start-to-start (gap 3h), except one larger gap
+    const runs = Array.from({ length: 15 }, (_, i) =>
+      run(i * 4 * 3600 + (i >= 10 ? 1800 : 0), 3600),
+    );
+    const sessions = groupRunsIntoSessions(runs);
+    expect(sessions.flat()).toEqual(runs);
+    // The largest gap is always a session boundary
+    expect(sessions.some((s) => s[0] === runs[10])).toBe(true);
+    for (const session of sessions) {
+      const first = session[0];
+      const last = session[session.length - 1];
+      expect(
+        last.epochTimeS + last.durationS - first.epochTimeS,
+      ).toBeLessThanOrEqual(24 * 3600);
+    }
+  });
+
+  it("does not split a single run longer than maxSessionDurationS", () => {
+    const a = run(0, 30 * 3600);
+    expect(groupRunsIntoSessions([a])).toEqual([[a]]);
   });
 
   it("does not mutate the input array", () => {
-    const input = [run(500, 100), run(0, 100)];
+    const input = [run(500, 200), run(0, 200)];
     const copy = [...input];
     groupRunsIntoSessions(input);
     expect(input).toEqual(copy);

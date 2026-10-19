@@ -98,36 +98,85 @@ export function getDayKey(epochTimeS: number): string {
   return `${year}-${month}-${day}`;
 }
 
+type RunLike = { epochTimeS: number; durationS: number; isActive?: boolean };
+
+/**
+ * Splits a session (sorted ascending by `epochTimeS`) at its largest
+ * end-to-start gap, recursively, until every resulting session spans at most
+ * `maxSessionDurationS` seconds. A single run is never split, even if it is
+ * longer than `maxSessionDurationS`.
+ */
+function splitLongSession<T extends RunLike>(
+  session: T[],
+  maxSessionDurationS: number,
+): T[][] {
+  if (session.length <= 1) {
+    return [session];
+  }
+
+  // Find the largest gap between the end of everything so far and the next run
+  let maxEnd = session[0].epochTimeS + session[0].durationS;
+  let splitIndex = 1;
+  let largestGap = -Infinity;
+  for (let i = 1; i < session.length; i++) {
+    const gap = session[i].epochTimeS - maxEnd;
+    if (gap > largestGap) {
+      largestGap = gap;
+      splitIndex = i;
+    }
+    maxEnd = Math.max(maxEnd, session[i].epochTimeS + session[i].durationS);
+  }
+
+  if (maxEnd - session[0].epochTimeS <= maxSessionDurationS) {
+    return [session];
+  }
+  return [
+    ...splitLongSession(session.slice(0, splitIndex), maxSessionDurationS),
+    ...splitLongSession(session.slice(splitIndex), maxSessionDurationS),
+  ];
+}
+
 /**
  * Groups runs into sessions by merging consecutive runs whose end-to-start gap
  * is less than `gapThresholdS` seconds.
  *
- * Runs are sorted ascending by `epochTimeS` before grouping. Each returned
- * sub-array is a session in ascending start-time order.
+ * Inactive runs shorter than `minRunDurationS` are ignored. Active runs are
+ * always included. Remaining runs are sorted ascending by `epochTimeS` before
+ * grouping. Any session spanning more than `maxSessionDurationS` is split at
+ * its largest gap between runs, repeatedly, until each session fits. Each
+ * returned sub-array is a session in ascending start-time order.
  *
- * @param runs - Array of run-like objects with `epochTimeS` and `durationS`.
+ * @param runs - Array of run-like objects with `epochTimeS`, `durationS`, and
+ *   optionally `isActive`.
  * @param gapThresholdS - Maximum allowed end-to-start gap in seconds for two
- *   runs to belong to the same session. Defaults to 8 hours.
+ *   runs to belong to the same session. Defaults to 6 hours.
+ * @param maxSessionDurationS - Maximum span in seconds of a session, from the
+ *   start of its first run to the end of its last. Defaults to 24 hours.
+ * @param minRunDurationS - Inactive runs shorter than this many seconds are
+ *   excluded. Defaults to 3 minutes.
  * @returns Array of sessions, where each session is a non-empty array of runs.
  */
-export function groupRunsIntoSessions<
-  T extends { epochTimeS: number; durationS: number },
->(runs: T[], gapThresholdS = 8 * 3600): T[][] {
-  const sorted = [...runs].sort((a, b) => a.epochTimeS - b.epochTimeS);
+export function groupRunsIntoSessions<T extends RunLike>(
+  runs: T[],
+  gapThresholdS = 6 * 3600,
+  maxSessionDurationS = 24 * 3600,
+  minRunDurationS = 3 * 60,
+): T[][] {
+  const sorted = runs
+    .filter((run) => run.isActive || run.durationS >= minRunDurationS)
+    .sort((a, b) => a.epochTimeS - b.epochTimeS);
   const sessions: T[][] = [];
+  let sessionEnd = -Infinity;
   for (const run of sorted) {
-    if (sessions.length === 0) {
-      sessions.push([run]);
-      continue;
-    }
-    const lastSession = sessions[sessions.length - 1];
-    const lastRun = lastSession[lastSession.length - 1];
-    const gap = run.epochTimeS - (lastRun.epochTimeS + lastRun.durationS);
-    if (gap < gapThresholdS) {
-      lastSession.push(run);
+    const gap = run.epochTimeS - sessionEnd;
+    if (sessions.length > 0 && gap < gapThresholdS) {
+      sessions[sessions.length - 1].push(run);
     } else {
       sessions.push([run]);
     }
+    sessionEnd = Math.max(sessionEnd, run.epochTimeS + run.durationS);
   }
-  return sessions;
+  return sessions.flatMap((session) =>
+    splitLongSession(session, maxSessionDurationS),
+  );
 }
