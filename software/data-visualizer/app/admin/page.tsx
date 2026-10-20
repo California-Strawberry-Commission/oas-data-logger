@@ -1,6 +1,7 @@
 import CreateDeviceForm from "@/components/admin/create-device-form";
 import CreateUserForm from "@/components/admin/create-user-form";
 import DeviceList from "@/components/admin/device-list";
+import FirmwareList from "@/components/admin/firmware-list";
 import UserList from "@/components/admin/user-list";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { getCurrentUser } from "@/lib/auth";
@@ -27,7 +28,7 @@ export default async function AdminPage() {
     );
   }
 
-  const [devicesRaw, users] = await Promise.all([
+  const [devicesRaw, users, firmwares] = await Promise.all([
     prisma.device.findMany({
       orderBy: { createdAt: "desc" },
       select: {
@@ -43,6 +44,13 @@ export default async function AdminPage() {
           include: { device: true },
         },
       },
+    }),
+    prisma.firmwareRelease.findMany({
+      orderBy: [
+        { deviceType: "asc" },
+        { channel: "asc" },
+        { buildNumber: "desc" },
+      ],
     }),
   ]);
 
@@ -64,6 +72,7 @@ export default async function AdminPage() {
       <CreateUserForm devices={devices} />
       <UserList users={users} devices={devices} />
       <DeviceList devices={devices} />
+      <FirmwareList firmwares={firmwares} />
     </main>
   );
 }

@@ -6,13 +6,14 @@ import {
 } from "@/app/admin/actions";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AlertCircleIcon } from "lucide-react";
 import { useActionState, useEffect, useState } from "react";
@@ -63,21 +64,23 @@ function UpdateDeviceForm({
     >
       <input type="hidden" name="deviceId" value={device.id} />
 
-      <div className="space-y-1">
-        <Label>Device UID</Label>
-        <p className="text-sm border rounded-md px-2 py-1 bg-muted text-muted-foreground">
-          {device.id}
-        </p>
+      <div className="space-y-2">
+        <Label htmlFor="deviceUid">Device UID</Label>
+        <Input
+          id="deviceUid"
+          value={device.id}
+          readOnly
+          className="bg-muted text-muted-foreground"
+        />
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="name">Name (optional)</Label>
-        <input
+        <Input
           id="name"
           name="name"
           type="text"
           defaultValue={device.name ?? ""}
-          className="w-full border rounded-md px-2 py-1 text-sm"
         />
       </div>
 
@@ -117,43 +120,50 @@ export default function DeviceList({ devices }: { devices: Device[] }) {
 
   if (devices.length === 0) {
     return (
-      <section className="border rounded-lg p-4 space-y-4">
-        <h2 className="text-lg font-semibold">Devices</h2>
-        <p className="text-sm text-muted-foreground">No devices yet.</p>
-      </section>
+      <Card className="rounded-lg">
+        <CardHeader>
+          <CardTitle className="text-lg">Devices</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">No devices yet.</p>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
     <>
-      <section className="border rounded-lg p-4 space-y-4">
-        <h2 className="text-lg font-semibold">Devices</h2>
-
-        <div className="space-y-3">
-          {devices.map((device) => (
-            <button
-              key={device.id}
-              type="button"
-              onClick={() => handleCardClick(device)}
-              className="w-full text-left border rounded-md p-3 flex flex-col gap-1 hover:bg-muted transition"
-            >
-              <div className="flex justify-between items-center">
-                <span className="font-medium">{device.id}</span>
-                {!device.isProvisioned && (
-                  <span className="text-xs text-destructive">
-                    {"unprovisioned"}
-                  </span>
-                )}
-              </div>
-              {device.name && (
-                <div className="text-sm text-muted-foreground">
-                  {device.name}
+      <Card className="rounded-lg">
+        <CardHeader>
+          <CardTitle className="text-lg">Devices</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {devices.map((device) => (
+              <button
+                key={device.id}
+                type="button"
+                onClick={() => handleCardClick(device)}
+                className="w-full text-left border rounded-md p-3 flex flex-col gap-1 hover:bg-muted transition"
+              >
+                <div className="flex justify-between items-center">
+                  <span className="font-medium">{device.id}</span>
+                  {!device.isProvisioned && (
+                    <span className="text-xs text-destructive">
+                      {"unprovisioned"}
+                    </span>
+                  )}
                 </div>
-              )}
-            </button>
-          ))}
-        </div>
-      </section>
+                {device.name && (
+                  <div className="text-sm text-muted-foreground">
+                    {device.name}
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
         {selectedDevice && (
