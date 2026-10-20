@@ -18,6 +18,7 @@
     "vercel-build": "prisma generate && prisma migrate deploy && next build",
     "provision-device": "tsx scripts/provision-device.ts",
     "publish-firmware": "tsx scripts/publish-firmware.ts",
+    "unpublish-firmware": "tsx scripts/unpublish-firmware.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

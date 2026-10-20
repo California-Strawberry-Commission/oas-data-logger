@@ -132,3 +132,9 @@ npm run publish-firmware -- --env <local|preview|prod> --file <path/to/firmware.
 ```
 
 Note: when updating a DB entry for existing firmware (for example, marking it as published), you will need to specify buildNumber, as {deviceType, channel, buildNumber} is used to uniquely identify the row.
+
+The firmware can be unpublished by running:
+
+```
+npm run unpublish-firmware -- --env <local|preview|prod> --deviceType <V0|V1> --channel <STABLE|BETA> --buildNumber <build number>
+```
