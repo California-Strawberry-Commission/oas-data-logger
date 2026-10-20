@@ -63,13 +63,13 @@ bool UploaderComponent::begin() {
                          std::placeholders::_1, std::placeholders::_2),
                ARDUINO_EVENT_WIFI_STA_GOT_IP);
 
-  if (xTaskCreate(syncTask, "sync", 8192, this, 5, NULL) != pdPASS) {
+  if (xTaskCreate(syncTask, "sync", 8192, this, 2, NULL) != pdPASS) {
     DLFLIB_LOG_ERROR("[UploaderComponent] Failed to create sync task");
     return false;
   }
 
   if (options_.partialRunUploadIntervalSecs > 0) {
-    if (xTaskCreate(partialRunUploadTask, "partial_run_upload", 8192, this, 5,
+    if (xTaskCreate(partialRunUploadTask, "partial_run_upload", 8192, this, 2,
                     NULL) != pdPASS) {
       DLFLIB_LOG_ERROR(
           "[UploaderComponent] Failed to create partial_run_upload task");
