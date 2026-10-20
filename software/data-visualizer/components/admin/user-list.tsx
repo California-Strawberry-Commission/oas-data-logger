@@ -6,14 +6,23 @@ import {
 } from "@/app/admin/actions";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { AlertCircleIcon } from "lucide-react";
 import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
@@ -76,34 +85,35 @@ function UpdateUserForm({
     >
       <input type="hidden" name="userId" value={user.id} />
 
-      <div className="space-y-1">
-        <Label>Email</Label>
-        <p className="text-sm border rounded-md px-2 py-1 bg-muted text-muted-foreground">
-          {user.email}
-        </p>
+      <div className="space-y-2">
+        <Label htmlFor="userEmail">Email</Label>
+        <Input
+          id="userEmail"
+          value={user.email}
+          readOnly
+          className="bg-muted text-muted-foreground"
+        />
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="role">Role</Label>
-        <select
-          id="role"
-          name="role"
-          defaultValue={user.role}
-          className="w-full border rounded-md px-2 py-1 text-sm"
-          required
-        >
-          <option value="USER">USER</option>
-          <option value="ADMIN">ADMIN</option>
-        </select>
+        <Select name="role" defaultValue={user.role} required>
+          <SelectTrigger id="role" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="USER">USER</SelectItem>
+            <SelectItem value="ADMIN">ADMIN</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="password">New password (optional)</Label>
-        <input
+        <Input
           id="password"
           name="password"
           type="password"
-          className="w-full border rounded-md px-2 py-1 text-sm"
           placeholder="Leave blank to keep current password"
           autoComplete="new-password"
         />
@@ -121,27 +131,27 @@ function UpdateUserForm({
             const checked = user.userDevices.some(
               (ud) => ud.deviceId === device.id,
             );
+            const checkboxId = `user-device-${device.id}`;
             return (
-              <label
-                key={device.id}
-                className="flex items-center gap-2 text-sm cursor-pointer"
-              >
-                <input
-                  type="checkbox"
+              <div key={device.id} className="flex items-center gap-2">
+                <Checkbox
+                  id={checkboxId}
                   name="deviceIds"
                   value={device.id}
                   defaultChecked={checked}
-                  className="h-4 w-4"
                 />
-                <span>
-                  {device.id}{" "}
+                <Label
+                  htmlFor={checkboxId}
+                  className="font-normal cursor-pointer"
+                >
+                  {device.id}
                   {device.name && (
                     <span className="text-xs text-muted-foreground">
                       ({device.name})
                     </span>
                   )}
-                </span>
-              </label>
+                </Label>
+              </div>
             );
           })}
         </div>
@@ -189,44 +199,51 @@ export default function UserList({
 
   if (users.length === 0) {
     return (
-      <section className="border rounded-lg p-4 space-y-4">
-        <h2 className="text-lg font-semibold">Users</h2>
-        <p className="text-sm text-muted-foreground">No users yet.</p>
-      </section>
+      <Card className="rounded-lg">
+        <CardHeader>
+          <CardTitle className="text-lg">Users</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">No users yet.</p>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
     <>
-      <section className="border rounded-lg p-4 space-y-4">
-        <h2 className="text-lg font-semibold">Users</h2>
-
-        <div className="space-y-3">
-          {users.map((user) => (
-            <button
-              key={user.id}
-              type="button"
-              onClick={() => handleCardClick(user)}
-              className="w-full text-left border rounded-md p-3 flex flex-col gap-1 hover:bg-muted transition"
-            >
-              <div className="flex justify-between items-center">
-                <span className="font-medium">{user.email}</span>
-                <span className="text-xs uppercase text-muted-foreground">
-                  {user.role}
-                </span>
-              </div>
-              <div className="text-sm text-muted-foreground">
-                Devices:{" "}
-                {user.userDevices.length === 0 ? (
-                  <span className="text-muted-foreground">none</span>
-                ) : (
-                  user.userDevices.map((ud) => ud.device.id).join(", ")
-                )}
-              </div>
-            </button>
-          ))}
-        </div>
-      </section>
+      <Card className="rounded-lg">
+        <CardHeader>
+          <CardTitle className="text-lg">Users</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {users.map((user) => (
+              <button
+                key={user.id}
+                type="button"
+                onClick={() => handleCardClick(user)}
+                className="w-full text-left border rounded-md p-3 flex flex-col gap-1 hover:bg-muted transition"
+              >
+                <div className="flex justify-between items-center">
+                  <span className="font-medium">{user.email}</span>
+                  <span className="text-xs uppercase text-muted-foreground">
+                    {user.role}
+                  </span>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Devices:{" "}
+                  {user.userDevices.length === 0 ? (
+                    <span className="text-muted-foreground">none</span>
+                  ) : (
+                    user.userDevices.map((ud) => ud.device.id).join(", ")
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
         {selectedUser && (

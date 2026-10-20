@@ -1,6 +1,9 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
 import {
   decimateByDistance,
   findClosestIndex,
@@ -602,20 +605,26 @@ export default function Map({
           {/* WiFi RSSI toggle + legend */}
           {hasRssiData && (
             <div className="rounded bg-white/90 px-2 py-1.5 text-xs shadow">
-              <label className="flex cursor-pointer items-center gap-1.5 font-semibold">
-                <input
-                  type="checkbox"
+              <div className="flex items-center gap-1.5">
+                <Checkbox
+                  id="rssi-overlay-toggle"
                   checked={showRssiOverlay}
-                  onChange={(e) => {
+                  onCheckedChange={(checked) => {
+                    const show = checked === true;
                     posthog.capture("visualization:wifi_rssi_overlay_toggled", {
-                      action: e.target.checked ? "show" : "hide",
+                      action: show ? "show" : "hide",
                     });
-                    setShowRssiOverlay(e.target.checked);
+                    setShowRssiOverlay(show);
                   }}
-                  className="h-3 w-3"
+                  className="bg-white"
                 />
-                WiFi signal strength
-              </label>
+                <Label
+                  htmlFor="rssi-overlay-toggle"
+                  className="cursor-pointer text-xs font-semibold"
+                >
+                  WiFi signal strength
+                </Label>
+              </div>
               {showRssiOverlay && (
                 <div className="mt-2">
                   <div
@@ -653,22 +662,22 @@ export default function Map({
       {/* Controls */}
       <div className="bg-white/80 p-2 text-xs">
         {/* Scrubber */}
-        <input
-          type="range"
-          className="w-full"
+        <Slider
+          className="py-2"
           min={0}
-          max={maxElapsedS}
+          // Slider cannot handle a zero-length range, so set max to be at least 1
+          max={Math.max(1, maxElapsedS)}
           step={1}
-          value={
+          value={[
             following
               ? maxElapsedS
-              : Math.max(0, Math.min(maxElapsedS, Math.round(currentElapsedS)))
-          }
-          onChange={(e) => {
+              : Math.max(0, Math.min(maxElapsedS, Math.round(currentElapsedS))),
+          ]}
+          onValueChange={([value]) => {
             setIsPlaying(false);
             // Dragging disables live-follow mode and goes into scrub mode
             setLiveFollow(false);
-            setCurrentElapsedS(Number(e.target.value));
+            setCurrentElapsedS(value);
           }}
         />
         <div className="grid grid-cols-3 items-center text-xs">
