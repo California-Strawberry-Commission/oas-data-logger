@@ -12,6 +12,7 @@
 #include "EzLog.h"
 #include "certs/certs.h"
 #include "memory_monitor/memory_monitor.h"
+#include "ota_updater/ota_background_updater.h"
 #include "ota_updater/ota_updater.h"
 
 // Rev 2 passive common - anode RGB LED
@@ -110,6 +111,9 @@ const dlf::components::UploaderComponent::RetentionMode LOGGER_RETENTION_MODE{
 const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{60};  // <= 0 means disabled
 const int WIFI_RECONFIG_BUTTON_HOLD_TIME_MS{3000};
 const bool ENABLE_OTA_UPDATE{true};
+// Max time to wait in offload mode for a background OTA download to finish
+// before sleeping
+const int OTA_OFFLOAD_WAIT_SECS{60};
 const bool ENABLE_CHUNKED_UPLOAD{true};
 const int WIFI_RECONNECT_INTERVAL_SECS{60};  // <= 0 means disabled
 
@@ -207,6 +211,9 @@ unsigned long lastGpsPrintMillis{0};
 bool ledToggleState = false;
 unsigned long lastWifiPollMillis{0};
 
+// Created on first use and lives for the rest of the session
+ota::OtaBackgroundUpdater* otaBackgroundUpdater{nullptr};
+
 // GPS data structure with mutex protection
 struct GpsData {
   double lat;
@@ -230,6 +237,9 @@ void handleInitState();
 void handleWaitSdState();
 void handleWaitWifiState();
 void handleOtaUpdate();
+ota::OtaUpdater::Config buildOtaConfig();
+void startBackgroundOta();
+void waitForBackgroundOta(uint32_t timeoutMs);
 void handleWaitGpsState();
 void handleWaitTimeState();
 void handleRunningState();
@@ -576,11 +586,19 @@ void handleWaitWifiState() {
 }
 
 void handleOtaUpdate() {
-  if (!ENABLE_OTA_UPDATE || WiFi.status() != WL_CONNECTED) {
+  if (!ENABLE_OTA_UPDATE) {
     transitionToState(SystemState::WAIT_GPS);
     return;
   }
 
+  // Download in the background whenever WiFi is available (and installs on the
+  // next boot).
+  startBackgroundOta();
+
+  transitionToState(SystemState::WAIT_GPS);
+}
+
+ota::OtaUpdater::Config buildOtaConfig() {
   ota::OtaUpdater::Config otaConfig;
   snprintf(otaConfig.manifestEndpoint, sizeof(otaConfig.manifestEndpoint), "%s",
            OTA_MANIFEST_ENDPOINT);
@@ -595,15 +613,51 @@ void handleOtaUpdate() {
            deviceSecret);
   otaConfig.caCert = vercel_root_ca_pem_start;
   otaConfig.redirectCaCert = s3_root_ca_pem_start;
-  ota::OtaUpdater otaUpdater(otaConfig);
-  auto res{otaUpdater.updateIfAvailable(true)};
-  if (res.ok) {
-    EZLOG_INFO("[OTA] Success: %s", res.message);
-  } else {
-    EZLOG_ERROR("[OTA] Error when updating firmware: %s", res.message);
+  return otaConfig;
+}
+
+void startBackgroundOta() {
+  if (!ENABLE_OTA_UPDATE || otaBackgroundUpdater) {
+    return;
   }
 
-  transitionToState(SystemState::WAIT_GPS);
+  ota::OtaBackgroundUpdater::Options options;
+  options.onResult = [](const ota::OtaUpdater::UpdateResult& res) {
+    if (res.ok && res.updateApplied) {
+      EZLOG_INFO("[OTA] Build %d staged and will be installed on next boot.",
+                 res.newBuildNumber);
+    } else if (res.ok) {
+      EZLOG_INFO("[OTA] Background checked: %s", res.message);
+    } else {
+      EZLOG_ERROR("[OTA] Background update failed: %s", res.message);
+    }
+  };
+  otaBackgroundUpdater =
+      new ota::OtaBackgroundUpdater(buildOtaConfig(), options);
+  EZLOG_INFO("[OTA] Starting background updater");
+  if (!otaBackgroundUpdater->begin()) {
+    EZLOG_ERROR("[OTA] Failed to start background updater");
+  }
+}
+
+// Gives an in-flight or pending background OTA download a chance to finish
+// (e.g. before going to sleep).
+void waitForBackgroundOta(uint32_t timeoutMs) {
+  if (!otaBackgroundUpdater) {
+    return;
+  }
+
+  const unsigned long start{millis()};
+  while (millis() - start < timeoutMs) {
+    const bool pendingFirstAttempt{WiFi.status() == WL_CONNECTED &&
+                                   !otaBackgroundUpdater->hasAttempted()};
+    if (otaBackgroundUpdater->isUpdateStaged() ||
+        (!otaBackgroundUpdater->attemptInProgress() && !pendingFirstAttempt)) {
+      return;
+    }
+    vTaskDelay(pdMS_TO_TICKS(500));
+  }
+  EZLOG_INFO("[OTA] Timed out waiting for background update");
 }
 
 void handleWaitGpsState() {
@@ -691,6 +745,7 @@ void handleRunningState() {
 void handleOffloadState() {
   // Check for internet connection before offloading.
   pollWiFiConnection();
+  startBackgroundOta();
 
   vTaskDelay(
       pdMS_TO_TICKS(15000));  // wait for 15 seconds to allow WiFi radio to
@@ -698,6 +753,7 @@ void handleOffloadState() {
                               // brownout of SD card on USB power.
 
   logger.waitForSyncCompletion();
+  waitForBackgroundOta(OTA_OFFLOAD_WAIT_SECS * 1000);
 
   // After sync completion, either sleep or continue
   transitionToState(SystemState::SLEEP);

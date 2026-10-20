@@ -385,8 +385,6 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
 
   // Stream body into Update, reading in chunks to avoid huge RAM use
   WiFiClient& stream{httpClient.getStream()};
-  stream.setTimeout(
-      config_.firmwareTimeoutMs);  // controls how long readBytes() blocks
   // Allocate the firmware download buffer on the heap to avoid hitting
   // stack limit
   std::unique_ptr<uint8_t[]> buf{new (std::nothrow)
@@ -396,14 +394,36 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
     return updateError("Failed to allocate firmware buffer");
   }
 
+  // If the server didn't send a content length, read until the connection
+  // closes
+  const bool lengthKnown{contentLen > 0};
   size_t writtenTotal{0};
-  while (writtenTotal < contentLen) {
-    size_t toRead{min(config_.firmwareBufferSize, contentLen - writtenTotal)};
-    size_t readBytes{stream.readBytes(buf.get(), toRead)};
-    if (readBytes == 0) {
-      Update.abort();
-      return updateError("Firmware read timed out");
+  uint32_t lastDataMs{millis()};
+  while (!lengthKnown || writtenTotal < static_cast<size_t>(contentLen)) {
+    size_t toRead{config_.firmwareBufferSize};
+    if (lengthKnown) {
+      toRead = min(toRead, static_cast<size_t>(contentLen) - writtenTotal);
     }
+    // WiFiClient::read is non-blocking and returns whatever is buffered, so
+    // track the timeout ourselves
+    int readResult{stream.read(buf.get(), toRead)};
+    if (readResult <= 0) {
+      if (!stream.connected() && !stream.available()) {
+        if (!lengthKnown) {
+          break;
+        }
+        Update.abort();
+        return updateError("Firmware download connection closed");
+      }
+      if (millis() - lastDataMs >= config_.firmwareTimeoutMs) {
+        Update.abort();
+        return updateError("Firmware read timed out");
+      }
+      delay(1);
+      continue;
+    }
+    lastDataMs = millis();
+    size_t readBytes{static_cast<size_t>(readResult)};
 
     if (!sha.update(buf.get(), readBytes)) {
       Update.abort();
@@ -417,6 +437,11 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
     }
 
     writtenTotal += written;
+  }
+
+  if (writtenTotal == 0) {
+    Update.abort();
+    return updateError("Firmware download was empty");
   }
 
   // Verify written bytes against content length
