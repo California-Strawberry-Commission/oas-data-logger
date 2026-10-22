@@ -21,40 +21,14 @@ void LogFile::taskFlusher(void* arg) {
                   self->filename_);
 
   uint8_t buf[DLF_SD_BLOCK_WRITE_SIZE];
-  size_t totalBytesWritten = 0;
   const uint32_t SYNC_INTERVAL_MS = 60000;
   const size_t SYNC_THRESHOLD_BYTES = 4096;
   uint32_t lastSyncTime = millis();
   size_t bytesSinceLastSync = 0;
 
-  // Attempts to reopen the file in "r+" mode.
-  // IMPORTANT: we use "r+" (read/write) mode instead of "a" (append)
-  // here because any write in append mode will always go to end of file
-  // regardless of any seeks.
-  //
-  // A zero timeoutMs will keep retrying indefinitely until successful, or
-  // state is no longer LOGGING.
-  auto reopenWithRetry = [&](uint32_t timeoutMs) -> bool {
-    const uint32_t REOPEN_MAX_DELAY_MS = 2000;
-    uint32_t delayMs = 250;
-    uint32_t elapsedMs = 0;
-
-    while (self->state_ == LOGGING || elapsedMs < timeoutMs) {
-      self->file_ = self->fs_.open(self->filename_, "r+");
-      if (self->file_) {
-        self->file_.seek(0, SeekEnd);
-        return true;
-      }
-      DLFLIB_LOG_ERROR(
-          "[LogFile][taskFlusher] %s: Reopen failed, retrying in %u ms...",
-          self->filename_, delayMs);
-      vTaskDelay(pdMS_TO_TICKS(delayMs));
-      elapsedMs += delayMs;
-      delayMs = (delayMs * 2 < REOPEN_MAX_DELAY_MS) ? delayMs * 2
-                                                    : REOPEN_MAX_DELAY_MS;
-    }
-    return false;
-  };
+  // How long to retry a failed write while logging. While retrying, the
+  // sampler keeps filling the stream buffer and blocks once it is full.
+  const uint32_t WRITE_TIMEOUT_MS = 60000;
 
   while (self->state_ == LOGGING) {
     size_t received = xStreamBufferReceive(self->stream_, buf, sizeof(buf),
@@ -69,12 +43,9 @@ void LogFile::taskFlusher(void* arg) {
 
       // Lock file mutex before writing
       if (xSemaphoreTake(self->fileMutex_, portMAX_DELAY) == pdTRUE) {
-        self->file_.write(buf, received);
-        totalBytesWritten += received;
-        bytesSinceLastSync += received;
-
-        // Track the file end position for proper close
-        self->fileEndPosition_ = totalBytesWritten;
+        if (self->writeChunk(buf, received, WRITE_TIMEOUT_MS)) {
+          bytesSinceLastSync += received;
+        }
 
         // Force SD card sync after 60 seconds or 4KB written.
         // flush() commits data to the SD card.
@@ -88,7 +59,7 @@ void LogFile::taskFlusher(void* arg) {
 
           self->file_.flush();
           self->file_.close();
-          if (reopenWithRetry(0)) {
+          if (self->reopenWithRetry(0)) {
             DLFLIB_LOG_INFO(
                 "[LogFile][taskFlusher] %s: SD sync complete, file reopened",
                 self->filename_);
@@ -101,15 +72,12 @@ void LogFile::taskFlusher(void* arg) {
 
           lastSyncTime = millis();
           bytesSinceLastSync = 0;
-        } else {
-          // Regular flush (may not reach SD card)
-          self->file_.flush();
         }
 
 #ifdef DEBUG
         DLFLIB_LOG_DEBUG(
             "[LogFile][taskFlusher] %s: Wrote %zu bytes, total: %zu",
-            self->filename_, received, totalBytesWritten);
+            self->filename_, received, self->fileEndPosition_);
 #endif
 
         xSemaphoreGive(self->fileMutex_);
@@ -142,25 +110,8 @@ void LogFile::taskFlusher(void* arg) {
       // Lock file mutex before writing
       if (xSemaphoreTake(self->fileMutex_, portMAX_DELAY) == pdTRUE) {
         // The file handle may be invalid if the file reopen attempt failed
-        // while exiting the LOGGING state, so try to reopen if needed here.
-        if (!self->file_) {
-          DLFLIB_LOG_ERROR(
-              "[LogFile][taskFlusher] %s: File handle invalid during final "
-              "drain, attempting recovery...",
-              self->filename_);
-          if (!reopenWithRetry(10000)) {
-            DLFLIB_LOG_ERROR(
-                "[LogFile][taskFlusher] %s: FATAL: Could not recover file "
-                "handle within timeout. Dropping %zu bytes.",
-                self->filename_, received);
-          }
-        }
-
-        if (self->file_) {
-          self->file_.write(buf, received);
-          totalBytesWritten += received;
-          self->fileEndPosition_ = totalBytesWritten;
-        }
+        // while exiting the LOGGING state, but writeChunk recovers it.
+        self->writeChunk(buf, received, 10000);
         xSemaphoreGive(self->fileMutex_);
       }
     }
@@ -193,11 +144,10 @@ void LogFile::taskFlusher(void* arg) {
           self->filename_);
     }
 
-    self->fileEndPosition_ = totalBytesWritten;
     DLFLIB_LOG_INFO(
         "[LogFile][taskFlusher] %s: Final flush complete. Total bytes written: "
-        "%zu, file end position: %zu",
-        self->filename_, totalBytesWritten, self->fileEndPosition_);
+        "%zu",
+        self->filename_, self->fileEndPosition_);
     xSemaphoreGive(self->fileMutex_);
   }
 
@@ -209,10 +159,114 @@ void LogFile::taskFlusher(void* arg) {
   vTaskDelete(nullptr);
 }
 
+bool LogFile::reopen() {
+  // IMPORTANT: we use "r+" (read/write) mode instead of "a" (append)
+  // here because any write in append mode will always go to end of file
+  // regardless of any seeks.
+  file_ = fs_.open(filename_, "r+");
+  if (!file_) {
+    return false;
+  }
+
+  // If the file is shorter than expected, data was lost when closing. Seeking
+  // past the end still keeps all subsequent data at the expected offsets, so
+  // only the samples within the lost region are corrupted.
+  const size_t fileSize = file_.size();
+  if (fileSize != fileEndPosition_) {
+    DLFLIB_LOG_ERROR(
+        "[LogFile][reopen] %s: File size %zu after reopen does not match "
+        "bytes written %zu",
+        filename_, fileSize, fileEndPosition_);
+  }
+  return file_.seek(fileEndPosition_);
+}
+
+bool LogFile::reopenWithRetry(uint32_t timeoutMs) {
+  const uint32_t REOPEN_MAX_DELAY_MS = 2000;
+  uint32_t delayMs = 250;
+  uint32_t elapsedMs = 0;
+
+  while (state_ == LOGGING || elapsedMs < timeoutMs) {
+    if (reopen()) {
+      return true;
+    }
+    DLFLIB_LOG_ERROR(
+        "[LogFile][reopenWithRetry] %s: Reopen failed, retrying in %u ms...",
+        filename_, delayMs);
+    vTaskDelay(pdMS_TO_TICKS(delayMs));
+    elapsedMs += delayMs;
+    delayMs =
+        (delayMs * 2 < REOPEN_MAX_DELAY_MS) ? delayMs * 2 : REOPEN_MAX_DELAY_MS;
+  }
+  return false;
+}
+
+bool LogFile::writeChunk(const uint8_t* data, size_t len, uint32_t timeoutMs) {
+  if (writesAbandoned_) {
+    return false;
+  }
+
+  const uint32_t WRITE_MAX_DELAY_MS = 2000;
+  uint32_t delayMs = 50;
+  uint32_t elapsedMs = 0;
+
+  // Transient SD card errors (such as from a brownout) otherwise silently
+  // discard the chunk, leaving a gap in the file. Each attempt rewrites the
+  // whole chunk at the same offset, so a failed attempt never leaves a gap.
+  for (uint32_t attempt = 1;; ++attempt) {
+    // File::write() only copies into the stdio buffer, so it reports success
+    // even when the subsequent flush to the SD card fails and the buffered
+    // bytes are discarded. Checking the file position after the flush catches
+    // this.
+    bool written = false;
+    if (file_ && file_.seek(fileEndPosition_)) {
+      written = file_.write(data, len) == len;
+      file_.flush();
+      written = written && file_.position() == fileEndPosition_ + len;
+    }
+    if (written) {
+      fileEndPosition_ += len;
+      return true;
+    }
+
+    // If writes fail even after timeout, we do not want to continue writing
+    // data to this file anymore.
+    if (elapsedMs >= timeoutMs) {
+      DLFLIB_LOG_ERROR(
+          "[LogFile][writeChunk] %s: FATAL: Could not write %zu bytes at "
+          "offset %zu within timeout. Preventing all further writes.",
+          filename_, len, fileEndPosition_);
+      writesAbandoned_ = true;
+      return false;
+    }
+
+    DLFLIB_LOG_ERROR(
+        "[LogFile][writeChunk] %s: Write of %zu bytes at offset %zu failed "
+        "(attempt %u), retrying in %u ms...",
+        filename_, len, fileEndPosition_, attempt, delayMs);
+    vTaskDelay(pdMS_TO_TICKS(delayMs));
+    elapsedMs += delayMs;
+    delayMs =
+        (delayMs * 2 < WRITE_MAX_DELAY_MS) ? delayMs * 2 : WRITE_MAX_DELAY_MS;
+
+    // A failed write can leave the file handle in a persistent error state, so
+    // also reopen the file on every other failure.
+    if (attempt % 2 == 0) {
+      file_.close();
+      if (!reopen()) {
+        DLFLIB_LOG_ERROR("[LogFile][writeChunk] %s: Reopen failed", filename_);
+      }
+    }
+  }
+}
+
 LogFile::LogFile(
     std::vector<std::unique_ptr<dlf::datastream::AbstractStreamHandle>> handles,
     dlf_stream_type_e streamType, const char* dir, fs::FS& fs)
-    : fs_(fs), handles_(std::move(handles)), fileEndPosition_(0) {
+    : fs_(fs),
+      handles_(std::move(handles)),
+      fileEndPosition_(0),
+      writesAbandoned_(false) {
   const char* st = dlf::datastream::streamTypeToString(streamType);
   snprintf(filename_, sizeof(filename_), "%s/%s.dlf", dir, st ? st : "unknown");
 
@@ -325,6 +379,7 @@ void LogFile::unlock() { xSemaphoreGive(fileMutex_); }
 void LogFile::writeHeader(dlf_stream_type_e streamType) {
   dlf_logfile_header_t h;
   h.stream_type = streamType;
+  h.tick_span = 0;  // updated on flush/close
   h.num_streams = handles_.size();
   xStreamBufferSend(stream_, &h, sizeof(h), portMAX_DELAY);
 

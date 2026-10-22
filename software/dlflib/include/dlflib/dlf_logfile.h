@@ -67,6 +67,29 @@ class LogFile {
   static void taskFlusher(void* arg);
 
   /**
+   * Reopens the file in "r+" mode, positioned at the end of the data written
+   * so far. Called from the flusher task.
+   * @return true if the file was reopened
+   */
+  bool reopen();
+
+  /**
+   * Attempts to reopen the file, with backoff. Called from the flusher task.
+   * @param timeoutMs A zero timeoutMs will keep retrying indefinitely until
+   * successful, or state is no longer LOGGING.
+   * @return true if the file was reopened
+   */
+  bool reopenWithRetry(uint32_t timeoutMs);
+
+  /**
+   * Writes a chunk at the end of the data written so far, retrying until the
+   * write is verified or timeoutMs elapses. If it fails, all further writes are
+   * abandoned. Must be called from the flusher task with fileMutex_ held.
+   * @return true if the chunk was written
+   */
+  bool writeChunk(const uint8_t* data, size_t len, uint32_t timeoutMs);
+
+  /**
    * @brief Writes a complete header into this logfile.
    *
    * Uses existing streambuffer architecture because why not.
@@ -99,7 +122,12 @@ class LogFile {
       fileMutex_;  // Protects file operations from race conditions
   dlf_tick_t lastTick_;
   size_t fileEndPosition_;  // Track file end position to prevent truncation
-                            // on close
+                            // on close. Also the offset of the next write.
+
+  // Set once a chunk could not be written within its retry timeout. All
+  // subsequent data is discarded so that the file is truncated at the last
+  // good byte.
+  bool writesAbandoned_;
 };
 
 }  // namespace dlf

@@ -44,7 +44,7 @@ class AbstractStreamHandle {
     if (data) {
       return xStreamBufferSend(buf, data, strlen(data) + 1, portMAX_DELAY);
     } else {
-      return xStreamBufferSend(buf, "", strlen(""), portMAX_DELAY);
+      return xStreamBufferSend(buf, "", strlen("") + 1, portMAX_DELAY);
     }
   }
 
