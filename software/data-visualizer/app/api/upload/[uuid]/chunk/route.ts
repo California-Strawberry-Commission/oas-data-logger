@@ -105,18 +105,11 @@ export async function POST(
     }),
   );
 
-  console.log(
-    `[api/upload/chunk] Stored chunk ${chunkNumber} for ${uuid}/${filename} (${body.byteLength} bytes)`,
-  );
-
   // Compact all existing chunks for the dlf file
   if (chunkNumber % MERGE_CHUNK_INTERVAL === 0) {
     after(async () => {
       try {
         await mergeChunks(uuid, filename);
-        console.log(
-          `[api/upload/chunk] Background merge complete for run ${uuid}`,
-        );
       } catch (err) {
         console.error(
           `[api/upload/chunk] Background merge failed for run ${uuid}:`,
@@ -160,7 +153,6 @@ export async function POST(
           isActive,
         },
       });
-      console.log(`[api/upload/chunk] Upserted run record for ${uuid}`);
     } catch (err) {
       console.error(`[api/upload/chunk] Failed to upsert run ${uuid}:`, err);
     }

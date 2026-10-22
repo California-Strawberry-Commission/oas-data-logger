@@ -44,8 +44,11 @@ model Device {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  userDevices UserDevice[]
-  runs        Run[]
+  userDevices          UserDevice[]
+  runs                 Run[]
+  heartbeats           DeviceHeartbeat[]
+  crashes              DeviceCrash[]
+  wifiDisconnectEvents DeviceWifiDisconnectEvent[]
 }
 
 model DeviceSecret {
@@ -77,6 +80,68 @@ model UserDevice {
   @@id([userId, deviceId]) // each user-device pair is unique
   @@index([deviceId, role])
   @@index([userId, role])
+}
+
+// ------------------------------------------------------------
+// Device health
+// ------------------------------------------------------------
+
+model DeviceHeartbeat {
+  id               Int      @id @default(autoincrement())
+  device           Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  deviceId         String // relation field
+  receivedAt       DateTime @default(now())
+  firmwareBuild    Int
+  deviceType       String
+  otaChannel       String
+  bootCount        Int
+  uptimeMs         BigInt
+  resetReason      Int // esp_reset_reason_t
+  appResetReason   Int // reported if resetReason is ESP_RST_SW
+  state            Int? // device firmware state machine state
+  heapFree         Int
+  heapMinFree      Int
+  heapLargestBlock Int
+  rssi             Int
+
+  wifiDisconnectEvents DeviceWifiDisconnectEvent[]
+
+  @@index([deviceId, receivedAt])
+}
+
+model DeviceCrash {
+  id                 Int      @id @default(autoincrement())
+  device             Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  deviceId           String // relation field
+  receivedAt         DateTime @default(now())
+  bootCount          Int // the boot that followed the crash
+  task               String
+  pc                 BigInt
+  cause              Int // Xtensa EXCCAUSE
+  vaddr              BigInt
+  backtrace          BigInt[]
+  backtraceCorrupted Boolean
+  elfSha256          String // prefix of the crashing firmware's ELF SHA256
+
+  @@unique([deviceId, bootCount, pc])
+  @@index([deviceId, receivedAt])
+}
+
+model DeviceWifiDisconnectEvent {
+  id           Int             @id @default(autoincrement())
+  device       Device          @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  deviceId     String // relation field
+  heartbeat    DeviceHeartbeat @relation(fields: [heartbeatId], references: [id], onDelete: Cascade)
+  heartbeatId  Int // relation field
+  bootCount    Int
+  uptimeMs     BigInt // first occurrence
+  lastUptimeMs BigInt // latest occurrence
+  count        Int
+  reason       Int // wifi_err_reason_t
+  rssi         Int
+  wasConnected Boolean
+
+  @@index([deviceId])
 }
 
 // ------------------------------------------------------------
