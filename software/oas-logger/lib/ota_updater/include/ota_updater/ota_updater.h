@@ -30,7 +30,7 @@ class OtaUpdater {
     uint32_t firmwareTimeoutMs{10000};
     // Size of the heap-allocated buffer used to stream firmware chunks.
     size_t firmwareBufferSize{8192};
-    // PEM-encoded CA certificate for manifest + initial firmware request). If
+    // PEM-encoded CA certificate for manifest + initial firmware request. If
     // nullptr, certificate validation is skipped (insecure).
     const char* caCert{nullptr};
     // PEM-encoded CA certificate for any firmware redirects. If nullptr,

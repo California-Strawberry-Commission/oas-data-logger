@@ -4,63 +4,13 @@
 #include <HTTPClient.h>
 #include <Update.h>
 #include <WiFiClientSecure.h>
+#include <dlflib/util/http.h>
 #include <dlflib/util/util.h>
 #include <mbedtls/sha256.h>
 
 #include "ota_updater/util.h"
 
 namespace {
-
-struct WiFiClientHolder {
-  WiFiClient* client;
-
-  WiFiClientHolder(WiFiClient* c) : client(c) {}
-
-  WiFiClientHolder(const WiFiClientHolder&) = delete;
-  WiFiClientHolder& operator=(const WiFiClientHolder&) = delete;
-  WiFiClientHolder(WiFiClientHolder&& other) noexcept : client(other.client) {
-    other.client = nullptr;
-  }
-
-  WiFiClientHolder& operator=(WiFiClientHolder&& other) noexcept {
-    if (this != &other) {
-      delete client;
-      client = other.client;
-      other.client = nullptr;
-    }
-    return *this;
-  }
-
-  ~WiFiClientHolder() { delete client; }
-};
-
-WiFiClientHolder createWiFiClient(bool secure, const char* caCert = nullptr) {
-  if (secure) {
-    auto* secureClient{new WiFiClientSecure()};
-    if (caCert != nullptr) {
-      secureClient->setCACert(caCert);
-    } else {
-      secureClient->setInsecure();
-    }
-    return WiFiClientHolder{secureClient};
-  }
-
-  return WiFiClientHolder{new WiFiClient()};
-}
-
-// We must be sure to end the HTTPClient to avoid memory and socket leaks.
-// Instead of manually calling HTTPClient::end everywhere, use this RAII guard.
-struct HTTPClientGuard {
-  HTTPClient& client;
-  explicit HTTPClientGuard(HTTPClient& h) : client(h) {}
-
-  HTTPClientGuard(const HTTPClientGuard&) = delete;
-  HTTPClientGuard& operator=(const HTTPClientGuard&) = delete;
-  HTTPClientGuard(HTTPClientGuard&&) = delete;
-  HTTPClientGuard& operator=(HTTPClientGuard&&) = delete;
-
-  ~HTTPClientGuard() { client.end(); }
-};
 
 // RAII guard for mbedtls sha256
 struct Sha256Guard {
@@ -154,19 +104,19 @@ OtaUpdater::ManifestResult OtaUpdater::fetchLatestManifest() {
 
   // Create HTTPClient
   const bool useHttps{strcmp(parts.scheme, "https") == 0};
-  auto wifiClientHolder{createWiFiClient(useHttps, config_.caCert)};
-  if (!wifiClientHolder.client) {
+  auto wifiClient{dlf::util::createWiFiClient(useHttps, config_.caCert)};
+  if (!wifiClient) {
     return manifestError("Failed to create WiFi client");
   }
-  wifiClientHolder.client->setTimeout(config_.manifestTimeoutMs / 1000);
+  wifiClient->setTimeout(config_.manifestTimeoutMs / 1000);
   HTTPClient httpClient;
   // Use an RAII guard to automatically end the HTTPClient when it goes out of
   // scope
-  HTTPClientGuard httpClientGuard{httpClient};
+  dlf::util::HTTPClientGuard httpClientGuard{httpClient};
   httpClient.setTimeout(config_.manifestTimeoutMs);
 
   // Set up HTTP request for manifest
-  if (!httpClient.begin(*wifiClientHolder.client, manifestUrl)) {
+  if (!httpClient.begin(*wifiClient, manifestUrl)) {
     return manifestError("HTTP begin failed (manifest)");
   }
   // Sign the request
@@ -290,11 +240,14 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
     return updateError("Failed to build firmware URL");
   }
 
-  // Create HTTPClient
+  // The WiFiClient must outlive the HTTPClient (whose guard calls end(), which
+  // uses the WiFiClient), so we need to declare it first since destruction runs
+  // in reverse order.
+  std::unique_ptr<WiFiClient> wifiClient;
   HTTPClient httpClient;
   // Use an RAII guard to automatically end the HTTPClient when it goes out of
   // scope
-  HTTPClientGuard httpClientGuard{httpClient};
+  dlf::util::HTTPClientGuard httpClientGuard{httpClient};
   httpClient.setTimeout(config_.firmwareTimeoutMs);
   // Ensure that we are able to follow redirect URLs in the Location header
   const char* headerKeys[]{"Location"};
@@ -302,9 +255,6 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
 
   // Follow any redirects to the final resource
   int code{0};
-  // We need to keep wifiClientHolder alive for the entire time while httpClient
-  // is in scope, so initialize it here.
-  WiFiClientHolder wifiClientHolder{nullptr};
   for (int redirectCount = 0; redirectCount < 3; ++redirectCount) {
     // End any previous session before calling begin() again on same HTTPClient
     httpClient.end();
@@ -318,13 +268,13 @@ OtaUpdater::UpdateResult OtaUpdater::downloadAndUpdate(const Manifest& manifest,
     const bool useHttps{strcmp(parts.scheme, "https") == 0};
     const char* caCert{redirectCount == 0 ? config_.caCert
                                           : config_.redirectCaCert};
-    wifiClientHolder = createWiFiClient(useHttps, caCert);
-    if (!wifiClientHolder.client) {
+    wifiClient = dlf::util::createWiFiClient(useHttps, caCert);
+    if (!wifiClient) {
       return updateError("Failed to create WiFi client");
     }
 
     // Set up HTTP request for firmware
-    if (!httpClient.begin(*wifiClientHolder.client, firmwareUrl)) {
+    if (!httpClient.begin(*wifiClient, firmwareUrl)) {
       return updateError("HTTP begin failed (firmware)");
     }
     // Sign the request

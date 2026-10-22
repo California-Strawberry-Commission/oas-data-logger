@@ -3,24 +3,8 @@
 #include "dlflib/dlf_cfg.h"
 #include "dlflib/dlf_logger.h"
 #include "dlflib/log.h"
-
-namespace {
-
-// We must be sure to end the HTTPClient to avoid memory and socket leaks.
-// Instead of manually calling HTTPClient::end everywhere, use this RAII guard.
-struct HTTPClientGuard {
-  HTTPClient& client;
-  explicit HTTPClientGuard(HTTPClient& h) : client(h) {}
-
-  HTTPClientGuard(const HTTPClientGuard&) = delete;
-  HTTPClientGuard& operator=(const HTTPClientGuard&) = delete;
-  HTTPClientGuard(HTTPClientGuard&&) = delete;
-  HTTPClientGuard& operator=(HTTPClientGuard&&) = delete;
-
-  ~HTTPClientGuard() { client.end(); }
-};
-
-}  // namespace
+#include "dlflib/util/http.h"
+#include "dlflib/util/util.h"
 
 namespace dlf::components {
 
@@ -44,6 +28,11 @@ bool UploaderComponent::begin() {
   syncEvent_ = xEventGroupCreate();
   if (syncEvent_ == nullptr) {
     DLFLIB_LOG_ERROR("[UploaderComponent] Failed to create syncEvent_");
+    return false;
+  }
+  uploadMutex_ = xSemaphoreCreateMutex();
+  if (uploadMutex_ == nullptr) {
+    DLFLIB_LOG_ERROR("[UploaderComponent] Failed to create uploadMutex_");
     return false;
   }
 
@@ -366,13 +355,17 @@ void UploaderComponent::syncTask(void* arg) {
 
       runDir.rewindDirectory();
 
-      bool uploadSuccess =
-          uploaderComponent->options_.enableChunkedUpload
-              ? uploaderComponent->uploadRunChunked(runDir, runDir.name(),
-                                                    /*isActive=*/false,
-                                                    /*finalize=*/true)
-              : uploaderComponent->uploadRun(runDir, runDir.name(),
-                                             /*isActive=*/false);
+      bool uploadSuccess{false};
+      {
+        dlf::util::MutexLock uploadLock{uploaderComponent->uploadMutex_};
+        uploadSuccess =
+            uploaderComponent->options_.enableChunkedUpload
+                ? uploaderComponent->uploadRunChunked(runDir, runDir.name(),
+                                                      /*isActive=*/false,
+                                                      /*finalize=*/true)
+                : uploaderComponent->uploadRun(runDir, runDir.name(),
+                                               /*isActive=*/false);
+      }
       if (!uploadSuccess) {
         DLFLIB_LOG_ERROR("[UploaderComponent][syncTask] Upload failed");
         runDir.close();
@@ -479,6 +472,10 @@ void UploaderComponent::partialRunUploadTask(void* arg) {
           "[UploaderComponent][partialRunUploadTask] Attempting upload for "
           "active run %s",
           run->uuid());
+
+      // Wait for any upload by syncTask to finish. Taken before locking the
+      // run's LogFiles so that SD card writes aren't blocked while waiting.
+      dlf::util::MutexLock uploadLock{uploaderComponent->uploadMutex_};
 
       // Manually flush the log files for the run. This updates the log file
       // headers.
@@ -644,7 +641,7 @@ bool UploaderComponent::uploadRunChunked(fs::File runDir, const char* runUuid,
   HTTPClient httpClient;
   // Use an RAII guard to automatically end the HTTPClient when it goes out of
   // scope
-  HTTPClientGuard httpClientGuard{httpClient};
+  dlf::util::HTTPClientGuard httpClientGuard{httpClient};
   httpClient.setReuse(true);  // keep the TLS session alive between requests
   httpClient.setTimeout(options_.chunkUploadTimeoutMs);
   if (!httpClient.begin(*wifiClient, chunkUrl)) {
@@ -801,7 +798,7 @@ bool UploaderComponent::sendFinalizeRequest(const char* finalizeUrl,
                                             bool isActive) {
   WiFiClient* wifiClient = getWiFiClient(strncmp(finalizeUrl, "https", 5) == 0);
   HTTPClient httpClient;
-  HTTPClientGuard httpClientGuard{httpClient};
+  dlf::util::HTTPClientGuard httpClientGuard{httpClient};
   if (!httpClient.begin(*wifiClient, finalizeUrl)) {
     DLFLIB_LOG_ERROR(
         "[UploaderComponent][sendFinalizeRequest] HTTPClient::begin failed");

@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "description": "OTA update helper for ESP32",
   "authors": [
-      {
-          "name": "Genki Kondo",
-          "email": "genki@kogentech.com",
-          "maintainer": true
-      }
+    {
+      "name": "Genki Kondo",
+      "email": "genki@kogentech.com",
+      "maintainer": true
+    }
   ],
   "license": "MIT",
   "frameworks": ["arduino"],

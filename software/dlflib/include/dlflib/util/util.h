@@ -11,6 +11,22 @@ std::unique_ptr<T> make_unique(Args&&... args) {
   return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
 }
 
+// Holds a FreeRTOS mutex for the lifetime of this object
+class MutexLock {
+ public:
+  explicit MutexLock(SemaphoreHandle_t mutex) : mutex_(mutex) {
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+  }
+
+  MutexLock(const MutexLock&) = delete;
+  MutexLock& operator=(const MutexLock&) = delete;
+
+  ~MutexLock() { xSemaphoreGive(mutex_); }
+
+ private:
+  SemaphoreHandle_t mutex_;
+};
+
 // https://stackoverflow.com/a/59522794/16238567
 inline constexpr size_t hashStr(const char* s, int off = 0) {
   return !s[off] ? 5381 : (hashStr(s, off + 1) * 33) ^ s[off];
