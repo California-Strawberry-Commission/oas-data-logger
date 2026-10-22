@@ -147,6 +147,9 @@ class UploaderComponent : public Component {
   EventGroupHandle_t wifiEvent_;
   // Used to notify when sync is in progress/complete
   EventGroupHandle_t syncEvent_;
+  // Serializes uploads between syncTask and partialRunUploadTask, which share
+  // wifiClient_ and wifiClientSecure_
+  SemaphoreHandle_t uploadMutex_{nullptr};
 };
 
 }  // namespace dlf::components

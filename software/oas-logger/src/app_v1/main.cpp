@@ -11,6 +11,7 @@
 #include "DeviceAuth.h"
 #include "EzLog.h"
 #include "certs/certs.h"
+#include "device_health/device_health.h"
 #include "memory_monitor/memory_monitor.h"
 #include "ota_updater/ota_background_updater.h"
 #include "ota_updater/ota_updater.h"
@@ -116,6 +117,7 @@ const bool ENABLE_OTA_UPDATE{true};
 const int OTA_OFFLOAD_WAIT_SECS{60};
 const bool ENABLE_CHUNKED_UPLOAD{true};
 const int WIFI_RECONNECT_INTERVAL_SECS{60};  // <= 0 means disabled
+const int HEARTBEAT_INTERVAL_SECS{300};      // <= 0 means disabled
 
 // Testing overrides
 const bool WAIT_FOR_VALID_TIME{true};
@@ -160,6 +162,8 @@ const char* OTA_MANIFEST_ENDPOINT{
     "https://oas-data-logger.vercel.app/api/ota/manifest/%s/%s"};
 const char* OTA_FIRMWARE_ENDPOINT{
     "https://oas-data-logger.vercel.app/api/ota/firmware/%s/%s/%d"};
+const char* HEARTBEAT_ENDPOINT{
+    "https://oas-data-logger.vercel.app/api/heartbeat"};
 
 // State Machine States
 enum class SystemState {
@@ -240,6 +244,7 @@ void handleOtaUpdate();
 ota::OtaUpdater::Config buildOtaConfig();
 void startBackgroundOta();
 void waitForBackgroundOta(uint32_t timeoutMs);
+device_health::Config buildHeartbeatConfig();
 void handleWaitGpsState();
 void handleWaitTimeState();
 void handleRunningState();
@@ -273,6 +278,10 @@ void setup() {
              FW_BUILD_NUMBER, DEVICE_TYPE, OTA_CHANNEL);
 
   provisionDevice();
+
+  if (HEARTBEAT_INTERVAL_SECS > 0) {
+    device_health::begin(buildHeartbeatConfig());
+  }
 
   // Create mutex for GPS data protection
   gpsDataMutex = xSemaphoreCreateMutex();
@@ -660,6 +669,23 @@ void waitForBackgroundOta(uint32_t timeoutMs) {
   EZLOG_INFO("[OTA] Timed out waiting for background update");
 }
 
+device_health::Config buildHeartbeatConfig() {
+  device_health::Config config{};
+  snprintf(config.endpoint, sizeof(config.endpoint), "%s", HEARTBEAT_ENDPOINT);
+  snprintf(config.deviceId, sizeof(config.deviceId), "%s", deviceUid);
+  snprintf(config.deviceSecret, sizeof(config.deviceSecret), "%s",
+           deviceSecret);
+  config.caCert = vercel_root_ca_pem_start;
+  config.firmwareBuild = FW_BUILD_NUMBER;
+  snprintf(config.deviceType, sizeof(config.deviceType), "%s", DEVICE_TYPE);
+  snprintf(config.otaChannel, sizeof(config.otaChannel), "%s", OTA_CHANNEL);
+  // Reads currentState without taking stateMutex, since a stale value is
+  // harmless here.
+  config.state = [] { return static_cast<int>(currentState); };
+  config.intervalMs = HEARTBEAT_INTERVAL_SECS * 1000;
+  return config;
+}
+
 void handleWaitGpsState() {
   enableGps();
 
@@ -755,6 +781,9 @@ void handleOffloadState() {
   logger.waitForSyncCompletion();
   waitForBackgroundOta(OTA_OFFLOAD_WAIT_SECS * 1000);
 
+  // Send final heartbeat
+  device_health::sendHeartbeat();
+
   // After sync completion, either sleep or continue
   transitionToState(SystemState::SLEEP);
 }
@@ -773,7 +802,7 @@ void handleErrorState() {
 
   // Restart after 10 seconds
   if (millis() - errorStartMillis > 10000) {
-    ESP.restart();
+    device_health::restart(device_health::AppResetReason::ERROR_STATE);
   }
 }
 
@@ -994,7 +1023,8 @@ void sleepMonitorTask(void* args) {
           EZLOG_INFO("Resetting WiFiManager...");
           wifiManager.resetSettings();  // uses vTaskDelay internally
           EZLOG_INFO("Rebooting device...");
-          ESP.restart();
+          device_health::restart(
+              device_health::AppResetReason::WIFI_RESET_BUTTON);
           break;
         }
         vTaskDelay(pdMS_TO_TICKS(10));
