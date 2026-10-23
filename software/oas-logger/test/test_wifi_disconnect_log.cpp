@@ -62,7 +62,7 @@ TEST_F(WifiDisconnectLogTest, DoesNotCoalesceDifferentEvents) {
   EXPECT_EQ(log.peek(out, WifiDisconnectLog::CAPACITY), 4);
 }
 
-TEST_F(WifiDisconnectLogTest, DropsOldestEventsWhenFull) {
+TEST_F(WifiDisconnectLogTest, DropsNewEventsWhenFull) {
   WifiDisconnectLog log{storage};
   const size_t total{WifiDisconnectLog::CAPACITY + 5};
   for (size_t i{0}; i < total; i++) {
@@ -73,8 +73,25 @@ TEST_F(WifiDisconnectLogTest, DropsOldestEventsWhenFull) {
   EXPECT_EQ(log.size(), WifiDisconnectLog::CAPACITY);
   ASSERT_EQ(log.peek(out, WifiDisconnectLog::CAPACITY),
             WifiDisconnectLog::CAPACITY);
-  EXPECT_EQ(out[0].uptimeMs, 5);
-  EXPECT_EQ(out[WifiDisconnectLog::CAPACITY - 1].uptimeMs, total - 1);
+  EXPECT_EQ(out[0].uptimeMs, 0);
+  EXPECT_EQ(out[WifiDisconnectLog::CAPACITY - 1].uptimeMs,
+            WifiDisconnectLog::CAPACITY - 1);
+}
+
+TEST_F(WifiDisconnectLogTest, CoalescesIntoLatestEventWhenFull) {
+  WifiDisconnectLog log{storage};
+  for (size_t i{0}; i < WifiDisconnectLog::CAPACITY; i++) {
+    log.record(1, i, i % 2 ? NO_AP_FOUND : AUTH_FAIL, -90, false);
+  }
+  const uint8_t lastReason{(WifiDisconnectLog::CAPACITY - 1) % 2 ? NO_AP_FOUND
+                                                                 : AUTH_FAIL};
+  log.record(1, 1000, lastReason, -80, false);
+
+  EXPECT_EQ(log.size(), WifiDisconnectLog::CAPACITY);
+  ASSERT_EQ(log.peek(out, WifiDisconnectLog::CAPACITY),
+            WifiDisconnectLog::CAPACITY);
+  EXPECT_EQ(out[WifiDisconnectLog::CAPACITY - 1].count, 2);
+  EXPECT_EQ(out[WifiDisconnectLog::CAPACITY - 1].lastUptimeMs, 1000);
 }
 
 TEST_F(WifiDisconnectLogTest, PeekDoesNotClear) {
