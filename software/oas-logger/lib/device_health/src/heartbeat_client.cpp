@@ -16,6 +16,9 @@ namespace {
 // resets, panics), but contents are garbage after power off then power on. The
 // `magic` field is used to check that RTC_NOINIT memory is valid.
 RTC_NOINIT_ATTR device_health::WifiDisconnectLog::Storage disconnectLogStorage;
+RTC_NOINIT_ATTR device_health::FileWriteIssueLog::Storage
+    fileWriteIssueLogStorage;
+RTC_NOINIT_ATTR device_health::LogLineLog::Storage logLineLogStorage;
 
 }  // namespace
 
@@ -25,7 +28,9 @@ HeartbeatClient::HeartbeatClient(const Config& cfg)
     : config_(cfg),
       signer_(cfg.deviceId, cfg.deviceSecret),
       sendMutex_(xSemaphoreCreateMutex()),
-      disconnectLog_(disconnectLogStorage) {}
+      disconnectLog_(disconnectLogStorage),
+      fileWriteIssueLog_(fileWriteIssueLogStorage),
+      logLineLog_(logLineLogStorage) {}
 
 HeartbeatClient::~HeartbeatClient() {
   if (sendMutex_ != nullptr) {
@@ -42,6 +47,15 @@ bool HeartbeatClient::begin() {
   WiFi.onEvent([this](WiFiEvent_t event, WiFiEventInfo_t info) {
     onWiFiEvent(event, info);
   });
+
+  dlf::setFileWriteIssueHandler([this](const dlf::FileWriteIssue& issue) {
+    recordFileWriteIssue(issue);
+  });
+
+  ezlog::setLineHook(
+      [this](ezlog::Level level, const char* file, uint16_t line,
+             const char* msg) { recordLogLine(level, file, line, msg); },
+      ezlog::Level::ERROR);
   return true;
 }
 
@@ -63,15 +77,44 @@ void HeartbeatClient::onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
                  rssi);
       const bool wasConnected{wifiConnected_};
       wifiConnected_ = false;
+      const uint32_t now{millis()};
+      const WifiDisconnectEvent e{
+          resetInfo().bootCount, now, now, 1, reason, rssi, wasConnected,
+      };
       portENTER_CRITICAL(&disconnectLogMux_);
-      disconnectLog_.record(resetInfo().bootCount, millis(), reason, rssi,
-                      wasConnected);
+      disconnectLog_.record(e);
       portEXIT_CRITICAL(&disconnectLogMux_);
       break;
     }
     default:
       break;
   }
+}
+
+void HeartbeatClient::recordFileWriteIssue(const dlf::FileWriteIssue& issue) {
+  const FileWriteIssueEvent e{
+      resetInfo().bootCount,
+      issue.uptimeMs,
+      issue.uptimeMs,
+      issue.attempts,
+      issue.durationMs,
+      1,
+      static_cast<uint8_t>(issue.type),
+      static_cast<uint8_t>(issue.streamType),
+  };
+  portENTER_CRITICAL(&fileWriteIssueLogMux_);
+  fileWriteIssueLog_.record(e);
+  portEXIT_CRITICAL(&fileWriteIssueLogMux_);
+}
+
+void HeartbeatClient::recordLogLine(ezlog::Level level, const char* file,
+                                    uint16_t line, const char* msg) {
+  const LogLineEvent e{LogLineEvent::make(resetInfo().bootCount, millis(),
+                                          static_cast<uint8_t>(level), file,
+                                          line, msg)};
+  portENTER_CRITICAL(&logLineLogMux_);
+  logLineLog_.record(e);
+  portEXIT_CRITICAL(&logLineLogMux_);
 }
 
 bool HeartbeatClient::sendNow() {
@@ -102,6 +145,17 @@ bool HeartbeatClient::send() {
   const size_t numDisconnectEvents{
       disconnectLog_.peek(disconnectEvents, WifiDisconnectLog::CAPACITY)};
   portEXIT_CRITICAL(&disconnectLogMux_);
+  FileWriteIssueEvent fileWriteIssues[FileWriteIssueLog::CAPACITY];
+  portENTER_CRITICAL(&fileWriteIssueLogMux_);
+  const size_t numFileWriteIssues{
+      fileWriteIssueLog_.peek(fileWriteIssues, FileWriteIssueLog::CAPACITY)};
+  portEXIT_CRITICAL(&fileWriteIssueLogMux_);
+  // Note: LogLineEvent[] is too large for the task stack so we have it as an
+  // instance var logLinesToSend_
+  portENTER_CRITICAL(&logLineLogMux_);
+  const size_t numLogLines{
+      logLineLog_.peek(logLinesToSend_, LogLineLog::CAPACITY)};
+  portEXIT_CRITICAL(&logLineLogMux_);
   const bool includesCrash{reset.crash.present};
 
   // Build payload
@@ -153,6 +207,35 @@ bool HeartbeatClient::send() {
     ev["wasConnected"] = e.wasConnected;
   }
 
+  JsonObject file{doc["file"].to<JsonObject>()};
+  JsonArray writeIssuesArr{file["writeIssues"].to<JsonArray>()};
+  for (size_t i{0}; i < numFileWriteIssues; i++) {
+    const FileWriteIssueEvent& e{fileWriteIssues[i]};
+    JsonObject ev{writeIssuesArr.add<JsonObject>()};
+    ev["bootCount"] = e.bootCount;
+    ev["uptimeMs"] = e.uptimeMs;
+    ev["lastUptimeMs"] = e.lastUptimeMs;
+    ev["count"] = e.count;
+    ev["type"] = e.type;
+    ev["streamType"] = e.streamType;
+    ev["maxAttempts"] = e.maxAttempts;
+    ev["maxDurationMs"] = e.maxDurationMs;
+  }
+
+  JsonArray logsArr{doc["logs"].to<JsonArray>()};
+  for (size_t i{0}; i < numLogLines; i++) {
+    const LogLineEvent& e{logLinesToSend_[i]};
+    JsonObject ev{logsArr.add<JsonObject>()};
+    ev["bootCount"] = e.bootCount;
+    ev["uptimeMs"] = e.uptimeMs;
+    ev["lastUptimeMs"] = e.lastUptimeMs;
+    ev["count"] = e.count;
+    ev["level"] = e.level;
+    ev["file"] = e.file;
+    ev["line"] = e.line;
+    ev["msg"] = e.msg;
+  }
+
   String body;
   serializeJson(doc, body);
 
@@ -187,13 +270,23 @@ bool HeartbeatClient::send() {
     EZLOG_WARN("[heartbeat] POST status: %d", code);
     return false;
   }
-  EZLOG_DEBUG("[heartbeat] Sent (%u Wi-Fi disconnect events, crash=%d)",
-              (unsigned)numDisconnectEvents, includesCrash);
+  EZLOG_DEBUG(
+      "[heartbeat] Sent (%u Wi-Fi disconnect events, %u file write issues, "
+      "%u log lines, crash=%d)",
+      (unsigned)numDisconnectEvents, (unsigned)numFileWriteIssues,
+      (unsigned)numLogLines, includesCrash);
 
-  // Acknowledged. Clear the reported Wi-Fi disconnect events and crash.
+  // Acknowledged. Clear the reported Wi-Fi disconnect events, file write
+  // issues, log lines and crash.
   portENTER_CRITICAL(&disconnectLogMux_);
   disconnectLog_.discard(numDisconnectEvents);
   portEXIT_CRITICAL(&disconnectLogMux_);
+  portENTER_CRITICAL(&fileWriteIssueLogMux_);
+  fileWriteIssueLog_.discard(numFileWriteIssues);
+  portEXIT_CRITICAL(&fileWriteIssueLogMux_);
+  portENTER_CRITICAL(&logLineLogMux_);
+  logLineLog_.discard(numLogLines);
+  portEXIT_CRITICAL(&logLineLogMux_);
   if (includesCrash) {
     clearCrash();
   }

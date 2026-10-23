@@ -49,6 +49,8 @@ model Device {
   heartbeats           DeviceHeartbeat[]
   crashes              DeviceCrash[]
   wifiDisconnectEvents DeviceWifiDisconnectEvent[]
+  fileWriteIssues      DeviceFileWriteIssue[]
+  logLines             DeviceLogLine[]
 }
 
 model DeviceSecret {
@@ -105,6 +107,8 @@ model DeviceHeartbeat {
   rssi             Int
 
   wifiDisconnectEvents DeviceWifiDisconnectEvent[]
+  fileWriteIssues      DeviceFileWriteIssue[]
+  logLines             DeviceLogLine[]
 
   @@index([deviceId, receivedAt])
 }
@@ -140,6 +144,42 @@ model DeviceWifiDisconnectEvent {
   reason       Int // wifi_err_reason_t
   rssi         Int
   wasConnected Boolean
+
+  @@index([deviceId])
+}
+
+model DeviceFileWriteIssue {
+  id            Int             @id @default(autoincrement())
+  device        Device          @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  deviceId      String // relation field
+  heartbeat     DeviceHeartbeat @relation(fields: [heartbeatId], references: [id], onDelete: Cascade)
+  heartbeatId   Int // relation field
+  bootCount     Int
+  uptimeMs      BigInt // first occurrence
+  lastUptimeMs  BigInt // latest occurrence
+  count         Int
+  type          Int // dlf::FileWriteIssue::Type
+  streamType    Int // dlf::dlf_stream_type_e
+  maxAttempts   Int // most failed write attempts across coalesced occurrences
+  maxDurationMs Int // longest time from first failure to recovered/abandoned
+
+  @@index([deviceId])
+}
+
+model DeviceLogLine {
+  id           Int             @id @default(autoincrement())
+  device       Device          @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  deviceId     String // relation field
+  heartbeat    DeviceHeartbeat @relation(fields: [heartbeatId], references: [id], onDelete: Cascade)
+  heartbeatId  Int // relation field
+  bootCount    Int
+  uptimeMs     BigInt // first occurrence
+  lastUptimeMs BigInt // latest occurrence
+  count        Int
+  level        Int // ezlog::Level
+  file         String // source file base name
+  line         Int
+  msg          String // latest occurrence, truncated
 
   @@index([deviceId])
 }

@@ -2,6 +2,8 @@
 
 #include <Arduino.h>
 
+#include <functional>
+
 /**
  * @namespace ezlog
  *
@@ -106,6 +108,31 @@ bool addSerial(Level minLevel = Level::INFO);
  */
 bool addLittleFS(Level minLevel = Level::INFO, const char* path = "/ezlog.txt",
                  bool formatOnFail = true);
+
+/**
+ * Called with each formatted log line at or above the hook's minimum level.
+ *
+ * @param level Log severity.
+ * @param file Base name of the source file.
+ * @param line Source line.
+ * @param msg Formatted message.
+ */
+using LineHook = std::function<void(Level level, const char* file,
+                                    uint16_t line, const char* msg)>;
+
+/**
+ * Set a hook that is called synchronously for each log line at or above
+ * minLevel, on the logging task, before the line is queued for the writer
+ * task.
+ *
+ * Must be set before logging from multiple tasks, since it is not synchronized
+ * with the tasks that log. The hook must not block, and must not log (which
+ * would recurse).
+ *
+ * @param hook Hook to call, or an empty function for none.
+ * @param minLevel Minimum log level passed to the hook.
+ */
+void setLineHook(LineHook hook, Level minLevel = Level::ERROR);
 
 /* ========================= LOGGING API ========================= */
 
