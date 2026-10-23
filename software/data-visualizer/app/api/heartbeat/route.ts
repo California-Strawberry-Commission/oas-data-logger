@@ -57,13 +57,27 @@ const heartbeatSchema = z.object({
           uptimeMs: z.int(),
           lastUptimeMs: z.int(),
           count: z.int(),
-          type: z.int(), // dlf::FileWriteIssue::Type
-          streamType: z.int(), // dlf::dlf_stream_type_e
+          type: z.int(),
+          streamType: z.int(),
           maxAttempts: z.int(),
           maxDurationMs: z.int(),
         }),
       ),
     })
+    .optional(),
+  logs: z
+    .array(
+      z.object({
+        bootCount: z.int(),
+        uptimeMs: z.int(),
+        lastUptimeMs: z.int(),
+        count: z.int(),
+        level: z.int(),
+        file: z.string(),
+        line: z.int(),
+        msg: z.string(),
+      }),
+    )
     .optional(),
 });
 
@@ -172,6 +186,19 @@ export async function POST(request: NextRequest) {
               streamType: e.streamType,
               maxAttempts: e.maxAttempts,
               maxDurationMs: e.maxDurationMs,
+            })),
+          },
+          logLines: {
+            create: (heartbeatData.logs ?? []).map((e) => ({
+              deviceId,
+              bootCount: e.bootCount,
+              uptimeMs: BigInt(e.uptimeMs),
+              lastUptimeMs: BigInt(e.lastUptimeMs),
+              count: e.count,
+              level: e.level,
+              file: e.file,
+              line: e.line,
+              msg: e.msg,
             })),
           },
         },

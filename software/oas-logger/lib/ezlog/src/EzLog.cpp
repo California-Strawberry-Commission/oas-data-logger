@@ -53,6 +53,8 @@ static const char* g_lfsPath{"/ezlog.txt"};
 static File g_lfsFile;
 static bool g_lfsDirty{false};
 static uint32_t g_lfsLastFlushMs{0};
+static LineHook g_lineHook;
+static Level g_lineHookMinLevel{Level::ERROR};
 
 #pragma endregion
 
@@ -236,6 +238,11 @@ bool addLittleFS(Level minLevel, const char* path, bool formatOnFail) {
   return true;
 }
 
+void setLineHook(LineHook hook, Level minLevel) {
+  g_lineHook = std::move(hook);
+  g_lineHookMinLevel = minLevel;
+}
+
 #pragma endregion
 
 #pragma region Logging API
@@ -259,7 +266,8 @@ void logv(Level level, const char* file, const char* func, uint16_t line,
   const bool needSerial{g_serialEnabled &&
                         levelEnabled(level, g_serialMinLevel)};
   const bool needLfs{g_lfsEnabled && levelEnabled(level, g_lfsMinLevel)};
-  if (!needSerial && !needLfs) {
+  const bool needHook{g_lineHook && levelEnabled(level, g_lineHookMinLevel)};
+  if (!needSerial && !needLfs && !needHook) {
     return;
   }
 
@@ -291,6 +299,10 @@ void logv(Level level, const char* file, const char* func, uint16_t line,
   va_copy(apCopy, ap);
   vsnprintf(msg, (size_t)g_maxMsgLen + 1, fmt, apCopy);
   va_end(apCopy);
+
+  if (needHook) {
+    g_lineHook(level, baseName(file), line, msg);
+  }
 
   // Enqueue item. FreeRTOS copies g_queueItemBufSize bytes into the queue. If
   // the queue is full, the item will be dropped

@@ -143,4 +143,56 @@ struct FileWriteIssueEvent {
 using FileWriteIssueLog =
     EventLog<FileWriteIssueEvent, 16, 0x46574C31>;  // "FWL1"
 
+/**
+ * A log line. Consecutive lines from the same source location are coalesced
+ * into one entry, with count and lastUptimeMs updated and the latest message
+ * kept.
+ */
+struct LogLineEvent {
+  static constexpr size_t FILE_LEN{24};
+  static constexpr size_t MSG_LEN{96};
+
+  uint32_t bootCount;
+  uint32_t uptimeMs;      // first occurrence
+  uint32_t lastUptimeMs;  // latest occurrence
+  uint16_t count;
+  uint8_t level;  // ezlog::Level
+  uint16_t line;
+  char file[FILE_LEN];  // NUL-terminated
+  char msg[MSG_LEN];    // NUL-terminated, latest occurrence
+
+  static LogLineEvent make(uint32_t bootCount, uint32_t uptimeMs, uint8_t level,
+                           const char* file, uint16_t line, const char* msg) {
+    LogLineEvent e{bootCount, uptimeMs, uptimeMs, 1, level, line, {}, {}};
+    copyTruncated(e.file, file);
+    copyTruncated(e.msg, msg);
+    return e;
+  }
+
+  bool coalesce(const LogLineEvent& next) {
+    if (next.bootCount != bootCount || next.line != line ||
+        strcmp(next.file, file) != 0 || count == UINT16_MAX) {
+      return false;
+    }
+    count++;
+    lastUptimeMs = next.uptimeMs;
+    level = next.level;
+    memcpy(msg, next.msg, sizeof(msg));
+    return true;
+  }
+
+ private:
+  template <size_t N>
+  static void copyTruncated(char (&dst)[N], const char* src) {
+    if (!src) {
+      dst[0] = '\0';
+      return;
+    }
+    strncpy(dst, src, N - 1);
+    dst[N - 1] = '\0';
+  }
+};
+
+using LogLineLog = EventLog<LogLineEvent, 16, 0x4C4C4C31>;  // "LLL1"
+
 }  // namespace device_health

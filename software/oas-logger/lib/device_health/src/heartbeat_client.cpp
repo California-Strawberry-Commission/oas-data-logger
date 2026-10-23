@@ -18,6 +18,7 @@ namespace {
 RTC_NOINIT_ATTR device_health::WifiDisconnectLog::Storage disconnectLogStorage;
 RTC_NOINIT_ATTR device_health::FileWriteIssueLog::Storage
     fileWriteIssueLogStorage;
+RTC_NOINIT_ATTR device_health::LogLineLog::Storage logLineLogStorage;
 
 }  // namespace
 
@@ -28,7 +29,8 @@ HeartbeatClient::HeartbeatClient(const Config& cfg)
       signer_(cfg.deviceId, cfg.deviceSecret),
       sendMutex_(xSemaphoreCreateMutex()),
       disconnectLog_(disconnectLogStorage),
-      fileWriteIssueLog_(fileWriteIssueLogStorage) {}
+      fileWriteIssueLog_(fileWriteIssueLogStorage),
+      logLineLog_(logLineLogStorage) {}
 
 HeartbeatClient::~HeartbeatClient() {
   if (sendMutex_ != nullptr) {
@@ -49,6 +51,11 @@ bool HeartbeatClient::begin() {
   dlf::setFileWriteIssueHandler([this](const dlf::FileWriteIssue& issue) {
     recordFileWriteIssue(issue);
   });
+
+  ezlog::setLineHook(
+      [this](ezlog::Level level, const char* file, uint16_t line,
+             const char* msg) { recordLogLine(level, file, line, msg); },
+      ezlog::Level::ERROR);
   return true;
 }
 
@@ -100,6 +107,16 @@ void HeartbeatClient::recordFileWriteIssue(const dlf::FileWriteIssue& issue) {
   portEXIT_CRITICAL(&fileWriteIssueLogMux_);
 }
 
+void HeartbeatClient::recordLogLine(ezlog::Level level, const char* file,
+                                    uint16_t line, const char* msg) {
+  const LogLineEvent e{LogLineEvent::make(resetInfo().bootCount, millis(),
+                                          static_cast<uint8_t>(level), file,
+                                          line, msg)};
+  portENTER_CRITICAL(&logLineLogMux_);
+  logLineLog_.record(e);
+  portEXIT_CRITICAL(&logLineLogMux_);
+}
+
 bool HeartbeatClient::sendNow() {
   dlf::util::MutexLock lock{sendMutex_};
   return WiFi.status() == WL_CONNECTED && send();
@@ -128,13 +145,17 @@ bool HeartbeatClient::send() {
   const size_t numDisconnectEvents{
       disconnectLog_.peek(disconnectEvents, WifiDisconnectLog::CAPACITY)};
   portEXIT_CRITICAL(&disconnectLogMux_);
-
-  // File write issues stay in the log until acknowledged
   FileWriteIssueEvent fileWriteIssues[FileWriteIssueLog::CAPACITY];
   portENTER_CRITICAL(&fileWriteIssueLogMux_);
   const size_t numFileWriteIssues{
       fileWriteIssueLog_.peek(fileWriteIssues, FileWriteIssueLog::CAPACITY)};
   portEXIT_CRITICAL(&fileWriteIssueLogMux_);
+  // Note: LogLineEvent[] is too large for the task stack so we have it as an
+  // instance var logLinesToSend_
+  portENTER_CRITICAL(&logLineLogMux_);
+  const size_t numLogLines{
+      logLineLog_.peek(logLinesToSend_, LogLineLog::CAPACITY)};
+  portEXIT_CRITICAL(&logLineLogMux_);
   const bool includesCrash{reset.crash.present};
 
   // Build payload
@@ -201,6 +222,20 @@ bool HeartbeatClient::send() {
     ev["maxDurationMs"] = e.maxDurationMs;
   }
 
+  JsonArray logsArr{doc["logs"].to<JsonArray>()};
+  for (size_t i{0}; i < numLogLines; i++) {
+    const LogLineEvent& e{logLinesToSend_[i]};
+    JsonObject ev{logsArr.add<JsonObject>()};
+    ev["bootCount"] = e.bootCount;
+    ev["uptimeMs"] = e.uptimeMs;
+    ev["lastUptimeMs"] = e.lastUptimeMs;
+    ev["count"] = e.count;
+    ev["level"] = e.level;
+    ev["file"] = e.file;
+    ev["line"] = e.line;
+    ev["msg"] = e.msg;
+  }
+
   String body;
   serializeJson(doc, body);
 
@@ -237,18 +272,21 @@ bool HeartbeatClient::send() {
   }
   EZLOG_DEBUG(
       "[heartbeat] Sent (%u Wi-Fi disconnect events, %u file write issues, "
-      "crash=%d)",
+      "%u log lines, crash=%d)",
       (unsigned)numDisconnectEvents, (unsigned)numFileWriteIssues,
-      includesCrash);
+      (unsigned)numLogLines, includesCrash);
 
   // Acknowledged. Clear the reported Wi-Fi disconnect events, file write
-  // issues and crash.
+  // issues, log lines and crash.
   portENTER_CRITICAL(&disconnectLogMux_);
   disconnectLog_.discard(numDisconnectEvents);
   portEXIT_CRITICAL(&disconnectLogMux_);
   portENTER_CRITICAL(&fileWriteIssueLogMux_);
   fileWriteIssueLog_.discard(numFileWriteIssues);
   portEXIT_CRITICAL(&fileWriteIssueLogMux_);
+  portENTER_CRITICAL(&logLineLogMux_);
+  logLineLog_.discard(numLogLines);
+  portEXIT_CRITICAL(&logLineLogMux_);
   if (includesCrash) {
     clearCrash();
   }

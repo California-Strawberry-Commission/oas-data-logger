@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <string>
+
 #include "device_health/event_log.h"
 
 using device_health::FileWriteIssueEvent;
+using device_health::LogLineEvent;
 using device_health::WifiDisconnectEvent;
 using device_health::WifiDisconnectLog;
 
@@ -207,4 +210,51 @@ TEST(FileWriteIssueEventTest, DoesNotCoalesceDifferentEvents) {
   EXPECT_EQ(e.count, original.count);
   EXPECT_EQ(e.lastUptimeMs, original.lastUptimeMs);
   EXPECT_EQ(e.maxAttempts, original.maxAttempts);
+}
+
+namespace {
+
+constexpr uint8_t WARN{2};
+constexpr uint8_t ERROR{3};
+
+}  // namespace
+
+TEST(LogLineEventTest, CoalescesSameLocationKeepingLatestMessage) {
+  LogLineEvent e{LogLineEvent::make(1, 1000, ERROR, "dlf_logfile.cpp", 274,
+                                    "Write failed (attempt 1)")};
+  EXPECT_TRUE(e.coalesce(LogLineEvent::make(1, 2000, ERROR, "dlf_logfile.cpp",
+                                            274, "Write failed (attempt 2)")));
+
+  EXPECT_EQ(e.count, 2);
+  EXPECT_EQ(e.uptimeMs, 1000);
+  EXPECT_EQ(e.lastUptimeMs, 2000);
+  EXPECT_STREQ(e.msg, "Write failed (attempt 2)");
+}
+
+TEST(LogLineEventTest, DoesNotCoalesceDifferentLocationsOrBoots) {
+  LogLineEvent e{LogLineEvent::make(1, 1000, WARN, "a.cpp", 10, "msg")};
+
+  EXPECT_FALSE(
+      e.coalesce(LogLineEvent::make(1, 2000, WARN, "a.cpp", 11, "msg")));
+  EXPECT_FALSE(
+      e.coalesce(LogLineEvent::make(1, 2000, WARN, "b.cpp", 10, "msg")));
+  EXPECT_FALSE(
+      e.coalesce(LogLineEvent::make(2, 2000, WARN, "a.cpp", 10, "msg")));
+  EXPECT_EQ(e.count, 1);
+}
+
+TEST(LogLineEventTest, TruncatesLongFileAndMessage) {
+  const std::string longFile(100, 'f');
+  const std::string longMsg(500, 'm');
+  const LogLineEvent e{
+      LogLineEvent::make(1, 1000, WARN, longFile.c_str(), 1, longMsg.c_str())};
+
+  EXPECT_EQ(strlen(e.file), LogLineEvent::FILE_LEN - 1);
+  EXPECT_EQ(strlen(e.msg), LogLineEvent::MSG_LEN - 1);
+}
+
+TEST(LogLineEventTest, HandlesNullFileAndMessage) {
+  const LogLineEvent e{LogLineEvent::make(1, 1000, WARN, nullptr, 1, nullptr)};
+  EXPECT_STREQ(e.file, "");
+  EXPECT_STREQ(e.msg, "");
 }
