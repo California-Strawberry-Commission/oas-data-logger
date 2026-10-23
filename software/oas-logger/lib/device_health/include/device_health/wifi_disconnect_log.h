@@ -22,8 +22,9 @@ struct WifiDisconnectEvent {
 };
 
 /**
- * Fixed-size log of Wi-Fi disconnect events. When full, the oldest event is
- * dropped.
+ * Fixed-size log of Wi-Fi disconnect events. When full, new events are dropped
+ * (except for those coalesced into the latest event), so that the earliest
+ * events are kept.
  *
  * The log lives in a caller-provided Storage struct so that it can be placed
  * in RTC_NOINIT memory and survive software resets and panics. The `magic`
@@ -61,11 +62,9 @@ class WifiDisconnectLog {
       }
     }
 
-    // If log is full, drop the oldest event
+    // If log is full, drop the new event
     if (s_.size == CAPACITY) {
-      memmove(&s_.events[0], &s_.events[1],
-              (CAPACITY - 1) * sizeof(WifiDisconnectEvent));
-      s_.size--;
+      return;
     }
 
     s_.events[s_.size++] = {bootCount, uptimeMs, uptimeMs,    1,
