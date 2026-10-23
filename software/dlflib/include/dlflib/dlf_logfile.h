@@ -112,14 +112,6 @@ class LogFile {
   bool reopen();
 
   /**
-   * Attempts to reopen the file, with backoff. Called from the flusher task.
-   * @param timeoutMs A zero timeoutMs will keep retrying indefinitely until
-   * successful, or state is no longer LOGGING.
-   * @return true if the file was reopened
-   */
-  bool reopenWithRetry(uint32_t timeoutMs);
-
-  /**
    * Writes a chunk at the end of the data written so far, retrying until the
    * write is verified or timeoutMs elapses. If it fails, all further writes are
    * abandoned. Must be called from the flusher task with fileMutex_ held.
@@ -164,16 +156,16 @@ class LogFile {
   StreamBufferHandle_t stream_;
   dlf_file_state_e state_;
   SemaphoreHandle_t syncSemaphore_;
-  SemaphoreHandle_t
-      fileMutex_;  // Protects file operations from race conditions
+  SemaphoreHandle_t fileMutex_;
   dlf_tick_t lastTick_;
-  size_t fileEndPosition_;  // Track file end position to prevent truncation
-                            // on close. Also the offset of the next write.
-
+  // Tracks file end position to prevent truncation on close. This is also the
+  // offset of the next write.
+  size_t fileEndPosition_;
   // Set once a chunk could not be written within its retry timeout. All
   // subsequent data is discarded so that the file is truncated at the last
   // good byte.
   bool writesAbandoned_;
+  bool bufferFullLogged_;
 };
 
 }  // namespace dlf

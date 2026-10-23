@@ -72,20 +72,21 @@ void LogFile::taskFlusher(void* arg) {
         if ((bytesSinceLastSync >= SYNC_THRESHOLD_BYTES ||
              (millis() - lastSyncTime) >= SYNC_INTERVAL_MS) &&
             bytesSinceLastSync > 0) {
-          DLFLIB_LOG_INFO(
-              "[LogFile][taskFlusher] %s: Forcing SD sync (close/reopen)...",
-              self->filename_);
+          DLFLIB_LOG_INFO("[LogFile][taskFlusher] Forcing SD sync: %s",
+                          self->filename_);
 
           self->file_.flush();
           self->file_.close();
-          if (self->reopenWithRetry(0)) {
+          if (self->reopen()) {
             DLFLIB_LOG_INFO(
-                "[LogFile][taskFlusher] %s: SD sync complete, file reopened",
+                "[LogFile][taskFlusher] SD sync complete, file reopened: %s",
                 self->filename_);
           } else {
+            // Note that writeChunk will attempt to reopen the file on its next
+            // write.
             DLFLIB_LOG_ERROR(
-                "[LogFile][taskFlusher] %s: FATAL: Failed to reopen file "
-                "before run ended. Data logged until recovery will be lost.",
+                "[LogFile][taskFlusher] Failed to reopen file during SD sync: "
+                "%s",
                 self->filename_);
           }
 
@@ -101,8 +102,9 @@ void LogFile::taskFlusher(void* arg) {
 
         xSemaphoreGive(self->fileMutex_);
       } else {
-        DLFLIB_LOG_ERROR("[LogFile][taskFlusher] %s: FAILED to acquire mutex!",
-                         self->filename_);
+        DLFLIB_LOG_ERROR(
+            "[LogFile][taskFlusher] Failed to acquire file mutex: %s",
+            self->filename_);
       }
     }
   }
@@ -151,21 +153,20 @@ void LogFile::taskFlusher(void* arg) {
       self->file_.seek(0, SeekEnd);
       size_t actualFileSize = self->file_.position();
       DLFLIB_LOG_INFO(
-          "[LogFile][taskFlusher] %s: Final SD sync complete. Actual file "
-          "size: "
-          "%zu bytes",
+          "[LogFile][taskFlusher] Final SD sync complete for %s. Actual file "
+          "size: %zu bytes",
           self->filename_, actualFileSize);
       self->file_.close();
     } else {
       DLFLIB_LOG_ERROR(
-          "[LogFile][taskFlusher] %s: FATAL: Could not reopen file for final "
-          "sync verification!",
+          "[LogFile][taskFlusher][FATAL] Failed to reopen file after final "
+          "flush: %s",
           self->filename_);
     }
 
     DLFLIB_LOG_INFO(
-        "[LogFile][taskFlusher] %s: Final flush complete. Total bytes written: "
-        "%zu",
+        "[LogFile][taskFlusher] Final flush complete for %s. Total bytes "
+        "written: %zu",
         self->filename_, self->fileEndPosition_);
     xSemaphoreGive(self->fileMutex_);
   }
@@ -193,32 +194,12 @@ bool LogFile::reopen() {
   const size_t fileSize = file_.size();
   if (fileSize != fileEndPosition_) {
     DLFLIB_LOG_ERROR(
-        "[LogFile][reopen] %s: File size %zu after reopen does not match "
-        "bytes written %zu",
-        filename_, fileSize, fileEndPosition_);
+        "[LogFile][reopen] File size %zu after reopen does not match "
+        "bytes written %zu: %s",
+        fileSize, fileEndPosition_, filename_);
     reportWriteIssue(FileWriteIssue::Type::SIZE_MISMATCH, 0, millis(), 0);
   }
   return file_.seek(fileEndPosition_);
-}
-
-bool LogFile::reopenWithRetry(uint32_t timeoutMs) {
-  const uint32_t REOPEN_MAX_DELAY_MS = 2000;
-  uint32_t delayMs = 250;
-  uint32_t elapsedMs = 0;
-
-  while (state_ == LOGGING || elapsedMs < timeoutMs) {
-    if (reopen()) {
-      return true;
-    }
-    DLFLIB_LOG_ERROR(
-        "[LogFile][reopenWithRetry] %s: Reopen failed, retrying in %u ms...",
-        filename_, delayMs);
-    vTaskDelay(pdMS_TO_TICKS(delayMs));
-    elapsedMs += delayMs;
-    delayMs =
-        (delayMs * 2 < REOPEN_MAX_DELAY_MS) ? delayMs * 2 : REOPEN_MAX_DELAY_MS;
-  }
-  return false;
 }
 
 bool LogFile::writeChunk(const uint8_t* data, size_t len, uint32_t timeoutMs) {
@@ -262,9 +243,9 @@ bool LogFile::writeChunk(const uint8_t* data, size_t len, uint32_t timeoutMs) {
     // data to this file anymore.
     if (elapsedMs >= timeoutMs) {
       DLFLIB_LOG_ERROR(
-          "[LogFile][writeChunk] %s: FATAL: Could not write %zu bytes at "
-          "offset %zu within timeout. Preventing all further writes.",
-          filename_, len, fileEndPosition_);
+          "[LogFile][writeChunk][FATAL] Could not write %zu bytes at offset "
+          "%zu within timeout. Preventing all further writes for %s",
+          len, fileEndPosition_, filename_);
       writesAbandoned_ = true;
       reportWriteIssue(FileWriteIssue::Type::ABANDONED, attempt, firstFailureMs,
                        millis() - firstFailureMs);
@@ -272,9 +253,9 @@ bool LogFile::writeChunk(const uint8_t* data, size_t len, uint32_t timeoutMs) {
     }
 
     DLFLIB_LOG_ERROR(
-        "[LogFile][writeChunk] %s: Write of %zu bytes at offset %zu failed "
-        "(attempt %u), retrying in %u ms...",
-        filename_, len, fileEndPosition_, attempt, delayMs);
+        "[LogFile][writeChunk] Write of %zu bytes at offset %zu failed "
+        "(attempt %u), retrying in %u ms: %s",
+        len, fileEndPosition_, attempt, delayMs, filename_);
     vTaskDelay(pdMS_TO_TICKS(delayMs));
     elapsedMs += delayMs;
     delayMs =
@@ -285,7 +266,7 @@ bool LogFile::writeChunk(const uint8_t* data, size_t len, uint32_t timeoutMs) {
     if (!file_ || attempt % 2 == 0) {
       file_.close();
       if (!reopen()) {
-        DLFLIB_LOG_ERROR("[LogFile][writeChunk] %s: Reopen failed", filename_);
+        DLFLIB_LOG_ERROR("[LogFile][writeChunk] Reopen failed: %s", filename_);
       }
     }
   }
@@ -298,7 +279,8 @@ LogFile::LogFile(
       handles_(std::move(handles)),
       streamType_(streamType),
       fileEndPosition_(0),
-      writesAbandoned_(false) {
+      writesAbandoned_(false),
+      bufferFullLogged_(false) {
   const char* streamTypeStr = dlf::datastream::streamTypeToString(streamType);
   snprintf(filename_, sizeof(filename_), "%s/%s.dlf", dir,
            streamTypeStr ? streamTypeStr : "unknown");
@@ -375,11 +357,18 @@ void LogFile::sample(dlf_tick_t tick) {
       }
 #endif
 
+      // encodeInto blocks until the whole sample fits, so a full buffer doesn't
+      // lose data. It does mean the flusher is falling behind, so log once
+      // until the buffer drains.
       if (xStreamBufferIsFull(stream_)) {
-        DLFLIB_LOG_ERROR(
-            "[LogFile][sample] Error: QUEUE_FULL for %s at tick %llu",
-            filename_, tick);
-        state_ = QUEUE_FULL;
+        if (!bufferFullLogged_) {
+          DLFLIB_LOG_ERROR(
+              "[LogFile][sample] Stream buffer full at tick %llu: %s", tick,
+              filename_);
+          bufferFullLogged_ = true;
+        }
+      } else if (afterBytes < DLF_LOGFILE_BUFFER_SIZE / 2) {
+        bufferFullLogged_ = false;
       }
     }
   }
@@ -451,8 +440,8 @@ void LogFile::closeFile() {
   file_ = fs_.open(filename_, "r+");
   if (!file_) {
     DLFLIB_LOG_ERROR(
-        "[LogFile][closeFile] ERROR: Could not reopen file for header "
-        "update!");
+        "[LogFile][closeFile] Could not reopen file for header update: %s",
+        filename_);
     return;
   }
 
