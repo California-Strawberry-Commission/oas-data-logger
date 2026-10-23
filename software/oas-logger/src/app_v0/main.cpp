@@ -456,6 +456,8 @@ void handleWaitWifiState() {
 
   // Set WiFi mode and register event handler
   WiFi.mode(WIFI_STA);
+  // Turn off modem sleep as it significantly throttles connection
+  WiFi.setSleep(false);
   WiFi.onEvent(onWiFiEvent);
   WiFi.setAutoReconnect(false);  // we'll handle reconnection ourselves
 
