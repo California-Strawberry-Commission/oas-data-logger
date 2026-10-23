@@ -35,18 +35,36 @@ const heartbeatSchema = z.object({
   }),
   wifi: z.object({
     rssi: z.int(),
-    disconnectEvents: z.array(
-      z.object({
-        bootCount: z.int(),
-        uptimeMs: z.int(),
-        lastUptimeMs: z.int(),
-        count: z.int(),
-        reason: z.int(),
-        rssi: z.int(),
-        wasConnected: z.boolean(),
-      }),
-    ),
+    disconnectEvents: z
+      .array(
+        z.object({
+          bootCount: z.int(),
+          uptimeMs: z.int(),
+          lastUptimeMs: z.int(),
+          count: z.int(),
+          reason: z.int(),
+          rssi: z.int(),
+          wasConnected: z.boolean(),
+        }),
+      )
+      .optional(),
   }),
+  file: z
+    .object({
+      writeIssues: z.array(
+        z.object({
+          bootCount: z.int(),
+          uptimeMs: z.int(),
+          lastUptimeMs: z.int(),
+          count: z.int(),
+          type: z.int(), // dlf::FileWriteIssue::Type
+          streamType: z.int(), // dlf::dlf_stream_type_e
+          maxAttempts: z.int(),
+          maxDurationMs: z.int(),
+        }),
+      ),
+    })
+    .optional(),
 });
 
 /**
@@ -132,7 +150,7 @@ export async function POST(request: NextRequest) {
           heapLargestBlock: heartbeatData.heap.largestBlock,
           rssi: heartbeatData.wifi.rssi,
           wifiDisconnectEvents: {
-            create: heartbeatData.wifi.disconnectEvents.map((e) => ({
+            create: (heartbeatData.wifi?.disconnectEvents ?? []).map((e) => ({
               deviceId,
               bootCount: e.bootCount,
               uptimeMs: BigInt(e.uptimeMs),
@@ -141,6 +159,19 @@ export async function POST(request: NextRequest) {
               reason: e.reason,
               rssi: e.rssi,
               wasConnected: e.wasConnected,
+            })),
+          },
+          fileWriteIssues: {
+            create: (heartbeatData.file?.writeIssues ?? []).map((e) => ({
+              deviceId,
+              bootCount: e.bootCount,
+              uptimeMs: BigInt(e.uptimeMs),
+              lastUptimeMs: BigInt(e.lastUptimeMs),
+              count: e.count,
+              type: e.type,
+              streamType: e.streamType,
+              maxAttempts: e.maxAttempts,
+              maxDurationMs: e.maxDurationMs,
             })),
           },
         },

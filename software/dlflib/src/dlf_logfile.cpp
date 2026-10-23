@@ -9,6 +9,25 @@
 
 namespace dlf {
 
+namespace {
+
+FileWriteIssueHandler writeIssueHandler;
+
+}  // namespace
+
+void setFileWriteIssueHandler(FileWriteIssueHandler handler) {
+  writeIssueHandler = std::move(handler);
+}
+
+void LogFile::reportWriteIssue(FileWriteIssue::Type type, uint32_t attempts,
+                               uint32_t uptimeMs, uint32_t durationMs) {
+  if (writeIssueHandler) {
+    writeIssueHandler({type, streamType_,
+                       static_cast<uint32_t>(fileEndPosition_), attempts,
+                       uptimeMs, durationMs});
+  }
+}
+
 /**
  * @brief Task responsible for writing data to SD
  * Constantly receives data from stream_ streambuffer and writes to SD.
@@ -177,6 +196,7 @@ bool LogFile::reopen() {
         "[LogFile][reopen] %s: File size %zu after reopen does not match "
         "bytes written %zu",
         filename_, fileSize, fileEndPosition_);
+    reportWriteIssue(FileWriteIssue::Type::SIZE_MISMATCH, 0, millis(), 0);
   }
   return file_.seek(fileEndPosition_);
 }
@@ -209,6 +229,7 @@ bool LogFile::writeChunk(const uint8_t* data, size_t len, uint32_t timeoutMs) {
   const uint32_t WRITE_MAX_DELAY_MS = 2000;
   uint32_t delayMs = 50;
   uint32_t elapsedMs = 0;
+  uint32_t firstFailureMs = 0;
 
   // Transient SD card errors (such as from a brownout) otherwise silently
   // discard the chunk, leaving a gap in the file. Each attempt rewrites the
@@ -225,8 +246,16 @@ bool LogFile::writeChunk(const uint8_t* data, size_t len, uint32_t timeoutMs) {
       written = written && file_.position() == fileEndPosition_ + len;
     }
     if (written) {
+      if (attempt > 1) {
+        reportWriteIssue(FileWriteIssue::Type::RECOVERED, attempt - 1,
+                         firstFailureMs, millis() - firstFailureMs);
+      }
       fileEndPosition_ += len;
       return true;
+    }
+
+    if (attempt == 1) {
+      firstFailureMs = millis();
     }
 
     // If writes fail even after timeout, we do not want to continue writing
@@ -237,6 +266,8 @@ bool LogFile::writeChunk(const uint8_t* data, size_t len, uint32_t timeoutMs) {
           "offset %zu within timeout. Preventing all further writes.",
           filename_, len, fileEndPosition_);
       writesAbandoned_ = true;
+      reportWriteIssue(FileWriteIssue::Type::ABANDONED, attempt, firstFailureMs,
+                       millis() - firstFailureMs);
       return false;
     }
 
@@ -250,8 +281,8 @@ bool LogFile::writeChunk(const uint8_t* data, size_t len, uint32_t timeoutMs) {
         (delayMs * 2 < WRITE_MAX_DELAY_MS) ? delayMs * 2 : WRITE_MAX_DELAY_MS;
 
     // A failed write can leave the file handle in a persistent error state, so
-    // also reopen the file on every other failure.
-    if (attempt % 2 == 0) {
+    // also reopen the file on every other failure, or whenever it is not open.
+    if (!file_ || attempt % 2 == 0) {
       file_.close();
       if (!reopen()) {
         DLFLIB_LOG_ERROR("[LogFile][writeChunk] %s: Reopen failed", filename_);
@@ -265,10 +296,12 @@ LogFile::LogFile(
     dlf_stream_type_e streamType, const char* dir, fs::FS& fs)
     : fs_(fs),
       handles_(std::move(handles)),
+      streamType_(streamType),
       fileEndPosition_(0),
       writesAbandoned_(false) {
-  const char* st = dlf::datastream::streamTypeToString(streamType);
-  snprintf(filename_, sizeof(filename_), "%s/%s.dlf", dir, st ? st : "unknown");
+  const char* streamTypeStr = dlf::datastream::streamTypeToString(streamType);
+  snprintf(filename_, sizeof(filename_), "%s/%s.dlf", dir,
+           streamTypeStr ? streamTypeStr : "unknown");
 
   // Set up class internals
   stream_ =
