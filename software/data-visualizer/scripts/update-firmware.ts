@@ -1,42 +1,32 @@
-import { PrismaClient } from "@/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { config as dotenv } from "dotenv";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-
-//#region Types
-
-type EnvName = "local" | "preview" | "prod";
-type DeviceType = "V0" | "V1";
-type Channel = "STABLE" | "BETA";
-
-//#endregion
+import {
+  Channel,
+  createPrismaClient,
+  DeviceType,
+  EnvName,
+  isChannel,
+  isDeviceType,
+  isEnvName,
+  loadEnvFile,
+  requireEnv,
+} from "./lib/firmware";
 
 //#region CLI Args
 
 function printUsageAndExit(code = 0) {
   console.log(`
+Modifies an existing firmware release in the env's DB. With no modification
+flags, prints the release.
+
 Usage:
-  unpublish-firmware
+  update-firmware
     --env local|preview|prod
     --deviceType V0|V1
     --buildNumber <int>
     [--channel STABLE|BETA]
+    [--publish | --unpublish]
 `);
   process.exit(code);
-}
-
-function isEnvName(x: string): x is EnvName {
-  return x === "local" || x === "preview" || x === "prod";
-}
-
-function isDeviceType(x: string): x is DeviceType {
-  return x === "V0" || x === "V1";
-}
-
-function isChannel(x: string): x is Channel {
-  return x === "STABLE" || x === "BETA";
 }
 
 const {
@@ -45,6 +35,8 @@ const {
     deviceType: deviceTypeRaw,
     channel: channelRaw = "STABLE",
     buildNumber: buildNumberRaw,
+    publish = false,
+    unpublish = false,
     help,
   },
 } = parseArgs({
@@ -53,6 +45,8 @@ const {
     deviceType: { type: "string" },
     channel: { type: "string" },
     buildNumber: { type: "string" },
+    publish: { type: "boolean", default: false },
+    unpublish: { type: "boolean", default: false },
     help: { type: "boolean" },
   },
   strict: true,
@@ -75,6 +69,9 @@ if (!isDeviceType(deviceTypeRaw!)) {
 if (!isChannel(channelRaw!)) {
   throw new Error(`channel must be STABLE or BETA`);
 }
+if (publish && unpublish) {
+  throw new Error(`--publish and --unpublish are mutually exclusive`);
+}
 
 const buildNumber = Number(buildNumberRaw);
 if (!Number.isInteger(buildNumber) || buildNumber <= 0) {
@@ -87,27 +84,8 @@ const channel: Channel = channelRaw!;
 
 //#endregion
 
-function requireEnv(name: string): string {
-  const val = process.env[name];
-  if (!val) {
-    throw new Error(`Missing env var ${name}`);
-  }
-  return val;
-}
-
-function createPrismaClient(databaseUrl: string): PrismaClient {
-  const adapter = new PrismaPg({
-    connectionString: databaseUrl,
-  });
-  return new PrismaClient({ adapter });
-}
-
 async function main() {
-  // Resolve .env file relative to this script file
-  const scriptDirname = path.dirname(fileURLToPath(import.meta.url));
-  dotenv({
-    path: path.resolve(scriptDirname, `../.env.${env}`),
-  });
+  loadEnvFile(env);
 
   const prisma = createPrismaClient(requireEnv("DATABASE_URL"));
 
@@ -116,34 +94,44 @@ async function main() {
       deviceType_channel_buildNumber: { deviceType, channel, buildNumber },
     };
 
-    const existing = await prisma.firmwareRelease.findUnique({ where });
-    if (!existing) {
+    let row = await prisma.firmwareRelease.findUnique({ where });
+    if (!row) {
       throw new Error(
         `No firmware release found for ${deviceType}/${channel} build ${buildNumber}`,
       );
     }
-    if (!existing.isPublished) {
-      console.log(
-        `Firmware ${deviceType}/${channel} build ${buildNumber} is already unpublished`,
-      );
-      return;
+
+    if (publish || unpublish) {
+      if (row.isPublished === publish) {
+        console.log(
+          `Firmware ${deviceType}/${channel} build ${buildNumber} is already ${
+            publish ? "published" : "unpublished"
+          }`,
+        );
+      } else {
+        // S3 objects are kept on unpublish so the release can be republished
+        row = await prisma.firmwareRelease.update({
+          where,
+          data: {
+            isPublished: publish,
+            publishedAt: publish ? new Date() : null,
+          },
+        });
+        console.log("DB successfully updated:");
+      }
     }
 
-    // S3 object is kept so the release can be republished later
-    const row = await prisma.firmwareRelease.update({
-      where,
-      data: { isPublished: false, publishedAt: null },
-    });
-
-    console.log("DB successfully updated:");
     console.table({
       id: row.id,
       deviceType,
       channel,
       version: row.version,
       buildNumber,
+      gitHash: row.gitHash,
       s3Key: row.s3Key,
+      elfS3Key: row.elfS3Key,
       isPublished: row.isPublished,
+      publishedAt: row.publishedAt,
     });
   } finally {
     await prisma.$disconnect();
