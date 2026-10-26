@@ -139,7 +139,39 @@ ln -s ~/.platformio/penv/bin/platformio ~/.local/bin/platformio
 
 Make sure `~/.local/bin` is on your `PATH`, then verify with `pio --version`.
 
-Run the following script to release firmware to an env. Each release uploads the .bin and .elf to the env's S3 bucket and adds a FirmwareRelease row to the env's DB. If `--deviceType` is omitted, both V0 and V1 are released.
+### Release workflow
+
+Every release is first built and released to preview, which creates the GitHub release. After testing, that same GitHub release is promoted to prod, so prod devices get the same binaries that were tested on preview.
+
+Example: releasing v0.0.3, with a beta round first.
+
+```
+# 1. (Optional) Test the working tree on a local setup
+npm run release-firmware -- --env local --version 0.0.3 --publish
+
+# 2. Push the commit, then cut a beta on preview from it.
+#    Creates the GitHub pre-release firmware/v0.0.3-beta.1 with the V0 and V1 .bins
+npm run release-firmware -- --env preview --channel BETA --version 0.0.3 --ref <git hash> --publish
+
+#    Fix any issues found, then push, and cut another beta.
+#    Creates the GitHub pre-release firmware/v0.0.3-beta.2 with the V0 and V1 .bins
+npm run release-firmware -- --env preview --channel BETA --version 0.0.3 --ref <new git hash> --publish
+
+# 3. (Optional) Promote the beta to prod devices on the BETA channel
+npm run release-firmware -- --env prod --version 0.0.3-beta.2 --publish
+
+# 4. Cut the stable release on preview. Creates the GitHub release firmware/v0.0.3
+npm run release-firmware -- --env preview --channel STABLE --version 0.0.3 --ref <git hash> --publish
+
+# 5. After verifying on preview devices, promote it to prod devices on the STABLE channel
+npm run release-firmware -- --env prod --version 0.0.3 --publish
+```
+
+Note that once `firmware/v0.0.3` exists, no more betas or stable releases of 0.0.3 can be created. For the next release, the version needs to be bumped. To stage a release without devices picking it up yet, omit `--publish` and publish it later with `update-firmware` (see below). Use `--dry-run` to build (or, for prod, download and verify) without touching GitHub, S3, or the DB.
+
+#### `release-firmware` reference
+
+Each release uploads the .bin and .elf to the env's S3 bucket and adds a FirmwareRelease row to the env's DB. If `--deviceType` is omitted, both V0 and V1 are released.
 
 ```
 npm run release-firmware -- --env <local|preview|prod> --version <x.y.z> [--deviceType <V0|V1>] [--channel <STABLE|BETA>] [--ref <git ref>] [--publish] [--dry-run]
