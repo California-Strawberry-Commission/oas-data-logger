@@ -17,8 +17,8 @@
     "db:seed:local": "dotenv -e .env.local -- npx cross-env NODE_ENV=development tsx prisma/seed.ts",
     "vercel-build": "prisma generate && prisma migrate deploy && next build",
     "provision-device": "tsx scripts/provision-device.ts",
-    "publish-firmware": "tsx scripts/publish-firmware.ts",
-    "unpublish-firmware": "tsx scripts/unpublish-firmware.ts",
+    "release-firmware": "tsx scripts/release-firmware.ts",
+    "update-firmware": "tsx scripts/update-firmware.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

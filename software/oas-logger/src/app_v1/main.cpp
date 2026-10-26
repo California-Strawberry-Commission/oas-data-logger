@@ -274,8 +274,9 @@ void setup() {
   ezlog::addLittleFS();
 
   EZLOG_INFO("****System Boot****");
-  EZLOG_INFO("Firmware: version=%s build=%d device=%s channel=%s", FW_VERSION,
-             FW_BUILD_NUMBER, DEVICE_TYPE, OTA_CHANNEL);
+  EZLOG_INFO("Firmware: version=%s build=%d device=%s channel=%s git=%s",
+             FW_VERSION, FW_BUILD_NUMBER, DEVICE_TYPE, OTA_CHANNEL,
+             FW_GIT_HASH);
 
   provisionDevice();
 

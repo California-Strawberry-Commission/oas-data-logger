@@ -266,6 +266,8 @@ model FirmwareRelease {
   sha256      String // 64 hex chars
   size        Int // in bytes
   s3Key       String
+  elfS3Key    String? // S3 key of the matching .elf
+  gitHash     String? // full commit hash the build was cut from
   isPublished Boolean    @default(false)
 
   createdAt   DateTime  @default(now())
