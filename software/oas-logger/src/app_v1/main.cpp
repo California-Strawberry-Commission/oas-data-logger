@@ -108,7 +108,7 @@ static void setLedColor(LedColor color) {
 const int SERIAL_BAUD_RATE{115200};
 const int LOGGER_RUN_INTERVAL_S{0};  // <= 0 means disabled
 const dlf::components::UploaderComponent::RetentionMode LOGGER_RETENTION_MODE{
-    dlf::components::UploaderComponent::RetentionMode::MARK};
+    dlf::components::UploaderComponent::RetentionMode::DELETE};
 const int LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS{60};  // <= 0 means disabled
 const int WIFI_RECONFIG_BUTTON_HOLD_TIME_MS{3000};
 const bool ENABLE_OTA_UPDATE{true};
