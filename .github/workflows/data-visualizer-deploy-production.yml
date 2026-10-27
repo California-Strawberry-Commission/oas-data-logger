@@ -1,6 +1,7 @@
 name: "Data Visualizer Deploy: Production"
 
-# Builds the given commit, migrates the prod DB, and deploys to production.
+# Builds the given commit, migrates the prod DB, deploys to production, and
+# promotes the deployment so that it serves the production domains.
 # Runs in the "production" environment, which requires approval.
 #
 # The build runs before the migration, so a broken build never touches the prod
@@ -50,6 +51,10 @@ jobs:
         run: |
           url=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
           echo "url=$url" >> "$GITHUB_OUTPUT"
+      - name: Promote to production
+        # Production domains may not be auto-assigned to new production deployments
+        # so explicitly promote the deployment
+        run: vercel promote ${{ steps.deploy.outputs.url }} --yes --scope=$VERCEL_ORG_ID --token=${{ secrets.VERCEL_TOKEN }}
       - run: |
           echo "### Production" >> "$GITHUB_STEP_SUMMARY"
           echo "Deployed ${{ steps.deploy.outputs.url }} (commit $(git rev-parse HEAD)) to production" >> "$GITHUB_STEP_SUMMARY"
