@@ -25,9 +25,9 @@ char deviceSecret[65]{0};  // Populated from NVS at boot
 
 // Backend endpoints
 const char* OTA_MANIFEST_ENDPOINT{
-    "https://oas-data-logger.vercel.app/api/ota/manifest/%s/%s"};
+    "https://oas-data-logger.vercel.app/api/ota/manifest/%s"};
 const char* OTA_FIRMWARE_ENDPOINT{
-    "https://oas-data-logger.vercel.app/api/ota/firmware/%s/%s/%d"};
+    "https://oas-data-logger.vercel.app/api/ota/firmware/%s/builds/%d"};
 
 CRGB leds[NUM_LEDS];
 WiFiManager wifiManager;
@@ -80,7 +80,6 @@ static void runOtaUpdate() {
            OTA_FIRMWARE_ENDPOINT);
   snprintf(otaConfig.deviceType, sizeof(otaConfig.deviceType), "%s",
            DEVICE_TYPE);
-  snprintf(otaConfig.channel, sizeof(otaConfig.channel), "%s", OTA_CHANNEL);
   otaConfig.currentBuildNumber = FW_BUILD_NUMBER;
   snprintf(otaConfig.deviceId, sizeof(otaConfig.deviceId), "%s", deviceUid);
   snprintf(otaConfig.deviceSecret, sizeof(otaConfig.deviceSecret), "%s",

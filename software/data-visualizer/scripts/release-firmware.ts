@@ -203,15 +203,17 @@ function openEnv(name: EnvName): EnvContext {
 }
 
 /**
- * Returns the latest build number for deviceType/channel in the env's DB, or 0
- * if there is none.
+ * Returns the latest build number for deviceType in the env's DB, or 0 if there
+ * is none. Note that build numbers are shared across channels.
  */
 async function lastBuildNumber(
   ctx: EnvContext,
   deviceType: DeviceType,
 ): Promise<number> {
   const last = await ctx.prisma.firmwareRelease.findFirst({
-    where: { deviceType, channel },
+    where: {
+      deviceType,
+    },
     orderBy: { buildNumber: "desc" },
     select: { buildNumber: true },
   });
@@ -507,6 +509,7 @@ async function releaseProd(
   try {
     const artifacts: Artifact[] = [];
     for (const deviceType of deviceTypes) {
+      // Look for the firmware release in preview matching the exact version name
       const previewRows = await preview.prisma.firmwareRelease.findMany({
         where: { deviceType, channel, version },
       });
@@ -519,15 +522,6 @@ async function releaseProd(
       if (!previewRow.elfS3Key || !previewRow.gitHash) {
         throw new Error(
           `Preview release for ${deviceType} v${version} has no .elf or git hash`,
-        );
-      }
-
-      // Devices compare the baked-in build number against the manifest, so
-      // prod must use the same build number, and it must be the newest
-      const lastProdBuildNumber = await lastBuildNumber(ctx, deviceType);
-      if (lastProdBuildNumber >= previewRow.buildNumber) {
-        throw new Error(
-          `${deviceType} v${version} is build ${previewRow.buildNumber}, but prod already has build ${lastProdBuildNumber}`,
         );
       }
 

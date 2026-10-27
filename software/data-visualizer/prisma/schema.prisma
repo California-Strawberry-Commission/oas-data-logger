@@ -39,6 +39,10 @@ model Device {
   id   String  @id
   name String?
 
+  // OTA channel the device receives firmware from. STABLE devices receive
+  // STABLE releases only. BETA devices receive the latest of BETA and STABLE
+  otaChannel OtaChannel @default(STABLE)
+
   secret DeviceSecret? // optional because device might be created before provision
 
   createdAt DateTime @default(now())
@@ -261,7 +265,7 @@ model FirmwareRelease {
   id          String     @id @default(cuid(2))
   deviceType  DeviceType
   channel     OtaChannel @default(STABLE)
-  buildNumber Int // monotonic version number
+  buildNumber Int // monotonic version number, shared across channels
   version     String // human readable version name
   sha256      String // 64 hex chars
   size        Int // in bytes
@@ -273,6 +277,7 @@ model FirmwareRelease {
   createdAt   DateTime  @default(now())
   publishedAt DateTime?
 
-  @@unique([deviceType, channel, buildNumber])
+  // Build numbers are shared across channels
+  @@unique([deviceType, buildNumber])
   @@index([deviceType, channel, isPublished, buildNumber])
 }

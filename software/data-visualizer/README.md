@@ -127,6 +127,8 @@ npm run provision-device -- --db-only --id=<device ID> --secret=<device secret> 
 
 ## Pushing OTA firmware
 
+### Environment setup
+
 Requires [PlatformIO Core](https://docs.platformio.org/en/latest/core/installation/index.html) (`pio`) and, for preview/prod, the [GitHub CLI](https://cli.github.com/) (`gh`, authenticated via `gh auth login`).
 
 If PlatformIO was installed via the VS Code extension, `pio` is not on `PATH` outside of VS Code's PlatformIO terminal. Symlink it into a directory on `PATH`:
@@ -138,6 +140,15 @@ ln -s ~/.platformio/penv/bin/platformio ~/.local/bin/platformio
 ```
 
 Make sure `~/.local/bin` is on your `PATH`, then verify with `pio --version`.
+
+### OTA channels
+
+Each release is marked as STABLE or BETA (`--channel`). Each device is subscribed to a channel:
+
+- Devices by default are subscribed to the **STABLE** channel, and receive the latest published STABLE release.
+- Devices subscribed to the **BETA** channel receive the latest published release on either channel.
+
+Build numbers are shared across channels (per device type), so "latest" is simply the highest build number.
 
 ### Release workflow
 
@@ -183,28 +194,27 @@ npm run release-firmware -- --env <local|preview|prod> --version <x.y.z> [--devi
 
 ### Publishing, unpublishing, and republishing a release
 
-Devices only pick up published releases. Releases created without `--publish` start out unpublished. A release is identified by `{deviceType, channel, buildNumber}` within an env.
+Devices only pick up published releases. Releases created without `--publish` start out unpublished. A release is identified by `{deviceType, buildNumber}` within an env.
 
 To view a release's current state (no changes are made):
 
 ```
-npm run update-firmware -- --env <local|preview|prod> --deviceType <V0|V1> --channel <STABLE|BETA> --buildNumber <build number>
+npm run update-firmware -- --env <local|preview|prod> --deviceType <V0|V1> --buildNumber <build number>
 ```
 
 To publish a release, or republish one that was previously unpublished:
 
 ```
-npm run update-firmware -- --env <local|preview|prod> --deviceType <V0|V1> --channel <STABLE|BETA> --buildNumber <build number> --publish
+npm run update-firmware -- --env <local|preview|prod> --deviceType <V0|V1> --buildNumber <build number> --publish
 ```
 
 To unpublish a release:
 
 ```
-npm run update-firmware -- --env <local|preview|prod> --deviceType <V0|V1> --channel <STABLE|BETA> --buildNumber <build number> --unpublish
+npm run update-firmware -- --env <local|preview|prod> --deviceType <V0|V1> --buildNumber <build number> --unpublish
 ```
 
 Notes:
 
-- `--channel` defaults to `STABLE`.
 - Only the env's DB is changed. The .bin/.elf stay in S3 and the GitHub release is left as is, so an unpublished release can be republished at any time.
-- Devices are offered the published release with the highest build number. Unpublishing the latest release makes the previous published release the latest again, but devices that already installed the unpublished build won't downgrade. To roll those devices back, release a new build with the fix (or the old code).
+- Devices are offered the published release with the highest build number on the channels they receive (see [OTA channels](#ota-channels)). Unpublishing the latest release makes the previous published release the latest again, but devices that already installed the unpublished build won't downgrade. To roll those devices back, release a new build with the fix (or the old code).

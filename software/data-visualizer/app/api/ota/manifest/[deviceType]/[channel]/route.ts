@@ -5,6 +5,14 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Returns the latest published firmware with the given OTA channel.
+ *
+ * @deprecated Use /api/ota/manifest/[deviceType] instead, which uses the
+ * device's OTA channel configured on the server. This route uses the channel
+ * compiled into the firmware, and is only kept for devices running older
+ * firmware.
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ deviceType: string; channel: string }> },

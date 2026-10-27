@@ -1,10 +1,8 @@
 import { parseArgs } from "node:util";
 import {
-  Channel,
   createPrismaClient,
   DeviceType,
   EnvName,
-  isChannel,
   isDeviceType,
   isEnvName,
   loadEnvFile,
@@ -23,7 +21,6 @@ Usage:
     --env local|preview|prod
     --deviceType V0|V1
     --buildNumber <int>
-    [--channel STABLE|BETA]
     [--publish | --unpublish]
 `);
   process.exit(code);
@@ -33,7 +30,6 @@ const {
   values: {
     env: envRaw,
     deviceType: deviceTypeRaw,
-    channel: channelRaw = "STABLE",
     buildNumber: buildNumberRaw,
     publish = false,
     unpublish = false,
@@ -43,7 +39,6 @@ const {
   options: {
     env: { type: "string" },
     deviceType: { type: "string" },
-    channel: { type: "string" },
     buildNumber: { type: "string" },
     publish: { type: "boolean", default: false },
     unpublish: { type: "boolean", default: false },
@@ -66,9 +61,6 @@ if (!isEnvName(envRaw!)) {
 if (!isDeviceType(deviceTypeRaw!)) {
   throw new Error(`deviceType must be V0 or V1`);
 }
-if (!isChannel(channelRaw!)) {
-  throw new Error(`channel must be STABLE or BETA`);
-}
 if (publish && unpublish) {
   throw new Error(`--publish and --unpublish are mutually exclusive`);
 }
@@ -80,7 +72,6 @@ if (!Number.isInteger(buildNumber) || buildNumber <= 0) {
 
 const env: EnvName = envRaw!;
 const deviceType: DeviceType = deviceTypeRaw!;
-const channel: Channel = channelRaw!;
 
 //#endregion
 
@@ -91,20 +82,20 @@ async function main() {
 
   try {
     const where = {
-      deviceType_channel_buildNumber: { deviceType, channel, buildNumber },
+      deviceType_buildNumber: { deviceType, buildNumber },
     };
 
     let row = await prisma.firmwareRelease.findUnique({ where });
     if (!row) {
       throw new Error(
-        `No firmware release found for ${deviceType}/${channel} build ${buildNumber}`,
+        `No firmware release found for ${deviceType} build ${buildNumber}`,
       );
     }
 
     if (publish || unpublish) {
       if (row.isPublished === publish) {
         console.log(
-          `Firmware ${deviceType}/${channel} build ${buildNumber} is already ${
+          `Firmware ${deviceType} build ${buildNumber} is already ${
             publish ? "published" : "unpublished"
           }`,
         );
@@ -124,7 +115,7 @@ async function main() {
     console.table({
       id: row.id,
       deviceType,
-      channel,
+      channel: row.channel,
       version: row.version,
       buildNumber,
       gitHash: row.gitHash,

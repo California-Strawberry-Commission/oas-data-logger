@@ -209,7 +209,7 @@ bool OtaUpdater::getManifestUrl(char* outUrl, size_t outUrlSize) const {
   }
 
   const int n{snprintf(outUrl, outUrlSize, config_.manifestEndpoint,
-                       config_.deviceType, config_.channel)};
+                       config_.deviceType)};
   return n > 0 && static_cast<size_t>(n) < outUrlSize;
 }
 
@@ -220,7 +220,7 @@ bool OtaUpdater::getFirmwareUrl(int buildNumber, char* outUrl,
   }
 
   const int n{snprintf(outUrl, outUrlSize, config_.firmwareEndpoint,
-                       config_.deviceType, config_.channel, buildNumber)};
+                       config_.deviceType, buildNumber)};
   return n > 0 && static_cast<size_t>(n) < outUrlSize;
 }
 
