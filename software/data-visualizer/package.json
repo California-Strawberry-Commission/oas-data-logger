@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",
@@ -15,7 +15,6 @@
     "db:studio": "dotenv -e .env.local -- npx prisma studio",
     "db:reset": "dotenv -e .env.local -- npx prisma migrate reset",
     "db:seed:local": "dotenv -e .env.local -- npx cross-env NODE_ENV=development tsx prisma/seed.ts",
-    "vercel-build": "prisma generate && prisma migrate deploy && next build",
     "provision-device": "tsx scripts/provision-device.ts",
     "release-firmware": "tsx scripts/release-firmware.ts",
     "update-firmware": "tsx scripts/update-firmware.ts",

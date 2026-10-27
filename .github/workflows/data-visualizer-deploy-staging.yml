@@ -1,0 +1,59 @@
+name: "Data Visualizer Deploy: Staging"
+
+# On every push to main, migrates the staging Neon branch and deploys the
+# staging app, aliased to a stable staging URL. Production is deployed
+# separately via the "Data Visualizer Deploy: Production" workflow.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "software/data-visualizer/**"
+      - "software/dlflib-js/**"
+      - "software/package.json"
+      - "software/package-lock.json"
+      - ".github/workflows/data-visualizer-deploy-staging.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: data-visualizer-deploy-staging
+  cancel-in-progress: false
+
+env:
+  VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+  STAGING_ALIAS: ${{ vars.STAGING_ALIAS || 'oas-data-logger-staging.vercel.app' }}
+
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: npm ci
+        working-directory: software
+        env:
+          DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy" # required by Prisma during postinstall
+      - name: Migrate staging DB
+        run: npx prisma migrate deploy
+        working-directory: software/data-visualizer
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DIRECT_URL }}
+      - run: npm install --global vercel@latest
+      - run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+      - run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      - name: Deploy staging
+        id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }} \
+            --env DATABASE_URL=${{ secrets.STAGING_DATABASE_URL }})
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+      - name: Alias staging URL
+        run: vercel alias set ${{ steps.deploy.outputs.url }} $STAGING_ALIAS --token=${{ secrets.VERCEL_TOKEN }}
+      - run: |
+          echo "### Staging" >> "$GITHUB_STEP_SUMMARY"
+          echo "Deployed ${{ steps.deploy.outputs.url }} (commit ${{ github.sha }}) to https://$STAGING_ALIAS" >> "$GITHUB_STEP_SUMMARY"
