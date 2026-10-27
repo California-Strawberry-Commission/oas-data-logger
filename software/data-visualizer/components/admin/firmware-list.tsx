@@ -137,12 +137,6 @@ export default function FirmwareList({ firmwares }: { firmwares: Firmware[] }) {
                   )}
                 </CardDescription>
               </CardHeader>
-              <CardContent
-                className="px-3 text-xs font-mono text-muted-foreground truncate"
-                title={fw.sha256}
-              >
-                sha256: {fw.sha256}
-              </CardContent>
             </Card>
           ))
         )}

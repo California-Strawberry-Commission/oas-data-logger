@@ -34,6 +34,7 @@ export default async function AdminPage() {
       select: {
         id: true,
         name: true,
+        otaChannel: true,
         secret: { select: { deviceId: true } }, // only need existence
       },
     }),
@@ -57,6 +58,7 @@ export default async function AdminPage() {
   const devices = devicesRaw.map((d) => ({
     id: d.id,
     name: d.name,
+    otaChannel: d.otaChannel,
     isProvisioned: !!d.secret,
   }));
 

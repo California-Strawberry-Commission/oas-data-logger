@@ -18,11 +18,10 @@ class OtaUpdater {
 
   struct Config {
     char manifestEndpoint[128]{
-        "https://oas-data-logger.vercel.app/api/ota/manifest/%s/%s"};
+        "https://oas-data-logger.vercel.app/api/ota/manifest/%s"};
     char firmwareEndpoint[128]{
-        "https://oas-data-logger.vercel.app/api/ota/firmware/%s/%s/%d"};
+        "https://oas-data-logger.vercel.app/api/ota/firmware/%s/builds/%d"};
     char deviceType[16]{"V1"};   // "V0" or "V1"
-    char channel[16]{"STABLE"};  // "STABLE" or "BETA"
     int currentBuildNumber{-1};  // currently installed build number
     char deviceId[13]{0};
     char deviceSecret[65]{0};

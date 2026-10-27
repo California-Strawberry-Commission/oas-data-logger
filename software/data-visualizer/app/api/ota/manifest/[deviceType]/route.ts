@@ -1,0 +1,83 @@
+import { DeviceType } from "@/generated/prisma/client";
+import { getDeviceOtaChannel, receivableChannels } from "@/lib/ota";
+import prisma from "@/lib/prisma";
+import { verifyDeviceSignature } from "@/lib/verify-device";
+import { NextRequest, NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
+
+/**
+ * Returns the latest published firmware for the device, based on the device's
+ * OTA channel configured on the server.
+ */
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ deviceType: string }> },
+) {
+  const p = await params;
+  const deviceType = p.deviceType.toUpperCase();
+
+  // Validate params
+  if (!(deviceType in DeviceType)) {
+    return NextResponse.json(
+      {
+        error: "Invalid deviceType",
+      },
+      { status: 400 },
+    );
+  }
+
+  // Ensure device ID header is present
+  const deviceId = request.headers.get("x-device-id");
+  if (!deviceId) {
+    return NextResponse.json(
+      { error: "Unauthorized", details: "Missing device ID header" },
+      { status: 401 },
+    );
+  }
+
+  // Verify the request signature
+  const authResult = await verifyDeviceSignature(deviceId, request.headers);
+  if (!authResult.success) {
+    console.error(`[api/ota/manifest] Auth failed: ${authResult.message}`);
+    return NextResponse.json(
+      { error: "Unauthorized", details: "Invalid request signature" },
+      { status: 401 },
+    );
+  }
+
+  // Get the latest published firmware the device can receive. Build numbers
+  // are shared across channels, so the highest one is the newest
+  const channel = await getDeviceOtaChannel(deviceId);
+  const latest = await prisma.firmwareRelease.findFirst({
+    where: {
+      deviceType: deviceType as any,
+      channel: { in: receivableChannels(channel) },
+      isPublished: true,
+    },
+    orderBy: { buildNumber: "desc" },
+    select: {
+      deviceType: true,
+      channel: true,
+      buildNumber: true,
+      version: true,
+      sha256: true,
+      size: true,
+      createdAt: true,
+      publishedAt: true,
+    },
+  });
+
+  return NextResponse.json(
+    {
+      deviceType,
+      channel,
+      latest: latest ?? null,
+    },
+    {
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    },
+  );
+}

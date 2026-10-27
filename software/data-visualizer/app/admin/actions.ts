@@ -213,15 +213,20 @@ export async function updateDeviceAction(
 
     const deviceId = (formData.get("deviceId") as string | null)?.trim();
     const name = (formData.get("name") as string | null)?.trim();
+    const otaChannel = formData.get("otaChannel") as string | null;
 
     if (!deviceId) {
       return { success: false, error: "Device id is required" };
+    }
+    if (otaChannel !== "STABLE" && otaChannel !== "BETA") {
+      return { success: false, error: "OTA channel must be STABLE or BETA" };
     }
 
     await prisma.device.update({
       where: { id: deviceId },
       data: {
         name: name || null,
+        otaChannel,
       },
     });
 

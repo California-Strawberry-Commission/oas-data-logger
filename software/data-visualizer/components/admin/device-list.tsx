@@ -15,6 +15,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { AlertCircleIcon } from "lucide-react";
 import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
@@ -22,6 +29,7 @@ import { useFormStatus } from "react-dom";
 type Device = {
   id: string;
   name: string | null;
+  otaChannel: "STABLE" | "BETA";
   isProvisioned: boolean;
 };
 
@@ -82,6 +90,22 @@ function UpdateDeviceForm({
           type="text"
           defaultValue={device.name ?? ""}
         />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="otaChannel">OTA channel</Label>
+        <Select name="otaChannel" defaultValue={device.otaChannel} required>
+          <SelectTrigger id="otaChannel" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="STABLE">STABLE</SelectItem>
+            <SelectItem value="BETA">BETA</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          BETA devices receive the latest BETA or STABLE firmware.
+        </p>
       </div>
 
       {formState.error && (
@@ -148,11 +172,18 @@ export default function DeviceList({ devices }: { devices: Device[] }) {
               >
                 <div className="flex justify-between items-center">
                   <span className="font-medium">{device.id}</span>
-                  {!device.isProvisioned && (
-                    <span className="text-xs text-destructive">
-                      {"unprovisioned"}
-                    </span>
-                  )}
+                  <div className="flex gap-2">
+                    {device.otaChannel === "BETA" && (
+                      <span className="text-xs uppercase text-muted-foreground">
+                        beta
+                      </span>
+                    )}
+                    {!device.isProvisioned && (
+                      <span className="text-xs text-destructive">
+                        {"unprovisioned"}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {device.name && (
                   <div className="text-sm text-muted-foreground">

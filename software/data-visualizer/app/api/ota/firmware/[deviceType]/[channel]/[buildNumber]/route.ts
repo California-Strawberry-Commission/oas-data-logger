@@ -6,6 +6,15 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { NextRequest, NextResponse } from "next/server";
 
+/**
+ * Redirects to the firmware binary of the release with the given build number
+ * on the given OTA channel.
+ *
+ * @deprecated Use /api/ota/firmware/[deviceType]/builds/[buildNumber] instead,
+ * which checks the release against the device's OTA channel configured on the
+ * server. This route uses the channel compiled into the firmware, and is only
+ * kept for devices running older firmware.
+ */
 export async function GET(
   request: NextRequest,
   {
@@ -70,9 +79,8 @@ export async function GET(
 
   const release = await prisma.firmwareRelease.findUnique({
     where: {
-      deviceType_channel_buildNumber: {
+      deviceType_buildNumber: {
         deviceType: deviceType as any,
-        channel: channel as any,
         buildNumber,
       },
     },
@@ -88,7 +96,7 @@ export async function GET(
     },
   });
 
-  if (!release || !release.isPublished) {
+  if (!release || !release.isPublished || release.channel !== channel) {
     return NextResponse.json({ error: "Firmware not found" }, { status: 404 });
   }
 
