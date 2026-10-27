@@ -1,0 +1,98 @@
+name: "Data Visualizer Deploy: PR"
+
+# For each PR, creates an isolated Neon branch (a copy of staging), migrates it,
+# and deploys a PR deployment that uses it. The Neon branch is deleted when the
+# PR is closed.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    paths:
+      - "software/data-visualizer/**"
+      - "software/dlflib-js/**"
+      - "software/package.json"
+      - "software/package-lock.json"
+      - ".github/workflows/data-visualizer-deploy-pr.yml"
+
+concurrency:
+  group: data-visualizer-deploy-pr-${{ github.event.number }}
+  cancel-in-progress: true
+
+env:
+  VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+  NEON_BRANCH: pr-${{ github.event.number }}
+
+jobs:
+  deploy:
+    # Secrets aren't available to PRs from forks
+    if: >-
+      github.event.action != 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Create Neon branch
+        id: neon
+        uses: neondatabase/create-branch-action@v5
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch_name: ${{ env.NEON_BRANCH }}
+          parent: staging
+          database: ${{ vars.NEON_DATABASE || 'neondb' }}
+          role: ${{ vars.NEON_ROLE || 'neondb_owner' }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+      - run: npm ci
+        working-directory: software
+        env:
+          DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy" # required by Prisma during postinstall
+      - name: Migrate PR DB
+        run: npx prisma migrate deploy
+        working-directory: software/data-visualizer
+        env:
+          DATABASE_URL: ${{ steps.neon.outputs.db_url }}
+      - run: npm install --global vercel@latest
+      - run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+      - run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}
+      - name: Deploy PR
+        id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }} \
+            --env DATABASE_URL=${{ steps.neon.outputs.db_url_with_pooler }})
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+      - name: Comment PR deployment URL on PR
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const marker = "<!-- data-visualizer-deploy-pr -->";
+            const body = `${marker}\n**Data Visualizer PR deployment:** ${{ steps.deploy.outputs.url }}\n\nNeon branch: \`${process.env.NEON_BRANCH}\` (copy of \`staging\`, deleted when this PR is closed)`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const existing = comments.find((c) => c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+  cleanup:
+    if: >-
+      github.event.action == 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete Neon branch
+        uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch: ${{ env.NEON_BRANCH }}
+          api_key: ${{ secrets.NEON_API_KEY }}

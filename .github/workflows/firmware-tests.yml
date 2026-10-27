@@ -1,9 +1,17 @@
-name: Firmware
+name: Firmware Tests
 
-on: # Run on push to main branch, as well as all PRs
+on: # Run on push to main branch, as well as all PRs, when firmware code changes
   push:
     branches: [main]
+    paths:
+      - "software/oas-logger/**"
+      - "software/dlflib/**"
+      - ".github/workflows/firmware-tests.yml"
   pull_request:
+    paths:
+      - "software/oas-logger/**"
+      - "software/dlflib/**"
+      - ".github/workflows/firmware-tests.yml"
 
 jobs:
   test:

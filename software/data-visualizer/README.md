@@ -109,7 +109,31 @@ After making any changes to the Prisma schema in `schema.prisma`, create a migra
 $ npm run db:migrate my_migration_name
 ```
 
-Make sure to check in the generated files under the `prisma/migrations` directory to source control. Note that when Vercel picks up the commit, it will automatically apply the newly created migration (via `npm run vercel-build`).
+Make sure to check in the generated files under the `prisma/migrations` directory to source control. Migrations are applied by the deploy workflows (see [Server Deployment](#server-deployment)), not by the Vercel build.
+
+Note that migrations must be backward compatible: the currently live deployment may keep running against the migrated schema until a new deployment is live.
+
+## Vercel deployment
+
+All deployments and DB migrations run in GitHub Actions (`.github/workflows/`).
+
+### PR deployments
+
+Opening or pushing to a PR that touches the server code creates the Neon branch `pr-<N>` from `staging`, applies the PR's migrations to it, and deploys the app against it. A PR's migrations can therefore never affect staging or prod. The Neon branch is deleted when the PR is closed.
+
+### Staging
+
+Merging to `main` migrates the `staging` Neon branch and deploys the app to the staging URL. The run summary shows the deployed commit.
+
+### Production
+
+After verifying a commit on staging:
+
+1. Go to GitHub -> Actions -> Data Visualizer Deploy: Production -> Run workflow, and set `ref` to the commit to release (defaults to `main`; use the commit SHA from the staging run summary to release exactly what was verified). Alternatively, run `gh workflow run data-visualizer-deploy-production.yml -f ref=<sha>`.
+2. Approve the run when it pauses for review of the `production` environment.
+3. The workflow builds the commit, migrates the prod DB, and deploys to production. If the build fails, the prod DB is left untouched.
+
+To roll back the app, use Instant Rollback on the previous production deployment in the Vercel dashboard (or `vercel rollback`). DB migrations are not rolled back, so they must be backward compatible.
 
 ## Provisioning devices
 
