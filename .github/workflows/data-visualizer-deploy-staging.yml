@@ -53,7 +53,9 @@ jobs:
             --env DATABASE_URL=${{ secrets.STAGING_DATABASE_URL }})
           echo "url=$url" >> "$GITHUB_OUTPUT"
       - name: Alias staging URL
-        run: vercel alias set ${{ steps.deploy.outputs.url }} $STAGING_ALIAS --token=${{ secrets.VERCEL_TOKEN }}
+        # Unlike pull/build/deploy, alias doesn't pick up the team from
+        # VERCEL_ORG_ID, so the team scope must be passed explicitly
+        run: vercel alias set ${{ steps.deploy.outputs.url }} $STAGING_ALIAS --scope=$VERCEL_ORG_ID --token=${{ secrets.VERCEL_TOKEN }}
       - run: |
           echo "### Staging" >> "$GITHUB_STEP_SUMMARY"
           echo "Deployed ${{ steps.deploy.outputs.url }} (commit ${{ github.sha }}) to https://$STAGING_ALIAS" >> "$GITHUB_STEP_SUMMARY"
