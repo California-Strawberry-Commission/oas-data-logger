@@ -1,24 +1,36 @@
 name: Server Tests
 
-on: # Run on push to main branch, as well as all PRs, when server code changes
+# Runs on push to main and on all PRs, so that "test" can be a required check.
+# "test" is skipped (which counts as passing) when no server code has changed.
+on:
   push:
     branches: [main]
-    paths:
-      - "software/data-visualizer/**"
-      - "software/dlflib-js/**"
-      - "software/package.json"
-      - "software/package-lock.json"
-      - ".github/workflows/server-tests.yml"
   pull_request:
-    paths:
-      - "software/data-visualizer/**"
-      - "software/dlflib-js/**"
-      - "software/package.json"
-      - "software/package-lock.json"
-      - ".github/workflows/server-tests.yml"
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      server: ${{ steps.filter.outputs.server }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            server:
+              - "software/data-visualizer/**"
+              - "software/dlflib-js/**"
+              - "software/package.json"
+              - "software/package-lock.json"
+              - ".github/workflows/server-tests.yml"
+
   test:
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

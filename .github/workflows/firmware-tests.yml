@@ -1,20 +1,35 @@
 name: Firmware Tests
 
-on: # Run on push to main branch, as well as all PRs, when firmware code changes
+# Runs on push to main and on all PRs, so that "test" can be a required check.
+# "test" and "build" are skipped (which counts as passing) when no firmware code
+# has changed.
+on:
   push:
     branches: [main]
-    paths:
-      - "software/oas-logger/**"
-      - "software/dlflib/**"
-      - ".github/workflows/firmware-tests.yml"
   pull_request:
-    paths:
-      - "software/oas-logger/**"
-      - "software/dlflib/**"
-      - ".github/workflows/firmware-tests.yml"
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      firmware: ${{ steps.filter.outputs.firmware }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            firmware:
+              - "software/oas-logger/**"
+              - "software/dlflib/**"
+              - ".github/workflows/firmware-tests.yml"
+
   test:
+    needs: changes
+    if: needs.changes.outputs.firmware == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -37,6 +52,8 @@ jobs:
         working-directory: software/oas-logger
 
   build:
+    needs: changes
+    if: needs.changes.outputs.firmware == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
