@@ -1,61 +1,17 @@
-import { BufferAdapter, DLF_FILES, dlfS3Key } from "@/lib/dlf-s3";
+import {
+  BufferAdapter,
+  DLF_FILES,
+  computeRunDurationS,
+  uploadAssembledRunFiles,
+} from "@/lib/dlf-s3";
 import prisma from "@/lib/prisma";
-import { s3Client } from "@/lib/s3";
 import { isValidUuid } from "@/lib/utils";
 import { verifyDeviceSignature } from "@/lib/verify-device";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { NextRequest, NextResponse, after } from "next/server";
 
 export const dynamic = "force-dynamic";
 
 const ACCEPTED_FILES = new Set<string>(DLF_FILES);
-
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  {
-    maxAttempts = 4,
-    delayMs = 1000,
-  }: { maxAttempts?: number; delayMs?: number } = {},
-): Promise<T> {
-  let lastErr: unknown;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      // Delay until the next attempt
-      if (attempt < maxAttempts) {
-        await new Promise((res) => setTimeout(res, delayMs));
-      }
-    }
-  }
-  throw lastErr;
-}
-
-/**
- * Compute run duration in seconds by finding the max tick across all polled and
- * event samples. Returns 0 if no data is present or files are unreadable.
- */
-async function computeRunDurationS(
-  polledSamples: any[],
-  eventSamples: any[],
-  tickBaseUs: bigint,
-): Promise<number> {
-  let maxTick: bigint = 0n; // sample.tick is bigint, so use bigint for maxTick to avoid precision loss
-  for (const sample of polledSamples) {
-    if (sample.tick > maxTick) {
-      maxTick = sample.tick;
-    }
-  }
-  for (const sample of eventSamples) {
-    if (sample.tick > maxTick) {
-      maxTick = sample.tick;
-    }
-  }
-
-  // Perform calculation with bigint to avoid precision loss
-  return Number((maxTick * tickBaseUs) / 1_000_000n);
-}
 
 /**
  * POST /api/upload/[uuid]
@@ -177,7 +133,7 @@ export async function POST(
           adapter.getPolledData().catch(() => []),
           adapter.getEventData().catch(() => []),
         ]);
-        const durationS = await computeRunDurationS(
+        const durationS = computeRunDurationS(
           polledSamples,
           eventSamples,
           BigInt(metaHeader.tickBaseUs),
@@ -205,7 +161,7 @@ export async function POST(
             adapter.getPolledData().catch(() => []),
             adapter.getEventData().catch(() => []),
           ]);
-          updateData.durationS = await computeRunDurationS(
+          updateData.durationS = computeRunDurationS(
             polledSamples,
             eventSamples,
             existingRun.tickBaseUs,
@@ -221,23 +177,10 @@ export async function POST(
       }
 
       // Upload DLF files to S3
-      const bucket = process.env.S3_BUCKET_NAME!;
-      await Promise.all(
-        [...fileBuffers.entries()].map(([filename, buf]) => {
-          const key = dlfS3Key(uuid, filename);
-          console.log(`[api/upload] Uploading to S3: ${key}`);
-          return withRetry(() =>
-            s3Client.send(
-              new PutObjectCommand({
-                Bucket: bucket,
-                Key: key,
-                Body: buf,
-                ContentType: "application/octet-stream",
-              }),
-            ),
-          );
-        }),
+      console.log(
+        `[api/upload] Uploading files to S3 for run ${uuid}: [${[...fileBuffers.keys()].join(", ")}]`,
       );
+      await uploadAssembledRunFiles(uuid, fileBuffers);
 
       console.log(
         `[api/upload] Background processing complete for run ${uuid}`,

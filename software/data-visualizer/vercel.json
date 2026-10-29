@@ -3,5 +3,11 @@
   "buildCommand": "npm run build",
   "git": {
     "deploymentEnabled": false
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/expire-stale-runs",
+      "schedule": "0 * * * *"
+    }
+  ]
 }
