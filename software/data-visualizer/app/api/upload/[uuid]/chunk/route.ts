@@ -1,8 +1,8 @@
 import {
   BufferAdapter,
   DLF_FILES,
+  compactChunks,
   dlfChunkS3Key,
-  mergeChunks,
 } from "@/lib/dlf-s3";
 import prisma from "@/lib/prisma";
 import { s3Client } from "@/lib/s3";
@@ -14,7 +14,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 export const dynamic = "force-dynamic";
 
 const ACCEPTED_FILES = new Set<string>(DLF_FILES);
-const MERGE_CHUNK_INTERVAL = 10;
+const COMPACT_CHUNK_INTERVAL = 10;
 
 /**
  * POST /api/upload/[uuid]/chunk
@@ -106,13 +106,13 @@ export async function POST(
   );
 
   // Compact all existing chunks for the dlf file
-  if (chunkNumber % MERGE_CHUNK_INTERVAL === 0) {
+  if (chunkNumber % COMPACT_CHUNK_INTERVAL === 0) {
     after(async () => {
       try {
-        await mergeChunks(uuid, filename);
+        await compactChunks(uuid, filename);
       } catch (err) {
         console.error(
-          `[api/upload/chunk] Background merge failed for run ${uuid}:`,
+          `[api/upload/chunk] Background compaction failed for run ${uuid}:`,
           err,
         );
       }

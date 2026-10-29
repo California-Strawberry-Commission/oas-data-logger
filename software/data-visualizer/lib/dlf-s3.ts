@@ -105,13 +105,13 @@ export async function assembleChunksToBuffer(
 }
 
 /**
- * Collapses all existing chunks for each DLF file into a single chunk object
+ * Compacts all existing chunks for a DLF file into a single chunk object
  * (chunk 1), then deletes the now-redundant individual chunks.
  *
- * Note that after merging, new chunks from the device continue accumulating at
- * their original chunk numbers, so lexicographic ordering remains correct.
+ * Note that after compacting, new chunks from the device continue accumulating
+ * at their original chunk numbers, so lexicographic ordering remains correct.
  */
-export async function mergeChunks(
+export async function compactChunks(
   runUuid: string,
   filename: string,
 ): Promise<void> {
@@ -121,25 +121,25 @@ export async function mergeChunks(
     return;
   }
 
-  // Fetch all S3 objects and merge into a single buffer
+  // Fetch all S3 objects and concatenate into a single buffer
   const buffers = await Promise.all(chunkKeys.map((key) => fetchS3Object(key)));
-  const mergedBuffer = Buffer.concat(
+  const compactedBuffer = Buffer.concat(
     buffers.filter((buf): buf is Buffer => buf !== null),
   );
 
   // Write the S3 object as chunk 1 (overwrites existing object)
-  const mergedKey = dlfChunkS3Key(runUuid, filename, 1);
+  const compactedKey = dlfChunkS3Key(runUuid, filename, 1);
   await s3Client.send(
     new PutObjectCommand({
       Bucket: bucket,
-      Key: mergedKey,
-      Body: mergedBuffer,
+      Key: compactedKey,
+      Body: compactedBuffer,
       ContentType: "application/octet-stream",
     }),
   );
 
   // Delete all other chunks
-  const keysToDelete = chunkKeys.filter((key) => key !== mergedKey);
+  const keysToDelete = chunkKeys.filter((key) => key !== compactedKey);
   // There is a limit of 1000 objects per request, so we need to batch each request
   for (let i = 0; i < keysToDelete.length; i += 1000) {
     await s3Client.send(
@@ -152,6 +152,95 @@ export async function mergeChunks(
       }),
     );
   }
+}
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  {
+    maxAttempts = 4,
+    delayMs = 1000,
+  }: { maxAttempts?: number; delayMs?: number } = {},
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      // Delay until the next attempt
+      if (attempt < maxAttempts) {
+        await new Promise((res) => setTimeout(res, delayMs));
+      }
+    }
+  }
+  throw lastErr;
+}
+
+/**
+ * Assembles each DLF file of a run from its chunks. Files with no chunks are
+ * omitted from the returned map.
+ */
+export async function assembleRunFilesToBuffers(
+  runUuid: string,
+): Promise<Map<string, Buffer>> {
+  const fileBuffers = new Map<string, Buffer>();
+  for (const filename of DLF_FILES) {
+    const buf = await assembleChunksToBuffer(runUuid, filename);
+    if (buf) {
+      fileBuffers.set(filename, buf);
+    }
+  }
+  return fileBuffers;
+}
+
+/**
+ * Uploads assembled DLF files to their final S3 location, where they are read
+ * from for inactive runs.
+ */
+export async function uploadAssembledRunFiles(
+  runUuid: string,
+  fileBuffers: Map<string, Buffer>,
+): Promise<void> {
+  const bucket = process.env.S3_BUCKET_NAME!;
+  await Promise.all(
+    [...fileBuffers.entries()].map(([filename, buf]) =>
+      withRetry(() =>
+        s3Client.send(
+          new PutObjectCommand({
+            Bucket: bucket,
+            Key: dlfS3Key(runUuid, filename),
+            Body: buf,
+            ContentType: "application/octet-stream",
+          }),
+        ),
+      ),
+    ),
+  );
+}
+
+/**
+ * Compute run duration in seconds by finding the max tick across all polled and
+ * event samples. Returns 0 if no data is present.
+ */
+export function computeRunDurationS(
+  polledSamples: any[],
+  eventSamples: any[],
+  tickBaseUs: bigint,
+): number {
+  let maxTick: bigint = 0n; // sample.tick is bigint, so use bigint for maxTick to avoid precision loss
+  for (const sample of polledSamples) {
+    if (sample.tick > maxTick) {
+      maxTick = sample.tick;
+    }
+  }
+  for (const sample of eventSamples) {
+    if (sample.tick > maxTick) {
+      maxTick = sample.tick;
+    }
+  }
+
+  // Perform calculation with bigint to avoid precision loss
+  return Number((maxTick * tickBaseUs) / 1_000_000n);
 }
 
 /**
