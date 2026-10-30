@@ -211,6 +211,66 @@ export function downsampleMinMaxByTime(
   return dedupe;
 }
 
+/**
+ * Compute evenly spaced axis ticks at "nice" values (1, 2, 2.5, or 5 * 10^n
+ * steps) that cover the range [min, max]. The step is chosen so that the tick
+ * count is as close as possible to targetTickCount.
+ *
+ * @param min - Minimum value that must be covered by the ticks.
+ * @param max - Maximum value that must be covered by the ticks.
+ * @param targetTickCount - Approximate number of ticks desired.
+ * @returns Tick values, and the number of decimal places needed to display them.
+ */
+export function computeTicks(
+  min: number,
+  max: number,
+  targetTickCount: number = 5,
+): { ticks: number[]; decimals: number } {
+  if (min === max) {
+    // Expand a flat range so there is something to tick
+    const pad = min === 0 ? 1 : Math.abs(min) * 0.1;
+    min -= pad;
+    max += pad;
+  }
+
+  const rawStep = (max - min) / Math.max(1, targetTickCount - 1);
+  const exponent = Math.floor(Math.log10(rawStep));
+
+  // Try each "nice" step to get as close to targetTickCount as possible
+  let best: {
+    step: number;
+    decimals: number;
+    niceMin: number;
+    tickCount: number;
+  } | null = null;
+  for (const e of [exponent, exponent + 1]) {
+    for (const nice of [1, 2, 2.5, 5]) {
+      const step = nice * Math.pow(10, e);
+      // 2.5 needs one more decimal place than its magnitude (e.g. 0.25)
+      const decimals = Math.max(0, -e + (nice === 2.5 ? 1 : 0));
+      // Epsilon guards against floating point error
+      const niceMin = Math.floor(min / step + 1e-9) * step;
+      const niceMax = Math.ceil(max / step - 1e-9) * step;
+      const tickCount = Math.round((niceMax - niceMin) / step) + 1;
+      if (
+        !best ||
+        Math.abs(tickCount - targetTickCount) <=
+          Math.abs(best.tickCount - targetTickCount)
+      ) {
+        best = { step, decimals, niceMin, tickCount };
+      }
+    }
+  }
+  const { step, decimals, niceMin, tickCount } = best!;
+
+  const ticks: number[] = [];
+  for (let i = 0; i < tickCount; i++) {
+    // Round to remove floating point noise
+    ticks.push(Number((niceMin + i * step).toFixed(decimals)));
+  }
+  return { ticks, decimals };
+}
+
 const chartConfig = {
   value: {
     label: "Value",
@@ -225,7 +285,7 @@ export default function TimeSeriesChart({
   xAxisTickFormatter = (v: number) => formatElapsed(Number(v)),
   yAxisLabel = "Value",
   yAxisLabelOffset = 0,
-  yAxisTickFormatter = (value: number) => `${Math.round(value)}`,
+  yAxisTickFormatter,
   tooltipValueFormatter = (value: number) => value.toFixed(1),
   smooth = false,
   smoothingHalfLifeS = 5,
@@ -385,12 +445,10 @@ export default function TimeSeriesChart({
     setReferenceAreaEnd(null);
   }
 
-  // When zoomed, derive Y domain from values visible in the zoomed X range
-  const yDomain = useMemo<[number, number] | null>(() => {
-    if (!zoomRange) {
-      return null;
-    }
-
+  // Derive Y ticks from the visible values so they land on round numbers. When
+  // zoomed, the domain fits the values in the zoomed X range, otherwise it
+  // includes 0 as a baseline.
+  const yTicks = useMemo<{ ticks: number[]; decimals: number } | null>(() => {
     let min = Infinity;
     let max = -Infinity;
     // chartPoints is already filtered to the zoom window, so just scan all points to get the min
@@ -412,9 +470,15 @@ export default function TimeSeriesChart({
     if (!Number.isFinite(min)) {
       return null;
     }
+    if (!zoomRange) {
+      return computeTicks(Math.min(0, min), Math.max(0, max));
+    }
     const padding = (max - min) * 0.05;
-    return [min - padding, max + padding];
+    return computeTicks(min - padding, max + padding);
   }, [zoomRange, chartPoints]);
+  const formatYTick =
+    yAxisTickFormatter ??
+    ((value: number) => value.toFixed(yTicks?.decimals ?? 0));
 
   return (
     <div className="relative h-full w-full">
@@ -467,9 +531,14 @@ export default function TimeSeriesChart({
           </XAxis>
           <YAxis
             width={42}
-            domain={yDomain ?? undefined}
+            domain={
+              yTicks
+                ? [yTicks.ticks[0], yTicks.ticks[yTicks.ticks.length - 1]]
+                : undefined
+            }
+            ticks={yTicks?.ticks}
             allowDataOverflow
-            tickFormatter={(v) => yAxisTickFormatter(Number(v))}
+            tickFormatter={(v) => formatYTick(Number(v))}
           >
             <Label
               value={yAxisLabel}
