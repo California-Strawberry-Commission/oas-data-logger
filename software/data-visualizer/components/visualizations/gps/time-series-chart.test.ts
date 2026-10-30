@@ -1,4 +1,5 @@
 import {
+  computeTicks,
   downsampleMinMaxByTime,
   findClosestSample,
   smoothEma,
@@ -176,5 +177,71 @@ describe("downsampleMinMaxByTime", () => {
       makeSample(5, 5),
     ];
     expect(downsampleMinMaxByTime(data, 2)).toBe(data);
+  });
+});
+
+describe("computeTicks", () => {
+  it("uses expected step size", () => {
+    expect(computeTicks(0, 37.3)).toEqual({
+      ticks: [0, 10, 20, 30, 40],
+      decimals: 0,
+    });
+    expect(computeTicks(-3.2, 148)).toEqual({
+      ticks: [-50, 0, 50, 100, 150],
+      decimals: 0,
+    });
+  });
+
+  it("snaps the ends outward to multiples of the step", () => {
+    expect(computeTicks(12.347, 13.91)).toEqual({
+      ticks: [12, 12.5, 13, 13.5, 14],
+      decimals: 1,
+    });
+  });
+
+  it("uses enough decimals to distinguish small steps", () => {
+    expect(computeTicks(101.2, 101.25)).toEqual({
+      ticks: [101.2, 101.22, 101.24, 101.26],
+      decimals: 2,
+    });
+  });
+
+  it("expands a flat range", () => {
+    expect(computeTicks(5, 5)).toEqual({
+      ticks: [4.5, 4.75, 5, 5.25, 5.5],
+      decimals: 2,
+    });
+    expect(computeTicks(0, 0)).toEqual({
+      ticks: [-1, -0.5, 0, 0.5, 1],
+      decimals: 1,
+    });
+  });
+
+  it("respects targetTickCount", () => {
+    expect(computeTicks(0, 100, 3)).toEqual({
+      ticks: [0, 50, 100],
+      decimals: 0,
+    });
+    expect(computeTicks(0, 100, 5)).toEqual({
+      ticks: [0, 25, 50, 75, 100],
+      decimals: 0,
+    });
+    expect(computeTicks(0, 1, 5)).toEqual({
+      ticks: [0, 0.25, 0.5, 0.75, 1],
+      decimals: 2,
+    });
+  });
+
+  it("always covers the input range", () => {
+    for (const [min, max] of [
+      [0, 1],
+      [-7.3, 2.1],
+      [0.0012, 0.0019],
+      [1234, 98765],
+    ]) {
+      const { ticks } = computeTicks(min, max);
+      expect(ticks[0]).toBeLessThanOrEqual(min);
+      expect(ticks[ticks.length - 1]).toBeGreaterThanOrEqual(max);
+    }
   });
 });
