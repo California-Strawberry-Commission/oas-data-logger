@@ -1,5 +1,7 @@
 import {
+  BufferAdapter,
   assembleRunFilesToBuffers,
+  computeRunDurationS,
   uploadAssembledRunFiles,
 } from "@/lib/dlf-s3";
 import prisma from "@/lib/prisma";
@@ -36,7 +38,7 @@ export async function GET(request: NextRequest) {
   const cutoff = new Date(Date.now() - STALE_RUN_TIMEOUT_MS);
   const staleRuns = await prisma.run.findMany({
     where: { isActive: true, updatedAt: { lt: cutoff } },
-    select: { id: true, uuid: true },
+    select: { id: true, uuid: true, tickBaseUs: true },
   });
 
   const updated: string[] = [];
@@ -49,9 +51,30 @@ export async function GET(request: NextRequest) {
         await uploadAssembledRunFiles(run.uuid, fileBuffers);
       }
 
+      // Recalculate duration from the assembled data
+      const updateData: Parameters<typeof prisma.run.updateMany>[0]["data"] = {
+        isActive: false,
+      };
+      if (fileBuffers.has("polled.dlf") || fileBuffers.has("event.dlf")) {
+        const adapter = new BufferAdapter(
+          fileBuffers.get("meta.dlf") ?? null,
+          fileBuffers.get("polled.dlf") ?? null,
+          fileBuffers.get("event.dlf") ?? null,
+        );
+        const [polledSamples, eventSamples] = await Promise.all([
+          adapter.getPolledData().catch(() => []),
+          adapter.getEventData().catch(() => []),
+        ]);
+        updateData.durationS = computeRunDurationS(
+          polledSamples,
+          eventSamples,
+          run.tickBaseUs,
+        );
+      }
+
       const { count } = await prisma.run.updateMany({
         where: { id: run.id, isActive: true, updatedAt: { lt: cutoff } },
-        data: { isActive: false },
+        data: updateData,
       });
       if (count > 0) {
         updated.push(run.uuid);
