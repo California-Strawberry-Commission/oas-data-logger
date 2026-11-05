@@ -23,10 +23,10 @@ import { encryptSecret } from "@/lib/crypto";
  * @param {string[]} --env    - The environment configs to load (local, preview, prod).
  * Repeatable. Defaults to ['prod'].
  * In interactive mode the FIRST value is also the backend the device itself is pinned
- * to. It must be preview or prod, since those are the only environments with a base
- * URL compiled into the firmware. Any further values are extra databases the same
- * secret is upserted into. A device stays on that backend until it is wiped,
- * reflashed and reprovisioned.
+ * to; any further values are extra databases the same secret is upserted into. A
+ * device stays on that backend until it is wiped, reflashed and reprovisioned.
+ * "local" only works as the first value against firmware built with
+ * LOCAL_BASE_URL; stock firmware answers PROV_FAIL for it.
  * @param {flag}   --db-only - If present, pulls existing secret from device, performs a direct DB update.
  * @param {string} --id     - Expected device ID (Required for --db-only mode).
  *
@@ -39,6 +39,10 @@ import { encryptSecret } from "@/lib/crypto";
  * secret valid if the device is ever reflashed back to prod:
  * npm run provision-device -- /dev/ttyACM0 --env=preview --env=prod
  *
+ * Device pointed at a dev machine requires
+ * firmware flashed with LOCAL_BASE_URL:
+ * npm run provision-device -- /dev/ttyACM0 --env=local
+ *
  * DB-only
  * npm run provision-device -- /dev/ttyACM0 --db-only --id=device_123 --env=prod
  * npm run provision-device -- /dev/ttyACM0 --db-only --id=device_123 --env=preview --env=prod
@@ -47,10 +51,6 @@ import { encryptSecret } from "@/lib/crypto";
 //#region Types
 
 type EnvName = "local" | "preview" | "prod";
-
-// Environments the firmware has a base URL compiled in for. "local" is absent
-// on purpose: devices are tested against preview.
-type DeviceEnvName = Extract<EnvName, "preview" | "prod">;
 
 type DeviceCredentials = {
   deviceId: string;
@@ -80,10 +80,6 @@ function isEnvName(x: string): x is EnvName {
   return x === "local" || x === "preview" || x === "prod";
 }
 
-function isDeviceEnvName(x: string): x is DeviceEnvName {
-  return x === "preview" || x === "prod";
-}
-
 const parsedEnvs = envRaw as string[];
 
 for (const env of parsedEnvs) {
@@ -96,27 +92,6 @@ for (const env of parsedEnvs) {
 }
 
 const targetEnvs: EnvName[] = parsedEnvs as EnvName[];
-
-/**
- * The backend the device is pinned to: the first --env. Later --env values just
- * get a copy of the secret, and have no say in where the device points.
- *
- * Taking it from --env instead of its own flag means the device's backend is
- * always one of the databases we wrote, with nothing to cross-check.
- */
-function requireDeviceEnv(envs: EnvName[]): DeviceEnvName {
-  const deviceEnv = envs[0];
-
-  if (!isDeviceEnvName(deviceEnv)) {
-    console.error(
-      `Error: the first --env must be one of preview|prod (got: ${deviceEnv}). ` +
-        "local has no base URL compiled into the firmware.",
-    );
-    process.exit(1);
-  }
-
-  return deviceEnv;
-}
 
 //#endregion
 
@@ -333,7 +308,7 @@ async function readProvisionedDeviceCredentials(
 async function firstTimeProvision(
   portPath: string,
   targetEnvs: EnvName[],
-  deviceEnv: DeviceEnvName,
+  deviceEnv: EnvName,
 ): Promise<void> {
   const port = new SerialPort({
     path: portPath,
@@ -443,19 +418,20 @@ async function firstTimeProvision(
 function printUsage() {
   console.error(
     "\nUsage:\n" +
-      "  npm run provision-device -- /dev/ttyXXX [--env=preview] [--env=prod]\n" +
+      "  npm run provision-device -- /dev/ttyXXX [--env=local] [--env=preview] [--env=prod]\n" +
       "  npm run provision-device -- /dev/ttyXX --db-only --id=<deviceId> [--env=local] [--env=preview] [--env=prod]\n\n" +
       "Notes:\n" +
       "  --env may be repeated. Allowed values: local, preview, prod. Defaults to prod.\n" +
       "  Repeating --env writes the same device secret to each selected database environment.\n" +
-      "  In interactive mode the FIRST --env is also the backend the device is pinned to,\n" +
-      "  and must be preview or prod. The device stays on it until it is wiped\n" +
-      "  (pio run -t erase), reflashed and reprovisioned.\n\n" +
+      "  In interactive mode the FIRST --env is also the backend the device is pinned to.\n" +
+      "  The device stays on it until it is wiped (pio run -t erase), reflashed and\n" +
+      "  reprovisioned. local requires firmware built with LOCAL_BASE_URL.\n\n" +
       "Examples:\n" +
       "  npm run provision-device -- /dev/ttyACM0\n" +
       "  npm run provision-device -- /dev/ttyACM0 --env=prod\n" +
       "  npm run provision-device -- /dev/ttyACM0 --env=preview\n" +
       "  npm run provision-device -- /dev/ttyACM0 --env=preview --env=prod\n" +
+      "  npm run provision-device -- /dev/ttyACM0 --env=local\n" +
       "  npm run provision-device -- /dev/ttyACM0 --db-only --id=device_123 --env=prod\n" +
       "  npm run provision-device -- /dev/ttyACM0 --db-only --id=device_123 --env=preview --env=prod\n",
   );
@@ -522,7 +498,8 @@ async function main() {
       process.exitCode = 1;
       return;
     }
-    const deviceEnv = requireDeviceEnv(targetEnvs);
+
+    const deviceEnv = targetEnvs[0];
 
     console.log(
       `[Mode] Interactive Serial Provisioning on ${portPath} ` +
