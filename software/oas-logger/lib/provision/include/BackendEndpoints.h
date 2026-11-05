@@ -29,9 +29,21 @@ struct Entry {
 // The preview base URL is a copy of STAGING_ALIAS in
 // .github/workflows/data-visualizer-deploy-staging.yml. Nothing syncs the two,
 // so update this if that alias ever changes.
+//
+// "local" exists only when LOCAL_BASE_URL is defined. Can be passed per build
+// with:
+//
+//   export PLATFORMIO_BUILD_FLAGS='-DLOCAL_BASE_URL=\"http://<ip>:3000\"'
+//   pio run -e v1-app -t upload
+//
+// A build without it treats "local" as unknown, so a device flashed with
+// stock firmware falls back to DEFAULT_ENV.
 constexpr Entry ENVIRONMENTS[]{
     {"prod", "https://oas-data-logger.vercel.app"},
     {"preview", "https://oas-data-logger-staging.vercel.app"},
+#ifdef LOCAL_BASE_URL
+    {"local", LOCAL_BASE_URL},
+#endif
 };
 
 constexpr size_t ENVIRONMENT_COUNT{sizeof(ENVIRONMENTS) /
