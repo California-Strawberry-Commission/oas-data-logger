@@ -20,15 +20,28 @@ import { encryptSecret } from "@/lib/crypto";
  *
  * CLI ARGUMENTS:
  * @param {string} [port]   - The serial port path (e.g. /dev/ttyACM0). Required for both modes.
- * @param {string[]} --env    - The environment configs to load (local, preview, prod). Defaults to ['local'].
+ * @param {string[]} --env    - The environment configs to load (local, preview, prod).
+ * Repeatable. Defaults to ['prod'].
+ * In interactive mode the FIRST value is also the backend the device itself is pinned
+ * to; any further values are extra databases the same secret is upserted into. A
+ * device stays on that backend until it is wiped, reflashed and reprovisioned.
+ * "local" only works as the first value against firmware built with
+ * LOCAL_BASE_URL; stock firmware answers PROV_FAIL for it.
  * @param {flag}   --db-only - If present, pulls existing secret from device, performs a direct DB update.
  * @param {string} --id     - Expected device ID (Required for --db-only mode).
  *
  * USAGE EXAMPLES:
  * Interactive Provisioning:
  * npm run provision-device -- /dev/ttyACM0
+ * npm run provision-device -- /dev/ttyACM0 --env=prod
+ *
+ * Internal test device pinned to preview. Registering in prod as well keeps the
+ * secret valid if the device is ever reflashed back to prod:
+ * npm run provision-device -- /dev/ttyACM0 --env=preview --env=prod
+ *
+ * Device pointed at a dev machine requires
+ * firmware flashed with LOCAL_BASE_URL:
  * npm run provision-device -- /dev/ttyACM0 --env=local
- * npm run provision-device -- /dev/ttyACM0 --env=local --env=preview --env=prod
  *
  * DB-only
  * npm run provision-device -- /dev/ttyACM0 --db-only --id=device_123 --env=prod
@@ -53,7 +66,7 @@ const {
   positionals,
 } = parseArgs({
   options: {
-    env: { type: "string", multiple: true, default: ["local"] },
+    env: { type: "string", multiple: true, default: ["prod"] },
     "db-only": { type: "boolean", default: false },
     id: { type: "string" },
   },
@@ -295,6 +308,7 @@ async function readProvisionedDeviceCredentials(
 async function firstTimeProvision(
   portPath: string,
   targetEnvs: EnvName[],
+  deviceEnv: EnvName,
 ): Promise<void> {
   const port = new SerialPort({
     path: portPath,
@@ -310,6 +324,7 @@ async function firstTimeProvision(
 
     const provisioningTask = new Promise<void>((resolve, reject) => {
       let isProvisioning = false;
+      let secret: string | undefined;
 
       parser.on("data", async (line) => {
         const cleanLine = line.toString().trim();
@@ -327,20 +342,16 @@ async function firstTimeProvision(
           }
           console.log(`\nDetected Device ID: ${deviceId}`);
 
-          const secret = generateSecret();
+          secret = generateSecret();
           console.log(`Generated Secret: ${secret}`);
 
           try {
             await registerDeviceInEnvs(targetEnvs, deviceId, secret);
 
-            console.log("Pushing secret to device...");
+            console.log(`Pinning device to backend env '${deviceEnv}'...`);
             await sleep(500); // Needed to allow hardware to catch up
 
-            if (!port) {
-              reject(new Error("Serial port not initialized"));
-              return;
-            }
-            port.write(`PROV_SET:${secret}\n`, (err) => {
+            port.write(`PROV_ENV:${deviceEnv}\n`, (err) => {
               if (err) {
                 reject(err);
                 return;
@@ -352,6 +363,27 @@ async function firstTimeProvision(
           }
         }
 
+        // The device keeps waiting after PROV_ENV. Intentionally gated the secret on the
+        // ack so firmware that ignored it times out, rather than silently
+        // provisioning onto the wrong backend.
+        if (cleanLine.includes("PROV_ENV_OK")) {
+          if (!secret) {
+            reject(
+              new Error("Device acknowledged env before a secret existed"),
+            );
+            return;
+          }
+
+          console.log("Env accepted. Pushing secret to device...");
+          port.write(`PROV_SET:${secret}\n`, (err) => {
+            if (err) {
+              reject(err);
+              return;
+            }
+          });
+          return;
+        }
+
         if (cleanLine.includes("PROV_SUCCESS")) {
           console.log("SUCCESS: Device accepted the secret.");
           resolve();
@@ -359,7 +391,9 @@ async function firstTimeProvision(
         }
 
         if (cleanLine.includes("PROV_FAIL")) {
-          reject(new Error("Device reported provisioning failure"));
+          reject(
+            new Error(`Device reported provisioning failure: ${cleanLine}`),
+          );
           return;
         }
       });
@@ -387,12 +421,17 @@ function printUsage() {
       "  npm run provision-device -- /dev/ttyXXX [--env=local] [--env=preview] [--env=prod]\n" +
       "  npm run provision-device -- /dev/ttyXX --db-only --id=<deviceId> [--env=local] [--env=preview] [--env=prod]\n\n" +
       "Notes:\n" +
-      "  --env may be repeated. Allowed values: local, preview, prod. Defaults to local.\n" +
-      "  Repeating --env writes the same device secret to each selected database environment.\n\n" +
+      "  --env may be repeated. Allowed values: local, preview, prod. Defaults to prod.\n" +
+      "  Repeating --env writes the same device secret to each selected database environment.\n" +
+      "  In interactive mode the FIRST --env is also the backend the device is pinned to.\n" +
+      "  The device stays on it until it is wiped (pio run -t erase), reflashed and\n" +
+      "  reprovisioned. local requires firmware built with LOCAL_BASE_URL.\n\n" +
       "Examples:\n" +
       "  npm run provision-device -- /dev/ttyACM0\n" +
+      "  npm run provision-device -- /dev/ttyACM0 --env=prod\n" +
+      "  npm run provision-device -- /dev/ttyACM0 --env=preview\n" +
+      "  npm run provision-device -- /dev/ttyACM0 --env=preview --env=prod\n" +
       "  npm run provision-device -- /dev/ttyACM0 --env=local\n" +
-      "  npm run provision-device -- /dev/ttyACM0 --env=local --env=preview --env=prod\n" +
       "  npm run provision-device -- /dev/ttyACM0 --db-only --id=device_123 --env=prod\n" +
       "  npm run provision-device -- /dev/ttyACM0 --db-only --id=device_123 --env=preview --env=prod\n",
   );
@@ -459,8 +498,14 @@ async function main() {
       process.exitCode = 1;
       return;
     }
-    console.log(`[Mode] Interactive Serial Provisioning on ${portPath}`);
-    await firstTimeProvision(portPath, targetEnvs);
+
+    const deviceEnv = targetEnvs[0];
+
+    console.log(
+      `[Mode] Interactive Serial Provisioning on ${portPath} ` +
+        `(device env: ${deviceEnv})`,
+    );
+    await firstTimeProvision(portPath, targetEnvs, deviceEnv);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[ERROR]", msg);
