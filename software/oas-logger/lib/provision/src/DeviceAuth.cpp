@@ -8,7 +8,8 @@
  * credentials, and exporting of existing device seucrity credentials. This
  * class handles:
  *
- * 1. Secure Storage: Reading/Writing the unique 32-byte hex secret to NVS.
+ * 1. Secure Storage: Reading/Writing the unique 32-byte hex secret to NVS,
+ * along with the backend environment the device was provisioned onto.
  * 2. Provisioning: Implementing the handshake that pairs the device
  * with the database via the serial port.
  * 3. Credential Export: Allows an already provisioned device to briefly expose
@@ -19,8 +20,14 @@
  * If loadSecret() returns false on boot, the device enters a BLOCKING loop
  * inside awaitProvisioning().
  * 1. Device broadcasts: "DEVICE_ID:<id>" every 1s.
- * 2. Host script detects ID, generates secret, and sends: "PROV_SET:<secret>".
- * 3. Device validates, saves to NVS, and reboots/continues.
+ * 2. Host script detects ID, generates secret, and optionally sends
+ * "PROV_ENV:<env>" to pin the device to a backend environment. The device
+ * acknowledges with "PROV_ENV_OK" and keeps waiting; this is not terminal.
+ * 3. Host script sends: "PROV_SET:<secret>".
+ * 4. Device validates, saves to NVS, and reboots/continues.
+ *
+ * Omitting PROV_ENV leaves no environment in NVS, which loadEnv() reads as
+ * the default ("prod").
  *
  * PROVISIONING FLOW (Timed):
  * If loadSecret() returns true on boot, the device briefly listens for
@@ -34,6 +41,7 @@
  *
  * DEPENDENCIES:
  * - Preferences: For persistent storage (NVS) under the "oas_config" namespace.
+ * - BackendEndpoints.h: The set of environment names this firmware knows.
  */
 
 namespace device_auth {
@@ -59,6 +67,10 @@ bool DeviceAuth::readSerialInput(char* input, size_t inputLen) {
 
 bool DeviceAuth::isValidSecret(const char* secret, size_t secretLen) {
   return secretLen == 64 && strspn(secret, "0123456789abcdefABCDEF") == 64;
+}
+
+bool DeviceAuth::isValidEnv(const char* env) {
+  return backend_env::baseUrlFor(env) != nullptr;
 }
 
 bool DeviceAuth::exportProvisionedSecret(const char* secretBuffer,
@@ -114,6 +126,13 @@ bool DeviceAuth::loadSecretOrProvision(char* secretBuffer,
 }
 
 bool DeviceAuth::loadSecret(char* secretBuffer, size_t secretBufferLen) {
+  if (secretBufferLen == 0) {
+    return false;
+  }
+
+  // getString leaves the buffer untouched when the key is absent.
+  secretBuffer[0] = '\0';
+
   Preferences preferences;
   preferences.begin(PREF_NAMESPACE, true);  // Read-only
   preferences.getString(PREF_KEY_SECRET, secretBuffer, secretBufferLen);
@@ -130,8 +149,37 @@ void DeviceAuth::saveSecret(const char* secret) {
   preferences.end();
 }
 
+bool DeviceAuth::loadEnv(char* envBuffer, size_t envBufferLen) {
+  if (envBufferLen == 0) {
+    return false;
+  }
+
+  // getString leaves the buffer untouched when the key is absent.
+  envBuffer[0] = '\0';
+
+  Preferences preferences;
+  preferences.begin(PREF_NAMESPACE, true);  // Read-only
+  preferences.getString(PREF_KEY_ENV, envBuffer, envBufferLen);
+  preferences.end();
+
+  if (isValidEnv(envBuffer)) {
+    return true;
+  }
+
+  snprintf(envBuffer, envBufferLen, "%s", backend_env::DEFAULT_ENV);
+  return false;
+}
+
+void DeviceAuth::saveEnv(const char* env) {
+  Preferences preferences;
+  preferences.begin(PREF_NAMESPACE, false);  // Read-Write
+  preferences.putString(PREF_KEY_ENV, env);
+  preferences.end();
+}
+
 bool DeviceAuth::awaitProvisioning(char* secretBuffer, size_t secretBufferLen) {
   Serial.println("[Auth] Waiting for command: PROV_SET:<SECRET>");
+  Serial.println("[Auth] Optional, before it: PROV_ENV:<ENV>");
 
   // !!! BLOCKING LOOP !!!
   // The device will NOT exit this loop until a valid secret is sent.
@@ -145,7 +193,18 @@ bool DeviceAuth::awaitProvisioning(char* secretBuffer, size_t secretBufferLen) {
     char input[128];
 
     if (readSerialInput(input, sizeof(input))) {
-      if (strncmp(input, "PROV_SET:", 9) == 0) {
+      if (strncmp(input, "PROV_ENV:", 9) == 0) {
+        const char* newEnv =
+            input + 9;  // PROV_ENV: is 9 characters long, skip to the env.
+
+        if (isValidEnv(newEnv)) {
+          saveEnv(newEnv);
+          Serial.println("PROV_ENV_OK");
+        } else {
+          Serial.println("PROV_FAIL: Invalid Env");
+        }
+        // Not terminal: keep waiting for PROV_SET.
+      } else if (strncmp(input, "PROV_SET:", 9) == 0) {
         const char* newSecret =
             input + 9;  // PROV_SET: is 9 characters long, skip to secret.
         size_t newSecretLen = strlen(newSecret);

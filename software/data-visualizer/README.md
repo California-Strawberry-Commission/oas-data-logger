@@ -137,17 +137,59 @@ To roll back the app, use Instant Rollback on the previous production deployment
 
 ## Provisioning devices
 
-Run the following script to provision a device and update the DB in interactive mode (connects via Serial, waits for the device to announce its ID, generates a secret, saves it to the DB, and pushes it to the device):
+Provisioning generates a device secret, writes it to one or more environment databases, and decides which backend the device will talk to. A device stays on that backend until it is erased, reflashed and provisioned again.
+
+### Interactive mode
+
+Connects via Serial, waits for the device to announce its ID, generates a secret, saves it to the DB, and pushes the environment and the secret to the device.
 
 ```
-npm run provision-device -- <serial port, such as /dev/ttyACM0>
+npm run provision-device -- <serial port, such as /dev/ttyACM0> --env=<preview|prod>
 ```
 
-Run the following script for DB-only mode (manually inserts a known device ID and secret into the database):
+`--env` defaults to `prod`, so the bare command provisions against the production database:
 
 ```
-npm run provision-device -- --db-only --id=<device ID> --secret=<device secret> --env=<local|preview|prod>
+npm run provision-device -- /dev/ttyACM0
 ```
+
+`--env` may be repeated. The first value is the backend the device is pinned to; any further values are extra databases the same secret is written to. Order is significant — `--env=preview --env=prod` and `--env=prod --env=preview` write the same two databases but produce different device pinnings. The device's environment is echoed before the handshake and again in its boot log.
+
+Internal test devices go on preview. Including prod as well keeps the secret valid if the device is later reflashed back to prod:
+
+```
+npm run provision-device -- /dev/ttyACM0 --env=preview --env=prod
+```
+
+#### Pointing a device at a dev machine
+
+`local` has no base URL in the firmware by default, since it depends on the address of your machine. Supply one at build time with:
+
+```
+export PLATFORMIO_BUILD_FLAGS='-DLOCAL_BASE_URL="http://<ip>:<port>"'
+pio run -e <v1-app|v0-app> -t upload
+npm run provision-device -- /dev/ttyACM0 --env=local
+```
+
+Stock firmware has no `local` entry, so provisioning one with `--env=local` fails with `PROV_FAIL: Unknown env 'local'`, and a device already holding `local` in NVS that gets reflashed without the flag falls back to prod rather than a dead address.
+
+To move a device to a different backend, erase it, reflash, and provision again:
+
+```
+pio run -e <v1-app|v0-app> -t erase
+pio run -e <v1-app|v0-app> -t upload
+npm run provision-device -- /dev/ttyACM0 --env=preview --env=prod
+```
+
+### DB-only mode
+
+Run the following script for DB-only mode (reads device's ID and secret over serial, inserts them into the DB):
+
+```
+npm run provision-device -- <serial port> --db-only --id=<device ID> --env=<local|preview|prod>
+```
+
+`--env` is repeatable here too, and also defaults to `prod`.
 
 ## Pushing OTA firmware
 

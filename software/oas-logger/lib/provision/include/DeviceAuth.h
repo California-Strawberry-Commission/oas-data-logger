@@ -2,10 +2,13 @@
 #include <Arduino.h>
 #include <Preferences.h>
 
+#include "BackendEndpoints.h"
+
 namespace device_auth {
 
 constexpr const char* PREF_NAMESPACE = "oas_config";
 constexpr const char* PREF_KEY_SECRET = "secret";
+constexpr const char* PREF_KEY_ENV = "env";
 
 class DeviceAuth {
  public:
@@ -13,6 +16,8 @@ class DeviceAuth {
 
   bool loadSecretOrProvision(char* secretBuffer, size_t secretBufferLen,
                              bool rebootOnProvision = true);
+
+  bool loadEnv(char* envBuffer, size_t envBufferLen);
 
  private:
   char deviceId_[65];
@@ -25,9 +30,13 @@ class DeviceAuth {
 
   void saveSecret(const char* secret);
 
+  void saveEnv(const char* env);
+
   bool readSerialInput(char* input, size_t inputLen);
 
   bool isValidSecret(const char* secret, size_t secretLen);
+
+  bool isValidEnv(const char* env);
 
   bool exportProvisionedSecret(const char* secretBuffer,
                                size_t secretBufferLen);
