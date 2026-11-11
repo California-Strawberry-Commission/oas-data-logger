@@ -183,7 +183,7 @@ npm run provision-device -- /dev/ttyACM0 --env=preview --env=prod
 
 ### DB-only mode
 
-Run the following script for DB-only mode (manually inserts a known device ID and secret into the database):
+Run the following script for DB-only mode (reads device's ID and secret over serial, inserts them into the DB):
 
 ```
 npm run provision-device -- <serial port> --db-only --id=<device ID> --env=<local|preview|prod>
