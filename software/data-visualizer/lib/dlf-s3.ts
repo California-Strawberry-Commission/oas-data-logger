@@ -30,6 +30,14 @@ export class BufferAdapter extends Adapter {
   get eventDlfBytes(): Promise<Uint8Array> {
     return Promise.resolve(this._events!);
   }
+
+  override async getPolledData(startTick = 0n, endTick: bigint | null = null) {
+    return this._polled === null ? [] : super.getPolledData(startTick, endTick);
+  }
+
+  override async getEventData() {
+    return this._events === null ? [] : super.getEventData();
+  }
 }
 
 async function fetchS3Object(key: string): Promise<Buffer | null> {
