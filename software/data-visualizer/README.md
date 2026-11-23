@@ -166,7 +166,7 @@ npm run provision-device -- /dev/ttyACM0 --env=preview --env=prod
 `local` has no base URL in the firmware by default, since it depends on the address of your machine. Supply one at build time with:
 
 ```
-export PLATFORMIO_BUILD_FLAGS='-DLOCAL_BASE_URL="http://<ip>:<port>"'
+export PLATFORMIO_BUILD_FLAGS='-DLOCAL_BASE_URL=\"http://<ip>:<port>\"'
 pio run -e <v1-app|v0-app> -t upload
 npm run provision-device -- /dev/ttyACM0 --env=local
 ```
