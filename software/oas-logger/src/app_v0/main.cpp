@@ -23,6 +23,7 @@
 #include <Wire.h>
 #include <dlflib/dlf_logger.h>
 
+#include "BackendEndpoints.h"
 #include "DeviceAuth.h"
 #include "EzLog.h"
 #include "certs/certs.h"
@@ -86,14 +87,9 @@ static volatile bool wifiConnecting = false;
 char deviceUid[13]{0};     // Populated at boot
 char deviceSecret[65]{0};  // Populated from NVS at boot
 
-// Backend endpoints
-const char* UPLOAD_ENDPOINT{"https://oas-data-logger.vercel.app/api/upload/%s"};
-const char* OTA_MANIFEST_ENDPOINT{
-    "https://oas-data-logger.vercel.app/api/ota/manifest/%s"};
-const char* OTA_FIRMWARE_ENDPOINT{
-    "https://oas-data-logger.vercel.app/api/ota/firmware/%s/builds/%d"};
-const char* HEARTBEAT_ENDPOINT{
-    "https://oas-data-logger.vercel.app/api/heartbeat"};
+// Backend endpoints, composed at boot from the environment this device was
+// provisioned onto. See provisionDevice().
+backend_env::BackendEndpoints endpoints;
 
 // State Machine States
 enum class SystemState {
@@ -397,7 +393,16 @@ void provisionDevice() {
   device_auth::DeviceAuth auth(deviceUid);
   auth.loadSecretOrProvision(deviceSecret, sizeof(deviceSecret), true);
 
-  EZLOG_INFO("Device provisioning verified.");
+  // Pick the backend this device talks to. A device stays on the environment
+  // it was provisioned onto until it is reprovisioned.
+  char deviceEnv[backend_env::ENV_BUF_LEN]{0};
+  if (!auth.loadEnv(deviceEnv, sizeof(deviceEnv))) {
+    EZLOG_WARN("No known env stored, defaulting to %s", deviceEnv);
+  }
+  endpoints.resolve(deviceEnv);
+
+  EZLOG_INFO("Device provisioning verified. Env: %s (%s)",
+             endpoints.env(), endpoints.baseUrl());
 }
 
 void transitionToState(SystemState newState) {
@@ -523,9 +528,9 @@ void handleOtaUpdate() {
 ota::OtaUpdater::Config buildOtaConfig() {
   ota::OtaUpdater::Config otaConfig{};
   snprintf(otaConfig.manifestEndpoint, sizeof(otaConfig.manifestEndpoint), "%s",
-           OTA_MANIFEST_ENDPOINT);
+           endpoints.otaManifestEndpointFmt());
   snprintf(otaConfig.firmwareEndpoint, sizeof(otaConfig.firmwareEndpoint), "%s",
-           OTA_FIRMWARE_ENDPOINT);
+           endpoints.otaFirmwareEndpointFmt());
   snprintf(otaConfig.deviceType, sizeof(otaConfig.deviceType), "%s",
            DEVICE_TYPE);
   otaConfig.currentBuildNumber = FW_BUILD_NUMBER;
@@ -583,7 +588,8 @@ void waitForBackgroundOta(uint32_t timeoutMs) {
 
 device_health::Config buildHeartbeatConfig() {
   device_health::Config config{};
-  snprintf(config.endpoint, sizeof(config.endpoint), "%s", HEARTBEAT_ENDPOINT);
+  snprintf(config.endpoint, sizeof(config.endpoint), "%s",
+           endpoints.heartbeatEndpoint());
   snprintf(config.deviceId, sizeof(config.deviceId), "%s", deviceUid);
   snprintf(config.deviceSecret, sizeof(config.deviceSecret), "%s",
            deviceSecret);
@@ -765,7 +771,7 @@ void initializeDLFLogger() {
   options.enableChunkedUpload = ENABLE_CHUNKED_UPLOAD;
   options.partialRunUploadIntervalSecs =
       LOGGER_PARTIAL_RUN_UPLOAD_INTERVAL_SECS;
-  logger.syncTo(UPLOAD_ENDPOINT, deviceUid, options).begin();
+  logger.syncTo(endpoints.uploadEndpointFmt(), deviceUid, options).begin();
 
   EZLOG_INFO("DLF logger initialized");
 }

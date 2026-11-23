@@ -1,0 +1,15 @@
+{
+  "name": "provision",
+  "version": "1.0.0",
+  "description": "Device provisioning and backend environment selection for ESP32",
+  "authors": [
+    {
+      "name": "Brendan Holt",
+      "email": "105313389+bholt13@users.noreply.github.com",
+      "maintainer": true
+    }
+  ],
+  "license": "MIT",
+  "frameworks": ["arduino"],
+  "platforms": ["espressif32"]
+}
