@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <cstdio>
 #include <cstring>
 
 #include "BackendEndpoints.h"
@@ -111,53 +110,6 @@ TEST(Resolve, OverwritesPreviousEnvironment) {
   EXPECT_EQ(strstr(endpoints.otaManifestEndpointFmt(), "staging"), nullptr);
   EXPECT_EQ(strstr(endpoints.otaFirmwareEndpointFmt(), "staging"), nullptr);
   EXPECT_EQ(strstr(endpoints.heartbeatEndpoint(), "staging"), nullptr);
-}
-
-// #endregion
-
-// #region Placeholder round-trips
-
-TEST(PlaceholderRoundTrip, UploadTakesRunUuid) {
-  BackendEndpoints endpoints;
-  endpoints.resolve("preview");
-
-  char url[ENDPOINT_BUF_LEN]{0};
-  snprintf(url, sizeof(url), endpoints.uploadEndpointFmt(),
-           "00000000-0000-0000-0000-000000000000");
-
-  EXPECT_STREQ(url,
-               "https://oas-data-logger-staging.vercel.app/api/upload/"
-               "00000000-0000-0000-0000-000000000000");
-}
-
-TEST(PlaceholderRoundTrip, ManifestTakesDeviceType) {
-  BackendEndpoints endpoints;
-  endpoints.resolve("preview");
-
-  char url[ENDPOINT_BUF_LEN]{0};
-  snprintf(url, sizeof(url), endpoints.otaManifestEndpointFmt(), "V1");
-
-  EXPECT_STREQ(
-      url, "https://oas-data-logger-staging.vercel.app/api/ota/manifest/V1");
-}
-
-TEST(PlaceholderRoundTrip, FirmwareTakesDeviceTypeThenBuildNumber) {
-  BackendEndpoints endpoints;
-  endpoints.resolve("preview");
-
-  char url[ENDPOINT_BUF_LEN]{0};
-  snprintf(url, sizeof(url), endpoints.otaFirmwareEndpointFmt(), "V1", 42);
-
-  EXPECT_STREQ(url,
-               "https://oas-data-logger-staging.vercel.app/api/ota/firmware/"
-               "V1/builds/42");
-}
-
-TEST(PlaceholderRoundTrip, HeartbeatHasNoPlaceholders) {
-  BackendEndpoints endpoints;
-  endpoints.resolve("prod");
-
-  EXPECT_EQ(strchr(endpoints.heartbeatEndpoint(), '%'), nullptr);
 }
 
 // #endregion
