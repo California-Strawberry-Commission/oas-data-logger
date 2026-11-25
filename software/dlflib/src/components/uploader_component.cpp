@@ -658,8 +658,8 @@ bool UploaderComponent::uploadRunChunked(fs::File runDir, const char* runUuid,
   };
   FileEntry entries[] = {
       {"meta.dlf", metaNextChunkNum, metaNextByteOffset},
-      {"polled.dlf", polledNextChunkNum, polledNextByteOffset},
       {"event.dlf", eventNextChunkNum, eventNextByteOffset},
+      {"polled.dlf", polledNextChunkNum, polledNextByteOffset},
   };
   constexpr size_t numEntries = sizeof(entries) / sizeof(entries[0]);
   const char* uploadedFilenames[numEntries] = {};
@@ -754,6 +754,15 @@ bool UploaderComponent::uploadRunChunked(fs::File runDir, const char* runUuid,
         "[UploaderComponent][uploadRunChunked] No files to finalize for %s",
         runUuid);
     return true;
+  }
+
+  // A file that was missing, so we log that this occurred.
+  if (numFilesUploaded < numEntries) {
+    DLFLIB_LOG_WARNING(
+        "[UploaderComponent][uploadRunChunked] Finalizing %s with only %zu of "
+        "%zu files uploaded. If retention deletes this run, the missing file "
+        "is lost.",
+        runUuid, numFilesUploaded, numEntries);
   }
 
   // Send finalize request
